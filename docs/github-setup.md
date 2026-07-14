@@ -1,5 +1,13 @@
 # GitHub environment setup (one-time, ~10 minutes)
 
+> **Current status (2026-07-14):** repo created (`gurbirdhaliwal/slate`,
+> private), CI green, `dev`/`production` environments created. **Enforcement
+> is NOT active:** rulesets and environment required-reviewers need GitHub Pro
+> on private repos, and we're on Free for now. The pipeline topology still
+> holds (main → dev only; prod only via published release), but direct pushes
+> to main and unapproved prod deploys are technically possible. See
+> "Activating enforcement" below for the two commands to run after upgrading.
+
 The workflows in `.github/workflows/` implement local → dev → prod:
 
 | Trigger | Workflow | Target |
@@ -42,6 +50,31 @@ Settings → Environments → New environment, twice:
 
 Because secrets are environment-scoped, no workflow outside the gated
 `production` job can ever read the prod SSH key.
+
+## Activating enforcement (after upgrading to GitHub Pro)
+
+The ruleset from §1 is checked in at `.github/rulesets/protect-main.json`.
+Once the account has Pro (or the repo moves to a Team org):
+
+```bash
+# 1. Main-branch ruleset: require PR + green checks, block force pushes
+gh api -X POST repos/gurbirdhaliwal/slate/rulesets \
+  --input .github/rulesets/protect-main.json
+
+# 2. Production gate: require your approval, restrict to v* tags
+USER_ID=$(gh api user -q .id)
+gh api -X PUT repos/gurbirdhaliwal/slate/environments/production \
+  --input - <<EOF
+{"reviewers":[{"type":"User","id":$USER_ID}],
+ "deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}
+EOF
+gh api -X POST \
+  repos/gurbirdhaliwal/slate/environments/production/deployment-branch-policies \
+  -f name='v*' -f type=tag
+```
+
+Until then: treat "no direct pushes to main" as team discipline — always
+branch, always PR, even solo.
 
 ## 3. Shipping to prod
 

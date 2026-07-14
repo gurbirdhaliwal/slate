@@ -1,0 +1,25 @@
+-- TimescaleDB hypertables (§9) — DEFERRED, conversion intentionally commented out.
+--
+-- The doc's `SELECT create_hypertable('agent_steps', 'created_at')` cannot run
+-- against the schema as written:
+--   1. A hypertable's PK/unique indexes must include the partition column
+--      (created_at), but these tables have PK (id) alone.
+--   2. Foreign keys REFERENCING a hypertable (step_verdicts.step_id,
+--      diagnoses.origin_step_id, slate_jobs.trace_id, analysis_jobs.step_id)
+--      are not supported by TimescaleDB.
+--
+-- Converting therefore requires a deliberate schema change: composite PKs
+-- (id, created_at) and dropping/replacing the inbound FKs with app-enforced
+-- integrity. That is a real trade-off to make consciously once volume demands
+-- it (agent_steps is the highest-volume table) — not silently in boilerplate.
+--
+-- When ready:
+-- ALTER TABLE agent_steps DROP CONSTRAINT agent_steps_pkey,
+--   ADD PRIMARY KEY (id, created_at);
+-- ALTER TABLE step_verdicts DROP CONSTRAINT step_verdicts_step_id_fkey;
+-- ... (drop remaining inbound FKs) ...
+-- SELECT create_hypertable('agent_steps', 'created_at', migrate_data => true);
+-- SELECT create_hypertable('traces',      'created_at', migrate_data => true);
+-- SELECT create_hypertable('slate_jobs',  'created_at', migrate_data => true);
+
+SELECT 1; -- placeholder so the migration version is recorded

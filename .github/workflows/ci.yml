@@ -1,0 +1,53 @@
+# PR quality gate. These three job names (api, worker, dashboard) are the
+# required status checks in the main-branch ruleset — renaming a job here
+# means updating the ruleset, or merges will block forever.
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main] # keeps main's checks green post-merge (and caches warm)
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Build and test
+        working-directory: apps/api
+        run: mvn -B verify
+
+  worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install and test
+        working-directory: apps/worker
+        run: |
+          pip install -e ".[dev]"
+          python -m pytest tests/ -q
+
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/dashboard/package-lock.json
+      - name: Build (tsc + vite)
+        working-directory: apps/dashboard
+        run: |
+          npm ci
+          npm run build

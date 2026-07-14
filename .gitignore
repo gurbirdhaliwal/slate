@@ -1,0 +1,27 @@
+# Secrets — never commit
+.env
+*.pem
+secrets/
+
+# Java
+apps/api/target/
+*.class
+
+# Node
+node_modules/
+apps/dashboard/dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store

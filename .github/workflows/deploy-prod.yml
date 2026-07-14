@@ -1,0 +1,77 @@
+# Production deploys ONLY from a published release (tag v*), and the deploy job
+# targets the "production" GitHub Environment — which is configured with a
+# required reviewer, so the job PAUSES until a human approves it in the UI.
+# There is no path from a branch push to this workflow.
+#
+# Rollback = re-run this workflow from the previous release (images are
+# tagged with the version, and Postgres/MinIO volumes survive deploys).
+
+name: deploy-prod
+
+on:
+  release:
+    types: [published]
+
+concurrency:
+  group: deploy-prod # never two prod deploys interleaved
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/slate
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - name: api
+            context: apps/api
+            dockerfile: apps/api/Dockerfile
+          - name: worker
+            context: apps/worker
+            dockerfile: apps/worker/Dockerfile
+          - name: spa-build
+            context: .
+            dockerfile: apps/dashboard/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.name }}:${{ github.event.release.tag_name }}
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    # The gate: requires approval from the environment's required reviewers,
+    # and only exposes the PRODUCTION-scoped VPS_* secrets.
+    environment: production
+    steps:
+      - name: Deploy to production
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /opt/slate
+            export IMAGE_TAG=${{ github.event.release.tag_name }}
+            docker compose pull
+            docker compose up -d
+            docker image prune -f

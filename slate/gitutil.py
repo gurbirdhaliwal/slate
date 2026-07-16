@@ -89,6 +89,47 @@ def changed_files(root: Path, since: str | None) -> list[str]:
     return sorted(changed)
 
 
+def changed_with_status(root: Path, since: str | None) -> dict[str, str]:
+    """Like changed_files, but with a change kind per path: A/M/D/R.
+
+    Working-tree state wins over committed state for the same path (the AI
+    acts on the working tree). Renames report the *new* path as R.
+    """
+    kinds: dict[str, str] = {}
+    if since and commit_exists(root, since):
+        out = _git(root, "diff", "--name-status", "-M", since, "HEAD")
+        for line in out.splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 3 and parts[0].startswith("R"):
+                kinds[_unquote(parts[1])] = "D"
+                kinds[_unquote(parts[2])] = "R"
+            elif len(parts) == 2:
+                kinds[_unquote(parts[1])] = parts[0][:1]
+    out = _git(root, "status", "--porcelain", "-uall")
+    for line in out.splitlines():
+        if len(line) < 4:
+            continue
+        code, path = line[:2], line[3:]
+        if " -> " in path:
+            old, new = path.split(" -> ", 1)
+            kinds[_unquote(old)] = "D"
+            kinds[_unquote(new)] = "R"
+        elif code == "??":
+            kinds[_unquote(path)] = "A"
+        elif "D" in code:
+            kinds[_unquote(path)] = "D"
+        else:
+            kinds[_unquote(path)] = "M"
+    return kinds
+
+
+def hooks_dir(root: Path) -> Path:
+    """The active hooks directory (worktree- and core.hooksPath-aware)."""
+    out = _git(root, "rev-parse", "--git-path", "hooks").strip()
+    path = Path(out)
+    return path if path.is_absolute() else root / path
+
+
 def commits_since(root: Path, since: str) -> int:
     try:
         return int(_git(root, "rev-list", "--count", f"{since}..HEAD").strip())

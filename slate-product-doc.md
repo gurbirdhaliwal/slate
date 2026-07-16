@@ -346,6 +346,22 @@ slate mark DOC...           human attestation: doc is accurate at HEAD
 slate verify [--json]       verification score per doc, with missing-path evidence
 slate read [--paths]        the ordered first-read path with trust labels
                             (--paths = machine-consumable file list)
+
+# Phase 2
+slate diff [DOC...]         per suspect doc: watched changes with kinds (A/M/D/R),
+                            broken claims (referenced paths that no longer exist),
+                            and a unified-diff preview of what sync would rewrite
+slate sync --prose          opt-in LLM orientation paragraph above the scanned
+                            facts (ANTHROPIC_API_KEY required; prose failures
+                            never block the deterministic sync)
+slate watches [--apply]     current watch globs + proposed additions inferred
+                            from import graphs and doc body references
+slate hook install|uninstall  pre-push gate running `status --ci` (pre-PUSH, not
+                            pre-commit — see the 2026-07-15 hook decision)
+
+# Phase 3
+slate fleet [PATH...] [--ci]  freshness roll-up across repos (a path is a repo,
+                            or a parent scanned one level deep)
 ```
 
 **Exit codes:** `0` ok · `1` freshness problems found (`status --ci`) · `2` usage/environment error (not a git repo, unknown doc, no layer).
@@ -396,23 +412,23 @@ slate read [--paths]        the ordered first-read path with trust labels
 - [x] Test suite on real git repos; CI dogfoods `slate status --ci`
 - [x] Slate's own context layer maintained by Slate
 
-### Phase 2 — Assisted maintenance (next)
+### Phase 2 — Assisted maintenance (built 2026-07-15)
 
 **Goal:** syncs get smarter; distribution gets real.
 
-- [ ] PyPI release (`pipx install slate-context`), versioning discipline on the JSON/exit-code contract
-- [ ] Pre-commit hook (`slate status --ci` locally before push)
-- [ ] `slate diff` — for each stale doc, show what changed vs. what the doc claims
-- [ ] Watch inference: propose watch globs from import graphs instead of directory heuristics
-- [ ] Optional LLM-assisted prose in auto-blocks (Claude via `ANTHROPIC_API_KEY`, strictly opt-in, facts still come from the scan)
+- [x] Release automation: `release.yml` publishes to PyPI on `v*` tags via trusted publishing. *(One-time owner setup left: create the `slate-context` project + trusted publisher on pypi.org, then tag `v0.2.0`.)*
+- [x] Local hook (`slate hook install`, plus `.pre-commit-hooks.yaml` for the pre-commit framework) — runs at **pre-push**, not pre-commit (see decision log)
+- [x] `slate diff` — watched changes with kinds, broken claims, and a unified-diff preview of what sync would rewrite
+- [x] Watch inference (`slate watches [--apply]`): proposals from Python/JS/TS import edges and doc body references; additions are suggested, never silently applied
+- [x] Optional LLM-assisted prose (`slate sync --prose`): opt-in, urllib-only, injectable transport; facts stay deterministic and prose failures never block the sync
 
-### Phase 3 — Team surface
+### Phase 3 — Team surface (built 2026-07-15)
 
 **Goal:** the freshness signal reaches reviews and editors.
 
-- [ ] GitHub PR bot: comments "this PR stales `architecture.md`, `modules.md` — sync or mark" with one-click suggestion commits
-- [ ] Editor integration: status in the file tree / gutter
-- [ ] Multi-repo `slate status` roll-up
+- [x] GitHub PR bot: reusable composite action at the repo root (`uses: gurbirdhaliwal/slate@v0.2.0`) — posts an idempotent PR comment (statuses, scores, changed paths, broken claims), optional fail-on-stale; dogfooded in this repo's CI
+- [x] Editor integration: VS Code extension (`integrations/vscode/`, plain JS, no build step) — file-tree trust badges, status-bar roll-up, one-click sync. *(Marketplace publishing optional; installs from a local VSIX today.)*
+- [x] Multi-repo roll-up: `slate fleet [PATH...] [--json] [--ci]`
 
 ### Phase 4 — Control plane for teams (first revenue)
 
@@ -553,6 +569,42 @@ Trade-off: Generated docs are drier than LLM prose; human sections carry the
            narrative until Phase 2.
 Revisit trigger: Phase 2 — and even then, never for status/score computation.
 
+Date: 2026-07-15 (Phase 2/3 build)
+Decision: The local freshness gate is a pre-PUSH hook, not pre-commit
+Rationale: The sync workflow is inherently two commits — commit the code, then
+           `slate sync` anchors the docs to that commit and the doc updates are
+           committed on top. A pre-commit `status --ci` fails exactly when
+           committing the code, blocking the legitimate workflow. Pre-push
+           checks the branch tip, which is the same contract CI enforces.
+Trade-off: Staleness is caught at push time, not commit time — a few minutes
+           later in the loop.
+Revisit trigger: If anchoring ever moves from commits to content hashes (which
+           would make same-commit sync possible), reconsider pre-commit.
+
+Date: 2026-07-15 (Phase 2/3 build)
+Decision: LLM prose is a callback injected into sync, over raw urllib, opt-in
+          via --prose + ANTHROPIC_API_KEY; prose failure degrades to a plain sync
+Rationale: Keeps zero runtime dependencies, keeps generator testable without a
+           network (injectable transport), and keeps the §8 boundary mechanical:
+           the LLM can only prepend prose above facts it was handed — it cannot
+           touch facts, statuses, or scores by construction.
+Trade-off: No SDK conveniences (retries, streaming); acceptable for one short
+           completion per generated doc.
+Revisit trigger: Prose expands beyond one paragraph per doc, or needs models
+           that require more elaborate request handling.
+
+Date: 2026-07-15 (Phase 2/3 build)
+Decision: Integrations ship in-repo and thin: a composite GitHub Action at the
+          repo root (pip-installs the action checkout, comments via REST), and
+          a plain-JS no-build VS Code extension that renders `status --json`
+Rationale: One repo to version; the action needs no marketplace approval to be
+           usable (`uses: gurbirdhaliwal/slate@tag`); the extension stays pure
+           presentation so all trust math remains in the tested CLI.
+Trade-off: Composite action installs Python deps on every run (~seconds);
+           extension unpublished until a marketplace account exists.
+Revisit trigger: The bot needing state beyond a PR comment (that's the Phase 4
+           hosted layer, not a bigger action).
+
 Date: 2026-07-15
 Decision: Fixed six-doc context layer with fixed names and read order
 Rationale: Predictability beats configurability for a convention: tools and humans
@@ -566,4 +618,4 @@ Revisit trigger: Repeated field evidence that a seventh doc (e.g. API surface,
 
 ---
 
-*Last updated: 2026-07-15 — repositioned from hosted step-level agent debugger to repo-local context control plane: CLI + Markdown context layer + git-anchored freshness engine + deterministic verification score; entire hosted stack removed (see §14 pivot entries). Update this document when architectural decisions change, new competitive intelligence arrives, or phase scope is adjusted.*
+*Last updated: 2026-07-15 — (1) repositioned from hosted step-level agent debugger to repo-local context control plane: CLI + Markdown context layer + git-anchored freshness engine + deterministic verification score; entire hosted stack removed (see §14 pivot entries). (2) Phases 2 and 3 built: `slate diff`, pre-push hook + pre-commit-framework support, watch inference, opt-in LLM prose, PyPI release automation, GitHub PR bot action, VS Code extension, `slate fleet` (see §9, §11, and the 2026-07-15 build entries in §14). Update this document when architectural decisions change, new competitive intelligence arrives, or phase scope is adjusted.*

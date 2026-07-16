@@ -23,9 +23,21 @@ slate status        # which context docs are now suspect?
 ○ .slate/modules.md        stale   2 watched path(s) changed since 3f2c91a
     ↳ src/billing/tax.py
 
+slate diff          # what changed vs. what each doc claims + sync preview
 slate sync          # regenerate the auto-blocks, re-anchor to HEAD
 slate verify        # 0.00–1.00 trust score per doc
 slate read          # the ordered "first read" path for an AI session
+```
+
+Beyond the core loop:
+
+```bash
+slate sync --prose      # opt-in: LLM-drafted orientation paragraph above the
+                        # scanned facts (needs ANTHROPIC_API_KEY; the facts and
+                        # all trust math stay deterministic)
+slate watches --apply   # propose watch globs from import graphs + doc references
+slate hook install      # pre-push gate: refuses to push a stale context layer
+slate fleet ~/code      # freshness roll-up across many repos
 ```
 
 Every context doc carries freshness metadata (sync anchor commit + watch
@@ -62,21 +74,45 @@ slate --version
 
 Requires a git repository — Slate anchors freshness to git history.
 
+## Integrations
+
+- **GitHub PR bot** — [action.yml](action.yml) is a reusable composite action:
+  it checks the consumer repo's context layer on every PR and posts (and
+  edits in place) a comment listing which docs the PR invalidates, with
+  trust scores. Two lines in a consumer workflow:
+  `uses: gurbirdhaliwal/slate@v0.2.0` after a `fetch-depth: 0` checkout.
+- **VS Code extension** — [integrations/vscode/](integrations/vscode/):
+  trust badges in the file tree, a status-bar roll-up, and one-click sync.
+  Plain JS, no build step; renders `slate status --json`, never computes.
+- **pre-commit framework** — [.pre-commit-hooks.yaml](.pre-commit-hooks.yaml)
+  (`id: slate-context`, runs at pre-push); or `slate hook install` for the
+  same gate without the framework.
+- **PyPI releases** — pushing a `v*` tag builds and publishes via
+  [release.yml](.github/workflows/release.yml) (PyPI trusted publishing;
+  one-time project setup on pypi.org required).
+
 ## Repository layout
 
 ```
 slate/                the CLI package (stdlib only, by design)
-├── cli.py            argparse entry point: init/status/sync/mark/verify/read
+├── cli.py            argparse entry point (all commands, --json contracts)
 ├── scanner.py        deterministic repo scan (languages, modules, commands)
 ├── generator.py      scan -> Markdown context layer, auto-block rewriting
 ├── freshness.py      the freshness engine: fresh / stale / needs-verification
 ├── verify.py         verification score (reference validity + watch quiet + drift)
+├── diffs.py          slate diff: change kinds, broken claims, sync preview
+├── imports.py        watch inference from import graphs + doc references
+├── llm.py            opt-in prose writer (urllib, injectable transport)
+├── hooks.py          pre-push freshness gate installer
 ├── context.py        doc registry, frontmatter stamping, auto-block markers
 ├── frontmatter.py    tiny hand-rolled YAML-subset frontmatter (no deps)
 ├── globs.py          watch-pattern matching with ** semantics
 └── gitutil.py        git plumbing (change detection anchors)
+integrations/
+├── github/           PR bot script used by the root action.yml
+└── vscode/           editor extension (plain JS, no build step)
 tests/                pytest suite — runs against real throwaway git repos
-.github/workflows/    ci.yml: pytest + `slate status --ci` dogfood gate
+.github/workflows/    ci.yml (tests + dogfood + PR bot) · release.yml (PyPI)
 docs/github-setup.md  one-time repo config (branch ruleset)
 ```
 
@@ -107,12 +143,16 @@ frontmatter round-tripping, and the auto-block boundary logic. **Vibecode
 freely:** doc templates, CLI presentation, scanner heuristics for new
 languages/build tools.
 
-## Current state (MVP)
+## Current state (Phases 1–3 built)
 
 Working end to end: `init` → generated context layer with freshness
-frontmatter → `status`/`verify`/`read` → `sync`/`mark`. Dogfooded on this
-repo (see [AGENTS.md](AGENTS.md) and [.slate/](.slate/)).
+frontmatter → `status`/`verify`/`read`/`diff` → `sync`/`mark`, plus the
+pre-push hook, watch inference, opt-in LLM prose, the PR bot action, the
+VS Code extension, and `fleet`. Dogfooded on this repo (see
+[AGENTS.md](AGENTS.md) and [.slate/](.slate/)); CI runs the tests, the
+freshness gate, and the PR bot.
 
-Not yet built (phased, see §11): LLM-assisted prose updates on sync, watch
-inference from imports, `slate diff` (what changed vs. what the doc claims),
-pre-commit hook, PyPI release, IDE/PR-bot integrations.
+Remaining one-time setup (needs account owner): create the `slate-context`
+project + trusted publisher on pypi.org, then push a `v0.2.0` tag; publish
+the VS Code extension to the marketplace if wanted (works from a local VSIX
+today). Phase 4 (team dashboards, merge policies, hosted bot) is not built.

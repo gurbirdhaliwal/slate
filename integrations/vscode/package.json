@@ -1,0 +1,44 @@
+{
+  "name": "slate-context",
+  "displayName": "Slate Context",
+  "description": "Freshness of the Slate context layer — trust badges in the file tree, roll-up in the status bar.",
+  "version": "0.2.0",
+  "publisher": "slate-context",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gurbirdhaliwal/slate"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "slate.refresh",
+        "title": "Slate: Refresh Context Status"
+      },
+      {
+        "command": "slate.sync",
+        "title": "Slate: Sync Context Layer"
+      },
+      {
+        "command": "slate.showStatus",
+        "title": "Slate: Show Context Status"
+      }
+    ],
+    "configuration": {
+      "title": "Slate Context",
+      "properties": {
+        "slate.executable": {
+          "type": "string",
+          "default": "slate",
+          "description": "Path to the slate CLI (default assumes it is on PATH)."
+        }
+      }
+    }
+  }
+}

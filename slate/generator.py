@@ -28,7 +28,7 @@ def generate_all(scan: RepoScan, *, force: bool = False) -> list[str]:
             continue
         doc = ContextDoc(spec, {}, _initial_body(spec, scan))
         if spec.generated:
-            doc.body = context.replace_auto_block(doc.body, _auto_content(spec, scan))
+            doc.body = context.replace_auto_block(doc.body, auto_content(spec, scan))
         context.stamp(doc, commit)
         doc.meta["slate_watches"] = context.default_watches(spec, scan)
         context.save(root, doc)
@@ -36,10 +36,19 @@ def generate_all(scan: RepoScan, *, force: bool = False) -> list[str]:
     return written
 
 
-def sync_doc(doc: ContextDoc, scan: RepoScan) -> None:
-    """Regenerate the auto-block and re-anchor freshness to current HEAD."""
+def sync_doc(doc: ContextDoc, scan: RepoScan, prose=None) -> None:
+    """Regenerate the auto-block and re-anchor freshness to current HEAD.
+
+    ``prose`` is an optional callable ``(spec, facts_markdown) -> str`` that
+    returns an orientation block to place above the scanned facts (the
+    Phase 2 LLM hook). It may only *add* prose — the deterministic facts are
+    always present and always come from the scan.
+    """
     if doc.spec.generated:
-        doc.body = context.replace_auto_block(doc.body, _auto_content(doc.spec, scan))
+        block = auto_content(doc.spec, scan)
+        if prose is not None:
+            block = prose(doc.spec, block).strip() + "\n\n" + block
+        doc.body = context.replace_auto_block(doc.body, block)
     context.stamp(doc, gitutil.head_commit(scan.root))
     context.save(scan.root, doc)
 
@@ -105,7 +114,8 @@ def _agents_shell(project: str) -> str:
     )
 
 
-def _auto_content(spec: DocSpec, scan: RepoScan) -> str:
+def auto_content(spec: DocSpec, scan: RepoScan) -> str:
+    """The deterministic auto-block content for a doc (public: diffs previews it)."""
     if spec.name == "agents":
         return _agents_auto(scan)
     if spec.name == "architecture":

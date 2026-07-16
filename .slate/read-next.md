@@ -13,12 +13,17 @@ when the focus changes; run `slate mark read-next` after.
 
 ## Current focus
 
-The 2026-07-15 pivot (hosted agent debugger → context control plane CLI)
-is committed and synced on branch `pivot-context-control-plane` (PR open
-against main). Nothing else is in flight.
+Phases 2 and 3 are implemented in the working tree (branch
+`pivot-context-control-plane`, PR #1) and **not yet committed**: `slate
+diff`, `slate watches`, `slate hook` (pre-push), `slate sync --prose`,
+`slate fleet`, the PR-bot composite action (`action.yml`), the VS Code
+extension (`integrations/vscode/`), release automation, and
+pre-commit-framework support. After committing: `slate sync`, then
+`slate mark read-next decisions`, then commit the doc updates.
 
-Next up (product doc §11, Phase 2): PyPI release, pre-commit hook,
-`slate diff`.
+Remaining one-time owner tasks (not code): create the `slate-context`
+project + trusted publisher on pypi.org, then tag `v0.2.0`; optionally
+publish the VS Code extension to the marketplace.
 
 ## Landmines
 

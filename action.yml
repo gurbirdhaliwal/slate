@@ -1,0 +1,48 @@
+# Reusable PR bot: check the Slate context layer and comment on the PR.
+#
+# Usage in a consumer repo:
+#
+#   jobs:
+#     slate:
+#       runs-on: ubuntu-latest
+#       if: github.event_name == 'pull_request'
+#       permissions:
+#         contents: read
+#         pull-requests: write
+#       steps:
+#         - uses: actions/checkout@v4
+#           with: { fetch-depth: 0 }   # required — freshness anchors to history
+#         - uses: gurbirdhaliwal/slate@v0.2.0
+name: Slate context check
+description: >-
+  Detects context docs a pull request may have invalidated (stale / needs-
+  verification), posts an idempotent PR comment, and optionally fails the job.
+branding:
+  icon: layers
+  color: gray-dark
+
+inputs:
+  github-token:
+    description: Token used to post the PR comment (needs pull-requests write)
+    default: ${{ github.token }}
+  comment:
+    description: Post/update the PR comment ("false" to only print it)
+    default: "true"
+  fail-on-stale:
+    description: Fail the job when any context doc is not fresh
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Install slate
+      shell: bash
+      run: pip install --quiet "${{ github.action_path }}"
+
+    - name: Check context layer and comment
+      shell: bash
+      run: python "${{ github.action_path }}/integrations/github/pr_comment.py"
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        SLATE_COMMENT: ${{ inputs.comment }}
+        SLATE_FAIL_ON_STALE: ${{ inputs.fail-on-stale }}

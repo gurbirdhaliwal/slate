@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slate-context"
+version = "0.1.0"
+description = "Slate — context control plane for AI-assisted repos. Generates concise Markdown context beside the code, detects stale knowledge after changes, and scores what is safe to trust."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Gurbir Dhaliwal" }]
+keywords = ["ai", "context", "documentation", "agents", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Documentation",
+]
+# Zero runtime dependencies — stdlib only, by design (see product doc §6).
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+slate = "slate.cli:main"
+
+[project.urls]
+Repository = "https://github.com/gurbirdhaliwal/slate"
+
+[tool.setuptools.packages.find]
+include = ["slate*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

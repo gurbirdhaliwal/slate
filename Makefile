@@ -1,31 +1,29 @@
-# Slate — dev shortcuts. Production runs everything via docker-compose.yml.
+# Slate — dev shortcuts. The product itself is just the `slate` CLI.
 
-.PHONY: up down infra api worker dashboard test-worker build
+.PHONY: install test demo dogfood clean
 
-## Local infra only (Postgres + MinIO) — run api/worker/dashboard natively against it
-infra:
-	docker compose up -d postgres minio minio-init
+## Editable install with dev deps into ./.venv
+install:
+	python3 -m venv .venv
+	.venv/bin/pip install -q -e ".[dev]"
 
-## Full stack in containers
-up:
-	docker compose up -d --build
+test:
+	.venv/bin/python -m pytest
 
-down:
-	docker compose down
+## Throwaway repo walking the core loop: init -> code change -> status/verify
+demo:
+	@rm -rf /tmp/slate-demo && mkdir -p /tmp/slate-demo/src && cd /tmp/slate-demo \
+		&& git init -q && echo "# Demo" > README.md && echo "def main(): pass" > src/main.py \
+		&& git add -A && git -c user.email=demo@slate -c user.name=demo commit -qm init \
+		&& $(CURDIR)/.venv/bin/slate init \
+		&& git add -A && git -c user.email=demo@slate -c user.name=demo commit -qm layer \
+		&& echo "x = 1" > src/new_feature.py \
+		&& printf '\n--- slate status after a code change ---\n' && $(CURDIR)/.venv/bin/slate status \
+		&& printf '\n--- slate verify ---\n' && $(CURDIR)/.venv/bin/slate verify
 
-## Run each service natively for development
-api:
-	cd apps/api && mvn spring-boot:run
+## Slate runs on its own repo — keep our context layer honest
+dogfood:
+	.venv/bin/slate status
 
-worker:
-	cd apps/worker && pip install -e ".[dev]" -q && slate-worker
-
-dashboard:
-	cd apps/dashboard && npm install --no-audit --no-fund && npm run dev
-
-test-worker:
-	cd apps/worker && python -m pytest tests/ -q
-
-build:
-	cd apps/api && mvn -q -DskipTests package
-	cd apps/dashboard && npm run build
+clean:
+	rm -rf .venv dist build *.egg-info .pytest_cache

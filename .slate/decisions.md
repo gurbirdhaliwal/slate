@@ -1,8 +1,8 @@
 ---
 slate_doc: decisions
 slate_generated: false
-slate_synced_commit: 0344044
-slate_synced_at: 2026-07-16T00:51:52+00:00
+slate_synced_commit: 5aac6d5
+slate_synced_at: 2026-07-16T01:35:13+00:00
 slate_watches:
 ---
 
@@ -37,4 +37,20 @@ Decision: Zero runtime dependencies; freshness derived from git at read time,
 Rationale: Trust signals must be reproducible, explainable, and free.
 Trade-off: Hand-rolled frontmatter + glob matching (~120 lines, tested).
 Revisit trigger: Real need for full YAML or gitignore-style negation.
+
+Date: 2026-07-15
+Decision: The local freshness gate is a pre-PUSH hook, not pre-commit.
+Rationale: Syncing is two commits (code, then re-anchored docs); a pre-commit
+          gate fails exactly when committing the code. Push time checks the
+          branch tip — the same contract CI enforces.
+Trade-off: Staleness caught minutes later than commit time.
+Revisit trigger: Anchoring by content hash instead of commit SHA.
+
+Date: 2026-07-15
+Decision: LLM prose (`sync --prose`) is an injected callback that can only
+          prepend prose above the scanned facts; failures degrade to plain sync.
+Rationale: Keeps the §8 boundary mechanical — the model cannot alter facts,
+          statuses, or scores by construction.
+Trade-off: raw urllib, no SDK conveniences.
+Revisit trigger: Prose grows beyond one paragraph per doc.
 ```

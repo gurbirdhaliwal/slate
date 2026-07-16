@@ -1,8 +1,8 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: b759f9e
-slate_synced_at: 2026-07-16T00:52:33+00:00
+slate_synced_commit: 11e7574
+slate_synced_at: 2026-07-16T01:38:42+00:00
 slate_watches:
 ---
 
@@ -13,12 +13,14 @@ when the focus changes; run `slate mark read-next` after.
 
 ## Current focus
 
-The 2026-07-15 pivot (hosted agent debugger → context control plane CLI)
-is committed and synced on branch `pivot-context-control-plane` (PR open
-against main). Nothing else is in flight.
+The pivot (Phase 1) is merged via PR #1. Phases 2–3 are committed and
+synced on branch `phase-2-3` (PR #2 against main). Nothing else is in
+flight; next code work is Phase 4 (team dashboard, merge policies, hosted
+bot — product doc §11).
 
-Next up (product doc §11, Phase 2): PyPI release, pre-commit hook,
-`slate diff`.
+Remaining one-time owner tasks (not code): create the `slate-context`
+project + trusted publisher on pypi.org, then tag `v0.2.0` after PR #1
+merges; optionally publish the VS Code extension to the marketplace.
 
 ## Landmines
 

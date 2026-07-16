@@ -119,6 +119,15 @@ def stamp(doc: ContextDoc, commit: str | None) -> None:
     doc.meta["slate_synced_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def get_auto_block(body: str) -> str | None:
+    """The current content between the auto markers, or None if absent."""
+    begin = body.find(AUTO_BEGIN)
+    end = body.find(AUTO_END)
+    if begin == -1 or end == -1 or end < begin:
+        return None
+    return body[begin + len(AUTO_BEGIN):end].strip()
+
+
 def replace_auto_block(body: str, generated: str) -> str:
     """Swap the content between the auto markers, preserving everything else.
 

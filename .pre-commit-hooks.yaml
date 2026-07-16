@@ -1,0 +1,19 @@
+# For the pre-commit framework (https://pre-commit.com). Consumers add:
+#
+#   repos:
+#     - repo: https://github.com/gurbirdhaliwal/slate
+#       rev: v0.2.0
+#       hooks:
+#         - id: slate-context
+#
+# Runs at pre-push, not pre-commit — the sync workflow is two commits
+# (code, then synced docs), and a pre-commit gate would block the first
+# one. `slate hook install` sets up the same gate without the framework.
+- id: slate-context
+  name: Slate context freshness
+  description: Fail if the Slate context layer is stale relative to the code
+  entry: slate status --ci
+  language: python
+  pass_filenames: false
+  always_run: true
+  stages: [pre-push]

@@ -1,0 +1,41 @@
+# Publishes slate-context to PyPI when a v* tag is pushed.
+#
+# One-time setup (owner, ~2 min): on pypi.org, create the project
+# `slate-context` and add a "trusted publisher" pointing at this repo,
+# workflow `release.yml`, environment `pypi`. No API tokens to store.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  pypi:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # OIDC for PyPI trusted publishing
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Guard — tag must match the package version
+        run: |
+          PKG=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "$PKG" != "$TAG" ]; then
+            echo "tag v$TAG != pyproject version $PKG" >&2
+            exit 1
+          fi
+
+      - name: Build
+        run: |
+          pip install --quiet build
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

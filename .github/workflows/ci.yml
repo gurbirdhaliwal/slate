@@ -33,3 +33,24 @@ jobs:
         # code without running `slate sync` fails here — the tool eats its
         # own cooking on every merge.
         run: slate status --ci
+
+  # Dogfood the Phase 3 PR bot: posts/updates a context-freshness comment.
+  # Advisory only — the required check stays `tests` above.
+  context-bot:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: ./
+        with:
+          fail-on-stale: "false" # `tests` already gates; the comment is the point here

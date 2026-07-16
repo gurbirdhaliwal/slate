@@ -111,3 +111,30 @@ def test_human_edits_survive_sync(repo: Path, capsys) -> None:
     text = modules.read_text()
     assert "KEEP-ME" in text
     assert "extra" not in text.split("slate:auto")[0]  # regenerated block, not duplicated
+
+
+def test_help_overview(tmp_path: Path, capsys) -> None:
+    # help must work anywhere — even outside a git repo
+    plain = tmp_path / "nowhere"
+    plain.mkdir()
+    code = main(["-C", str(plain), "help"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "typical workflow" in out
+    assert "slate agent enable claude" in out
+
+
+def test_help_for_a_command(repo: Path, capsys) -> None:
+    code = main(["-C", str(repo), "help", "sync"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "re-anchor" in out
+    assert "--prose" in out
+
+
+def test_help_unknown_command(repo: Path, capsys) -> None:
+    code = main(["-C", str(repo), "help", "bogus"])
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "unknown command" in err
+    assert "sync" in err  # lists the known commands

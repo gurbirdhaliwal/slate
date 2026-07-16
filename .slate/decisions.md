@@ -1,8 +1,8 @@
 ---
 slate_doc: decisions
 slate_generated: false
-slate_synced_commit: 5aac6d5
-slate_synced_at: 2026-07-16T01:35:13+00:00
+slate_synced_commit: 3839e64
+slate_synced_at: 2026-07-16T16:12:34+00:00
 slate_watches:
 ---
 
@@ -53,4 +53,12 @@ Rationale: Keeps the §8 boundary mechanical — the model cannot alter facts,
           statuses, or scores by construction.
 Trade-off: raw urllib, no SDK conveniences.
 Revisit trigger: Prose grows beyond one paragraph per doc.
+```
+
+```
+Date: 2026-07-16
+Decision: Agent integration = MCP stdio server + two-layer consent: editor prompts per call, .slate/agent-access is the read-default capability ceiling
+Rationale: MCP is what coding agents already speak; a server-side ceiling caps the blast radius of an over-eager always-allow and is committable team policy
+Trade-off: Two config surfaces to explain (editor allowlist + access file)
+Revisit trigger: MCP framing churn, or read-default friction blocking adoption
 ```

@@ -142,6 +142,59 @@ async function syncLayer() {
   refresh();
 }
 
+// Agent access toggle: wires slate into the editor's AI agent (MCP) and
+// flips the read/full capability ceiling. The CLI owns all the logic; this
+// is a picker over `slate agent ...`.
+async function agentAccess() {
+  let info = { access: "read", clients: [] };
+  try {
+    const out = await runSlate(["agent", "status", "--json"]);
+    if (out) info = JSON.parse(out);
+  } catch (error) {
+    vscode.window.showErrorMessage(`Slate: ${error.message}`);
+    return;
+  }
+  const wired = info.clients.length
+    ? `wired: ${info.clients.join(", ")}`
+    : "not wired to any agent yet";
+  const picked = await vscode.window.showQuickPick(
+    [
+      {
+        label: "$(shield) Read-only access",
+        description: info.access === "read" ? "current" : "",
+        detail: "Agent can read context, freshness, and diffs — never change them.",
+        action: ["agent", "access", "read"],
+      },
+      {
+        label: "$(unlock) Full access",
+        description: info.access === "full" ? "current" : "",
+        detail:
+          "Agent may also sync docs, update read-next, and append decisions. " +
+          "Your editor still asks per tool call unless you always-allow.",
+        action: ["agent", "access", "full"],
+      },
+      {
+        label: "$(plug) Wire slate into agents (MCP)",
+        description: wired,
+        detail: "Registers the slate MCP server (.mcp.json / .cursor/mcp.json).",
+        action: ["agent", "enable", "all"],
+      },
+    ],
+    { placeHolder: `Slate agent access — currently: ${info.access} (${wired})` }
+  );
+  if (!picked) return;
+  try {
+    await runSlate(picked.action);
+    vscode.window.showInformationMessage(
+      picked.action[1] === "enable"
+        ? "Slate: MCP server registered. Restart your agent session to pick it up."
+        : `Slate: agent access set to ${picked.action[2]}.`
+    );
+  } catch (error) {
+    vscode.window.showErrorMessage(`Slate: ${error.message}`);
+  }
+}
+
 function activate(context) {
   decorationEmitter = new vscode.EventEmitter();
   decorationProvider.onDidChangeFileDecorations = decorationEmitter.event;
@@ -159,6 +212,7 @@ function activate(context) {
     vscode.commands.registerCommand("slate.refresh", refresh),
     vscode.commands.registerCommand("slate.sync", syncLayer),
     vscode.commands.registerCommand("slate.showStatus", showStatusPicker),
+    vscode.commands.registerCommand("slate.agentAccess", agentAccess),
     vscode.workspace.onDidSaveTextDocument(scheduleRefresh),
     vscode.workspace.onDidCreateFiles(scheduleRefresh),
     vscode.workspace.onDidDeleteFiles(scheduleRefresh),

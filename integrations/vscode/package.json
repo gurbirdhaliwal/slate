@@ -1,8 +1,8 @@
 {
   "name": "slate-context",
   "displayName": "Slate Context",
-  "description": "Freshness of the Slate context layer — trust badges in the file tree, roll-up in the status bar.",
-  "version": "0.2.0",
+  "description": "Freshness of the Slate context layer \u2014 trust badges in the file tree, roll-up in the status bar.",
+  "version": "0.3.0",
   "publisher": "slate-context",
   "license": "Apache-2.0",
   "repository": {
@@ -12,8 +12,12 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other"],
-  "activationEvents": ["onStartupFinished"],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./extension.js",
   "contributes": {
     "commands": [
@@ -28,6 +32,10 @@
       {
         "command": "slate.showStatus",
         "title": "Slate: Show Context Status"
+      },
+      {
+        "command": "slate.agentAccess",
+        "title": "Slate: Agent Access (wire into AI agent / toggle read-full)"
       }
     ],
     "configuration": {

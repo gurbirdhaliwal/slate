@@ -25,6 +25,11 @@ trust them only as far as their freshness status allows.
 
 ## Trust protocol
 
+- If the `slate` MCP server is available, prefer its tools: `slate_read`
+  (session start), `slate_status` / `slate_diff` (mid-task), and — when
+  write access is granted — `slate_sync`, `slate_update_focus`,
+  `slate_append_decision` (session end). The CLI commands below are the
+  fallback.
 - Run `slate status` first. `fresh` docs are safe to rely on.
 - `stale` means watched code changed since the doc was synced — verify
   against the code before acting, or run `slate sync`.

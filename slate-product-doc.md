@@ -362,7 +362,27 @@ slate hook install|uninstall  pre-push gate running `status --ci` (pre-PUSH, not
 # Phase 3
 slate fleet [PATH...] [--ci]  freshness roll-up across repos (a path is a repo,
                             or a parent scanned one level deep)
+
+# Agent integration (2026-07-16)
+slate mcp [--access read|full]  run the MCP server (stdio JSON-RPC) so coding
+                            agents call slate themselves; --access overrides
+                            the repo mode for one session
+slate agent enable CLIENT [--full]  register the MCP server with claude
+                            (.mcp.json), cursor (.cursor/mcp.json), or all;
+                            --full also raises the access ceiling
+slate agent access [read|full]  get/set the agent access ceiling
+                            (.slate/agent-access — committable team policy)
+slate agent status [--json] wiring + access mode
 ```
+
+**MCP tools** (same shapes as the `--json` CLI output; no trust math in the server):
+read access exposes `slate_read` (ordered docs + trust labels + scores + contents),
+`slate_status`, `slate_verify`, `slate_diff`. Full access adds `slate_sync`,
+`slate_mark`, `slate_update_focus` (rewrites read-next's Current focus/Landmines),
+`slate_append_decision`. **Two consent layers, Claude Code-style:** the client
+prompts per tool call (until always-allowed); Slate's access mode is the hard
+ceiling underneath — in read mode the mutating tools are not even listed, and a
+toggle takes effect mid-session without restarting the server.
 
 **Exit codes:** `0` ok · `1` freshness problems found (`status --ci`) · `2` usage/environment error (not a git repo, unknown doc, no layer).
 
@@ -370,10 +390,12 @@ slate fleet [PATH...] [--ci]  freshness roll-up across repos (a path is a repo,
 
 ### The AI Session Protocol (what AGENTS.md instructs)
 
-1. Run `slate status`; read docs in the printed order, weighting trust by status
-2. `stale` → verify claims against code before acting (or run `slate sync`)
+1. Session start: call `slate_read` (MCP) — or run `slate status` and read in the printed order — weighting trust by status
+2. `stale` → verify claims against code before acting (or sync)
 3. `needs-verification` → treat the doc as a rumor
-4. After the task: update `read-next.md`, append to `decisions.md` if a real call was made, run `slate sync`, commit context changes with the code
+4. After the task: `slate_update_focus`, `slate_append_decision` if a real call was made, then `slate_sync` — or the CLI equivalents — and commit context changes with the code
+
+With the MCP server wired (`slate agent enable`), the agent performs this whole loop itself; the human only answers the editor's permission prompts (or grants full access once).
 
 ---
 
@@ -429,6 +451,7 @@ slate fleet [PATH...] [--ci]  freshness roll-up across repos (a path is a repo,
 - [x] GitHub PR bot: reusable composite action at the repo root (`uses: gurbirdhaliwal/slate@v0.2.0`) — posts an idempotent PR comment (statuses, scores, changed paths, broken claims), optional fail-on-stale; dogfooded in this repo's CI
 - [x] Editor integration: VS Code extension (`integrations/vscode/`, plain JS, no build step) — file-tree trust badges, status-bar roll-up, one-click sync. *(Marketplace publishing optional; installs from a local VSIX today.)*
 - [x] Multi-repo roll-up: `slate fleet [PATH...] [--json] [--ci]`
+- [x] Agent integration (added 2026-07-16): MCP server (`slate mcp`, stdlib stdio JSON-RPC) + `slate agent enable/access/status` + VS Code access toggle — the agent runs the whole read→verify→sync loop itself under a read-default capability ceiling
 
 ### Phase 4 — Control plane for teams (first revenue)
 
@@ -614,8 +637,26 @@ Trade-off: Repos with unusual shapes can't restructure the layer (they can still
            add arbitrary human content within each doc).
 Revisit trigger: Repeated field evidence that a seventh doc (e.g. API surface,
            data model) is being crammed into Notes sections across many repos.
+
+Date: 2026-07-16
+Decision: Agent integration via an MCP stdio server with a two-layer consent
+          model — the client owns per-call permission prompts (Claude Code
+          pattern); Slate owns a read-default capability ceiling in
+          .slate/agent-access that gates which tools even exist.
+Rationale: Users shouldn't ferry CLI output into the chat by hand. MCP is the
+          convention every major coding agent already speaks, and stdio JSON-RPC
+          is implementable in ~100 lines of stdlib (keeps the zero-dependency
+          rule). Reimplementing permission UX inside Slate would fight the
+          editor; but relying on editor prompts alone makes one careless
+          "always allow" irreversible — the server-side ceiling caps the blast
+          radius, is diff-reviewable, and can be committed as team policy.
+Trade-off: Two config surfaces (editor allowlists + .slate/agent-access) to
+          explain. Write tools re-read the ceiling per call so toggles apply
+          mid-session, costing one file read per call (negligible).
+Revisit trigger: MCP spec churn breaking stdio framing, or field evidence that
+          read-default friction stops users from ever granting full access.
 ```
 
 ---
 
-*Last updated: 2026-07-15 — (1) repositioned from hosted step-level agent debugger to repo-local context control plane: CLI + Markdown context layer + git-anchored freshness engine + deterministic verification score; entire hosted stack removed (see §14 pivot entries). (2) Phases 2 and 3 built: `slate diff`, pre-push hook + pre-commit-framework support, watch inference, opt-in LLM prose, PyPI release automation, GitHub PR bot action, VS Code extension, `slate fleet` (see §9, §11, and the 2026-07-15 build entries in §14). Update this document when architectural decisions change, new competitive intelligence arrives, or phase scope is adjusted.*
+*Last updated: 2026-07-16 — added agent integration (MCP server, access ceiling, editor toggle); previously 2026-07-15 — (1) repositioned from hosted step-level agent debugger to repo-local context control plane: CLI + Markdown context layer + git-anchored freshness engine + deterministic verification score; entire hosted stack removed (see §14 pivot entries). (2) Phases 2 and 3 built: `slate diff`, pre-push hook + pre-commit-framework support, watch inference, opt-in LLM prose, PyPI release automation, GitHub PR bot action, VS Code extension, `slate fleet` (see §9, §11, and the 2026-07-15 build entries in §14). Update this document when architectural decisions change, new competitive intelligence arrives, or phase scope is adjusted.*

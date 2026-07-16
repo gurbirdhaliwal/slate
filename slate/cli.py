@@ -2,6 +2,7 @@
 
 Commands (product doc §9):
 
+    slate help      show help for slate or a specific command
     slate init      scan the repo and generate the context layer
     slate status    freshness of every context doc (--ci exits 1 on problems)
     slate sync      regenerate auto-blocks, re-anchor freshness to HEAD
@@ -63,25 +64,47 @@ def main(argv: list[str] | None = None) -> int:
     return args.func(root, args)
 
 
+_WORKFLOW_EPILOG = """\
+typical workflow:
+  slate init                 generate the context layer, then commit it
+  ...code changes land...
+  slate status               which context docs are now suspect?
+  slate diff                 what changed vs. what each doc claims
+  slate sync                 regenerate + re-anchor; commit with the code
+  slate read                 the ordered first-read path for an AI session
+
+wire into your coding agent:
+  slate agent enable claude  register the MCP server (.mcp.json)
+  slate agent access full    optional: let the agent maintain the layer
+
+`slate help <command>` shows full options for any command."""
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="slate",
         description="Context control plane for AI-assisted repos.",
+        epilog=_WORKFLOW_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"slate {__version__}")
     parser.add_argument("-C", "--repo", default=".", help="repo root (default: cwd)")
     sub = parser.add_subparsers(dest="command")
 
-    p = sub.add_parser("init", help="scan the repo and generate the context layer")
+    p = sub.add_parser("help", help="show help for slate or a specific command", description="show help for slate or a specific command")
+    p.add_argument("topic", nargs="?", help="command name, e.g. `slate help sync`")
+    p.set_defaults(func=cmd_help, needs_repo=False)
+
+    p = sub.add_parser("init", help="scan the repo and generate the context layer", description="scan the repo and generate the context layer")
     p.add_argument("--force", action="store_true", help="overwrite existing context docs")
     p.set_defaults(func=cmd_init)
 
-    p = sub.add_parser("status", help="freshness of every context doc")
+    p = sub.add_parser("status", help="freshness of every context doc", description="freshness of every context doc")
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.add_argument("--ci", action="store_true", help="exit 1 if any doc is not fresh")
     p.set_defaults(func=cmd_status)
 
-    p = sub.add_parser("sync", help="regenerate auto-blocks and re-anchor to HEAD")
+    p = sub.add_parser("sync", help="regenerate auto-blocks and re-anchor to HEAD", description="regenerate auto-blocks and re-anchor to HEAD")
     p.add_argument("docs", nargs="*", help="doc names (default: all generated docs)")
     p.add_argument(
         "--prose", action="store_true",
@@ -90,53 +113,53 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(func=cmd_sync)
 
-    p = sub.add_parser("mark", help="attest a doc is accurate at HEAD (human-owned docs)")
+    p = sub.add_parser("mark", help="attest a doc is accurate at HEAD (human-owned docs)", description="attest a doc is accurate at HEAD (human-owned docs)")
     p.add_argument("docs", nargs="+", help="doc names, e.g. read-next decisions")
     p.set_defaults(func=cmd_mark)
 
-    p = sub.add_parser("verify", help="verification score (0.00-1.00) per doc")
+    p = sub.add_parser("verify", help="verification score (0.00-1.00) per doc", description="verification score (0.00-1.00) per doc")
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.set_defaults(func=cmd_verify)
 
-    p = sub.add_parser("read", help="print the first-read path for an AI session")
+    p = sub.add_parser("read", help="print the first-read path for an AI session", description="print the first-read path for an AI session")
     p.add_argument("--paths", action="store_true", help="print file paths only")
     p.set_defaults(func=cmd_read)
 
-    p = sub.add_parser("diff", help="what changed vs. what each doc claims (+ sync preview)")
+    p = sub.add_parser("diff", help="what changed vs. what each doc claims (+ sync preview)", description="what changed vs. what each doc claims (+ sync preview)")
     p.add_argument("docs", nargs="*", help="doc names (default: every doc that isn't fresh)")
     p.set_defaults(func=cmd_diff)
 
-    p = sub.add_parser("watches", help="show watch globs and propose additions")
+    p = sub.add_parser("watches", help="show watch globs and propose additions", description="show watch globs and propose additions")
     p.add_argument("docs", nargs="*", help="doc names (default: all)")
     p.add_argument("--apply", action="store_true", help="write proposed watches into the docs")
     p.set_defaults(func=cmd_watches)
 
-    p = sub.add_parser("hook", help="manage the pre-push freshness gate")
+    p = sub.add_parser("hook", help="manage the pre-push freshness gate", description="manage the pre-push freshness gate")
     p.add_argument("action", choices=["install", "uninstall"])
     p.add_argument("--force", action="store_true", help="overwrite a non-slate pre-push hook")
     p.set_defaults(func=cmd_hook)
 
-    p = sub.add_parser("mcp", help="run the MCP server (stdio) so coding agents can call slate")
+    p = sub.add_parser("mcp", help="run the MCP server (stdio) so coding agents can call slate", description="run the MCP server (stdio) so coding agents can call slate")
     p.add_argument(
         "--access", choices=["read", "full"], default=None,
         help="override the repo's agent access mode for this session",
     )
     p.set_defaults(func=cmd_mcp)
 
-    p = sub.add_parser("agent", help="wire slate into coding agents (MCP) and manage access")
+    p = sub.add_parser("agent", help="wire slate into coding agents (MCP) and manage access", description="wire slate into coding agents (MCP) and manage access")
     agent_sub = p.add_subparsers(dest="agent_command", required=True)
-    q = agent_sub.add_parser("enable", help="register the slate MCP server with a client")
+    q = agent_sub.add_parser("enable", help="register the slate MCP server with a client", description="register the slate MCP server with a client")
     q.add_argument("client", choices=[*sorted(CLIENTS), "all"], help="which editor/agent to wire up")
     q.add_argument("--full", action="store_true", help="also grant full (write) access")
     q.set_defaults(func=cmd_agent_enable)
-    q = agent_sub.add_parser("access", help="get or set the agent access ceiling")
+    q = agent_sub.add_parser("access", help="get or set the agent access ceiling", description="get or set the agent access ceiling")
     q.add_argument("mode", nargs="?", choices=["read", "full"], help="omit to show current mode")
     q.set_defaults(func=cmd_agent_access)
-    q = agent_sub.add_parser("status", help="show wiring + access mode")
+    q = agent_sub.add_parser("status", help="show wiring + access mode", description="show wiring + access mode")
     q.add_argument("--json", action="store_true", help="machine-readable output")
     q.set_defaults(func=cmd_agent_status)
 
-    p = sub.add_parser("fleet", help="freshness roll-up across multiple repos")
+    p = sub.add_parser("fleet", help="freshness roll-up across multiple repos", description="freshness roll-up across multiple repos")
     p.add_argument(
         "paths", nargs="*",
         help="repo paths, or parent dirs to scan one level deep (default: cwd's children)",
@@ -144,6 +167,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.add_argument("--ci", action="store_true", help="exit 1 if any repo has problems")
     p.set_defaults(func=cmd_fleet, needs_repo=False)
+
+    parser.slate_subcommands = sub.choices  # used by cmd_help
     return parser
 
 
@@ -381,6 +406,20 @@ def cmd_hook(root: Path, args: argparse.Namespace) -> int:
     except hooks.HookError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    return 0
+
+
+def cmd_help(_root: Path | None, args: argparse.Namespace) -> int:
+    parser = _build_parser()
+    if not args.topic:
+        parser.print_help()
+        return 0
+    subcommand = parser.slate_subcommands.get(args.topic)
+    if subcommand is None:
+        known = ", ".join(sorted(parser.slate_subcommands))
+        print(f"error: unknown command '{args.topic}' (known: {known})", file=sys.stderr)
+        return 2
+    subcommand.print_help()
     return 0
 
 

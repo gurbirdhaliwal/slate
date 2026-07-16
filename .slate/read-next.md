@@ -1,8 +1,8 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: 5aac6d5
-slate_synced_at: 2026-07-16T01:35:13+00:00
+slate_synced_commit: 79372da
+slate_synced_at: 2026-07-16T01:35:57+00:00
 slate_watches:
 ---
 
@@ -13,17 +13,14 @@ when the focus changes; run `slate mark read-next` after.
 
 ## Current focus
 
-Phases 2 and 3 are implemented in the working tree (branch
-`pivot-context-control-plane`, PR #1) and **not yet committed**: `slate
-diff`, `slate watches`, `slate hook` (pre-push), `slate sync --prose`,
-`slate fleet`, the PR-bot composite action (`action.yml`), the VS Code
-extension (`integrations/vscode/`), release automation, and
-pre-commit-framework support. After committing: `slate sync`, then
-`slate mark read-next decisions`, then commit the doc updates.
+Phases 1–3 are implemented, committed, and synced on branch
+`pivot-context-control-plane` (PR #1 against main). Nothing is in flight;
+next code work is Phase 4 (team dashboard, merge policies, hosted bot —
+product doc §11).
 
 Remaining one-time owner tasks (not code): create the `slate-context`
-project + trusted publisher on pypi.org, then tag `v0.2.0`; optionally
-publish the VS Code extension to the marketplace.
+project + trusted publisher on pypi.org, then tag `v0.2.0` after PR #1
+merges; optionally publish the VS Code extension to the marketplace.
 
 ## Landmines
 

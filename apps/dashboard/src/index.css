@@ -1,8 +1,0 @@
-@import "tailwindcss";
-
-/* shadcn/ui components are copied into src/components/ui as needed
-   (npx shadcn@latest add <component>) and style themselves off these tokens. */
-:root {
-  --background: 0 0% 100%;
-  --foreground: 240 10% 3.9%;
-}

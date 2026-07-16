@@ -12,6 +12,8 @@ Commands (product doc §9):
     slate diff      what changed vs. what each doc claims; preview of sync
     slate watches   show watch globs and propose additions (--apply writes them)
     slate hook      install/uninstall the pre-push freshness gate
+    slate mcp       run the MCP server so coding agents can call slate directly
+    slate agent     wire slate into agents (enable) + access ceiling (access/status)
     slate fleet     freshness roll-up across multiple repos
 
 Exit codes: 0 ok · 1 freshness problems found (status --ci, fleet --ci) ·
@@ -28,6 +30,7 @@ from pathlib import Path
 
 from . import (
     __version__,
+    agentcfg,
     context,
     diffs,
     freshness,
@@ -38,6 +41,7 @@ from . import (
     scanner,
     verify,
 )
+from .agentcfg import CLIENTS
 from .context import DOC_SPECS, FRESH, NEEDS_VERIFICATION, STALE
 
 STATUS_ICONS = {FRESH: "●", STALE: "○", NEEDS_VERIFICATION: "◐"}
@@ -111,6 +115,26 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("action", choices=["install", "uninstall"])
     p.add_argument("--force", action="store_true", help="overwrite a non-slate pre-push hook")
     p.set_defaults(func=cmd_hook)
+
+    p = sub.add_parser("mcp", help="run the MCP server (stdio) so coding agents can call slate")
+    p.add_argument(
+        "--access", choices=["read", "full"], default=None,
+        help="override the repo's agent access mode for this session",
+    )
+    p.set_defaults(func=cmd_mcp)
+
+    p = sub.add_parser("agent", help="wire slate into coding agents (MCP) and manage access")
+    agent_sub = p.add_subparsers(dest="agent_command", required=True)
+    q = agent_sub.add_parser("enable", help="register the slate MCP server with a client")
+    q.add_argument("client", choices=[*sorted(CLIENTS), "all"], help="which editor/agent to wire up")
+    q.add_argument("--full", action="store_true", help="also grant full (write) access")
+    q.set_defaults(func=cmd_agent_enable)
+    q = agent_sub.add_parser("access", help="get or set the agent access ceiling")
+    q.add_argument("mode", nargs="?", choices=["read", "full"], help="omit to show current mode")
+    q.set_defaults(func=cmd_agent_access)
+    q = agent_sub.add_parser("status", help="show wiring + access mode")
+    q.add_argument("--json", action="store_true", help="machine-readable output")
+    q.set_defaults(func=cmd_agent_status)
 
     p = sub.add_parser("fleet", help="freshness roll-up across multiple repos")
     p.add_argument(
@@ -357,6 +381,63 @@ def cmd_hook(root: Path, args: argparse.Namespace) -> int:
     except hooks.HookError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    return 0
+
+
+def cmd_mcp(root: Path, args: argparse.Namespace) -> int:
+    from . import mcp  # imported here so plain CLI use never pays for it
+    return mcp.serve(root, access=args.access)
+
+
+def cmd_agent_enable(root: Path, args: argparse.Namespace) -> int:
+    clients = sorted(CLIENTS) if args.client == "all" else [args.client]
+    for client in clients:
+        try:
+            rel = agentcfg.enable_client(root, client)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"registered slate MCP server for {client}: wrote {rel}")
+    if args.full:
+        agentcfg.set_access(root, agentcfg.FULL)
+    mode = agentcfg.get_access(root)
+    print(f"\nagent access: {mode}")
+    if mode == agentcfg.READ:
+        print("  read-only — the agent can read context and freshness, not change it.")
+        print("  Grant write access (sync/mark/focus/decisions): slate agent access full")
+    else:
+        print("  full — the agent may sync, mark, and update read-next/decisions.")
+    print(
+        "\nYour editor still asks permission per tool call (Claude Code-style)\n"
+        "unless you always-allow a tool there. Slate's access mode is the hard\n"
+        "ceiling underneath; commit .slate/agent-access to make it team policy.\n"
+        "Restart the editor session so it picks up the new MCP server."
+    )
+    return 0
+
+
+def cmd_agent_access(root: Path, args: argparse.Namespace) -> int:
+    if args.mode:
+        agentcfg.set_access(root, args.mode)
+        print(f"agent access set to {args.mode} ({agentcfg.access_path(root).relative_to(root)})")
+        return 0
+    print(agentcfg.get_access(root))
+    return 0
+
+
+def cmd_agent_status(root: Path, args: argparse.Namespace) -> int:
+    info = {
+        "access": agentcfg.get_access(root),
+        "clients": agentcfg.enabled_clients(root),
+    }
+    if args.json:
+        print(json.dumps(info, indent=2))
+        return 0
+    print(f"access: {info['access']}")
+    if info["clients"]:
+        print(f"wired clients: {', '.join(info['clients'])}")
+    else:
+        print("wired clients: none — run `slate agent enable claude` (or cursor/all)")
     return 0
 
 

@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "slate": {
+      "command": "slate",
+      "args": [
+        "mcp"
+      ]
+    }
+  }
+}

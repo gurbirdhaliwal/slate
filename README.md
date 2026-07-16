@@ -74,6 +74,34 @@ slate --version
 
 Requires a git repository — Slate anchors freshness to git history.
 
+## Wire it into your coding agent (MCP)
+
+Slate ships an MCP server so your AI agent runs Slate itself — no more
+manually running commands and pasting output into the chat:
+
+```bash
+slate agent enable claude     # Claude Code (.mcp.json) — or: cursor, all
+slate agent access full       # optional: let the agent maintain the layer too
+```
+
+Restart the agent session; it now has these tools:
+
+| Tool | Access | What the agent does with it |
+|------|--------|------------------------------|
+| `slate_read` | read | session start: the ordered context set with trust labels + scores |
+| `slate_status` / `slate_verify` / `slate_diff` | read | mid-task: is this doc still safe? what exactly broke? |
+| `slate_sync` | full | session end: regenerate auto-blocks, re-anchor freshness |
+| `slate_update_focus` | full | session end: rewrite read-next's "Current focus" for the next session |
+| `slate_mark` / `slate_append_decision` | full | attest human docs / record decisions worth keeping |
+
+**Consent works in two layers, Claude Code-style.** Your editor prompts per
+tool call (until you always-allow a tool there). Underneath, Slate's own
+access mode is the hard ceiling: it defaults to **read-only** — the mutating
+tools aren't even exposed — and `slate agent access full` (or the
+"Slate: Agent Access" command in VS Code) unlocks them. The mode lives in
+`.slate/agent-access`, so committing it makes it team policy, and toggling
+it takes effect without restarting the agent.
+
 ## Integrations
 
 - **GitHub PR bot** — [action.yml](action.yml) is a reusable composite action:

@@ -74,6 +74,23 @@ slate --version
 
 Requires a git repository — Slate anchors freshness to git history.
 
+## Does it actually beat "just ask the AI to write .md files"?
+
+Measured on this repo itself ([benchmarks/RESULTS.md](benchmarks/RESULTS.md),
+reproduce with `python benchmarks/benchmark.py`):
+
+- **Session start:** an agent ingests **2,066 tokens** via `slate_read` vs
+  ~20,600 rediscovering the repo by hand (**10×**) or ~54,700 for a full
+  repo dump (**26.5×**) — with trust labels attached, which the baselines
+  can't provide at any price.
+- **Staying true:** replaying this repo's real history, **50% of commits
+  invalidated at least one context doc**. Manually maintained .md files rot
+  silently on every one of those; Slate flagged each and healed it with a
+  **~45 ms, 0-token** deterministic sync (vs an estimated ~111K tokens of
+  model traffic to do the same maintenance by prompting).
+- **Every Slate operation is sub-second, local, and free** — status, scores,
+  scan, sync, and the full MCP round-trip.
+
 ## Wire it into your coding agent (MCP)
 
 Slate ships an MCP server so your AI agent runs Slate itself — no more

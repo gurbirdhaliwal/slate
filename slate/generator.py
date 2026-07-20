@@ -29,8 +29,9 @@ def generate_all(scan: RepoScan, *, force: bool = False) -> list[str]:
         doc = ContextDoc(spec, {}, _initial_body(spec, scan))
         if spec.generated:
             doc.body = context.replace_auto_block(doc.body, auto_content(spec, scan))
-        context.stamp(doc, commit)
+        # Watches must exist before stamping — the stamp digests the watched files.
         doc.meta["slate_watches"] = context.default_watches(spec, scan)
+        context.stamp(root, doc, commit)
         context.save(root, doc)
         written.append(spec.rel_path)
     return written
@@ -49,7 +50,7 @@ def sync_doc(doc: ContextDoc, scan: RepoScan, prose=None) -> None:
         if prose is not None:
             block = prose(doc.spec, block).strip() + "\n\n" + block
         doc.body = context.replace_auto_block(doc.body, block)
-    context.stamp(doc, gitutil.head_commit(scan.root))
+    context.stamp(scan.root, doc, gitutil.head_commit(scan.root))
     context.save(scan.root, doc)
 
 
@@ -110,8 +111,9 @@ def _agents_shell(project: str) -> str:
         "- Run `slate status` first. `fresh` docs are safe to rely on.\n"
         "- `stale` means watched code changed since the doc was synced — verify\n"
         "  against the code before acting, or run `slate sync`.\n"
-        "- `needs-verification` means the freshness anchor is gone (rebase,\n"
-        "  squash, missing metadata) — treat the doc as a rumor.\n"
+        "- `needs-verification` means the freshness anchor is gone and the\n"
+        "  content could not be verified against the last sync — treat the doc\n"
+        "  as a rumor.\n"
         "- After completing a task: update `.slate/read-next.md`, append to\n"
         "  `.slate/decisions.md` if you made a call worth recording, then run\n"
         "  `slate sync`.\n\n"

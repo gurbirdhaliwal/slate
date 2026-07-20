@@ -13,6 +13,7 @@ Example:
     slate_generated: true
     slate_synced_commit: 3f2c91a
     slate_synced_at: 2026-07-15T10:00:00+00:00
+    slate_synced_digest: 9f2ab6c1d4e0837a
     slate_watches:
       - slate/**
       - tests/**

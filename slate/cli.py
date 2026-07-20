@@ -210,6 +210,7 @@ def cmd_status(root: Path, args: argparse.Namespace) -> int:
                 "status": r.status,
                 "reason": r.reason,
                 "changed_watched": r.changed_watched,
+                "content_verified": r.content_verified,
             }
             for r in reports
         ], indent=2))
@@ -274,7 +275,7 @@ def cmd_mark(root: Path, args: argparse.Namespace) -> int:
         return 2
     commit = gitutil.head_commit(root)
     for doc in selected:
-        context.stamp(doc, commit)
+        context.stamp(root, doc, commit)
         context.save(root, doc)
         print(f"marked {doc.spec.rel_path} verified at {commit or '(no commits yet)'}")
     return 0

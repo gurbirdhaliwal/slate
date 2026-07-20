@@ -1,8 +1,9 @@
 ---
 slate_doc: decisions
 slate_generated: false
-slate_synced_commit: b6e3bf1
-slate_synced_at: 2026-07-16T17:05:17+00:00
+slate_synced_commit: 21e62de
+slate_synced_at: 2026-07-20T11:45:06+00:00
+slate_synced_digest: e3b0c44298fc1c14
 slate_watches:
 ---
 
@@ -61,4 +62,23 @@ Decision: Agent integration = MCP stdio server + two-layer consent: editor promp
 Rationale: MCP is what coding agents already speak; a server-side ceiling caps the blast radius of an over-eager always-allow and is committable team policy
 Trade-off: Two config surfaces to explain (editor allowlist + access file)
 Revisit trigger: MCP framing churn, or read-default friction blocking adoption
+```
+
+```
+Date: 2026-07-20
+Decision: Freshness hardened against the two premortem failure modes: (1) stale
+          requires proof of impact — if a fresh scan regenerates the identical
+          auto-block and no human section references a changed path, the doc is
+          fresh (content-verified), changed paths kept as evidence; (2) every
+          stamp records slate_synced_digest (sha256 of watched files' content),
+          and an orphaned commit anchor falls back to it — match = fresh,
+          mismatch = stale, absent = needs-verification.
+Rationale: (1) Broad watch globs flagged ~half of all commits; an always-yellow
+          signal gets ignored and the sync ritual becomes noise. (2) Squash-merge
+          (the GitHub default) orphaned every anchor, degrading the whole layer
+          to a 0.25-capped rumor in every fresh clone and CI checkout.
+Trade-off: status may run a repo scan when watched paths changed (still
+          sub-second); digest mismatch can't enumerate committed paths.
+Revisit trigger: Any observed false fresh from content verification; digest
+          hashing felt (>1s) on large repos.
 ```

@@ -18,8 +18,8 @@ from pathlib import Path
 from . import context, generator, gitutil
 from .context import ContextDoc
 from .freshness import DocReport, evaluate_doc
+from .refs import extract_path_refs
 from .scanner import RepoScan
-from .verify import extract_path_refs
 
 
 @dataclass
@@ -39,7 +39,7 @@ class DocDiff:
 
 
 def doc_diff(root: Path, doc: ContextDoc, scan: RepoScan) -> DocDiff:
-    report = evaluate_doc(root, doc)
+    report = evaluate_doc(root, doc, scan)
 
     kinds = gitutil.changed_with_status(root, doc.synced_commit)
     changes = {p: kinds.get(p, "M") for p in report.changed_watched}

@@ -276,6 +276,7 @@ slate_doc: modules
 slate_generated: true
 slate_synced_commit: 3f2c91a
 slate_synced_at: 2026-07-15T18:04:00+00:00
+slate_synced_digest: 9f2ab6c1d4e0837a
 slate_watches:
   - slate/**
   - tests/**
@@ -295,24 +296,40 @@ Unknown keys round-trip untouched. The metadata is deliberately human-readable a
 ```
 anchor := doc.slate_synced_commit
 
-if anchor missing or unresolvable (rebase/squash/hand-edit):
-    → needs-verification         # staleness is unknowable — worse than stale
+if anchor missing:
+    → needs-verification         # metadata stripped — staleness unknowable
+
+if anchor unresolvable (rebase/squash-merge):
+    # content-digest fallback: the anchor died, the content didn't
+    if doc.slate_synced_digest matches a fresh digest of the watched files:
+        → fresh (content-verified; `slate sync` re-anchors)
+    elif digest recorded but mismatched:
+        → stale (watched content changed; working-tree paths as evidence)
+    else:
+        → needs-verification     # pre-digest layer — truly unknowable
 
 changed := git diff --name-only anchor..HEAD
          ∪ working-tree changes (git status --porcelain, incl. untracked + renames)
          − all context-doc paths  # docs never invalidate docs; only code counts
 
-if any(changed path matches doc.slate_watches):
-    → stale (with the offending paths as evidence)
-else:
+hits := changed paths matching doc.slate_watches
+if no hits:
     → fresh
+elif doc is generated
+     and regenerating the auto-block from a fresh scan reproduces what's on disk
+     and no human-written section references a hit:
+    → fresh (content-verified — the change provably didn't invalidate the doc)
+else:
+    → stale (with the offending paths as evidence)
 ```
 
 Design rules baked into the engine:
 
 - **Uncommitted changes count.** The AI acts on the working tree, not on HEAD — staleness must too.
 - **Editing a context doc never stales the layer.** Humans improving docs (and Slate syncing them) is desired behavior; only *code* changes invalidate.
-- **Unknowable ≠ fresh.** A lost anchor degrades to `needs-verification`, never silently to `fresh`.
+- **Unknowable ≠ fresh.** A lost anchor degrades to `needs-verification`, never silently to `fresh` — but *provable* beats unknowable: the content digest (`slate_synced_digest`, recorded at every sync/mark) lets a squash-merge or rebase recover to `fresh` when the watched content demonstrably matches the last sync. Squash-merge is the dominant team workflow; it must not degrade the whole layer to a rumor.
+- **`stale` means "the doc's claims are actually in question."** Watch globs are deliberately broad, so most edits inside a watched tree don't change what a doc claims (editing a function body never moves a module). When the regenerated auto-block is byte-identical to what's on disk and no hand-written claim references a changed path, the doc is `fresh (content-verified)` — with the changed paths still attached as evidence. A signal that fires on half of all commits is a signal people learn to ignore; content verification keeps `stale` meaning "sync would change something."
+- **Verification is conservative by construction.** Anything unprovable — missing auto-block markers, a human section referencing a changed path, a digest mismatch — stays `stale`. A false `fresh` remains the catastrophic bug.
 - **Watch globs use `**` semantics** compiled to regex by hand (fnmatch has no `**`) — `slate/**`, `**/conftest.py`, `docker-compose*` all mean what a gitignore-literate developer expects.
 
 ### Verification Score (0.00–1.00 per doc)
@@ -325,7 +342,7 @@ Three weighted, fully deterministic components:
 | Watch quiet | 0.35 | 1.0 with no watched changes since the anchor, −0.1 per changed path |
 | Anchor drift | 0.15 | Decays 0.02 per commit landed since the anchor — old attestations are weaker, even when no watched path changed |
 
-A doc with no resolvable anchor is **capped at 0.25**: unverifiable is never trustworthy. Thresholds are advisory in the MVP (the human/AI reads the score); Phase 4 makes "min score to merge" a team policy.
+Content verification feeds the score the same way it feeds the status: a content-verified doc takes no watch-quiet penalty (the changes provably didn't touch its claims). A doc with an orphaned anchor is scored by what the digest can prove — digest match: full scoring; digest mismatch: known-stale, only references count (`0.5 × reference validity`); no digest recorded: **capped at 0.25**, because unverifiable is never trustworthy. Thresholds are advisory in the MVP (the human/AI reads the score); Phase 4 makes "min score to merge" a team policy.
 
 ### Why No LLM in the Core
 
@@ -655,8 +672,51 @@ Trade-off: Two config surfaces (editor allowlists + .slate/agent-access) to
           mid-session, costing one file read per call (negligible).
 Revisit trigger: MCP spec churn breaking stdio framing, or field evidence that
           read-default friction stops users from ever granting full access.
+
+Date: 2026-07-20
+Decision: `stale` requires that the change actually put the doc's claims in
+          question — when regenerating the auto-block reproduces what's on disk
+          and no human-written section references a changed path, the doc stays
+          `fresh (content-verified)`, with the changed paths kept as evidence.
+Rationale: Premortem finding #1 (alarm fatigue): watch globs are deliberately
+          broad, so ~half of all commits flagged some doc even when nothing the
+          doc claims had changed. A signal that is always yellow carries no
+          information, and the sync ritual it demands becomes noise people
+          disable. Content verification is deterministic (same scan, same
+          bytes), so it costs no trust: `stale` now means "sync would change
+          something, or a hand-written claim may be affected."
+Trade-off: `slate status` may now run a repo scan (only when watched paths
+          changed); still sub-second and local. Prose-synced docs verify on
+          the facts below the prose paragraph only.
+Revisit trigger: Any observed false `fresh` — a content-verified doc whose
+          human prose was in fact invalidated by a change the reference check
+          didn't catch. That would force tightening (e.g. staling on any
+          human-section reference into a changed *directory*).
+
+Date: 2026-07-20
+Decision: Every sync/mark records `slate_synced_digest` — a sha256 fingerprint
+          of the watched files' content — and an unresolvable commit anchor
+          falls back to it: digest match → fresh (re-anchor via sync), mismatch
+          → stale, no digest → needs-verification as before.
+Rationale: Premortem finding #2: anchors are commit SHAs, and squash-merge —
+          the default merge mode on GitHub — orphans them. Without the fallback,
+          every squash-merged PR degraded the entire layer to needs-verification
+          (score capped at 0.25) in every fresh clone and CI checkout: the
+          product's steady state in a normal team workflow was its own worst
+          case. The digest survives any history rewrite because it anchors to
+          content, not to the commit graph. This is the "content hashes"
+          revisit trigger from the 2026-07-15 pre-push hook decision, half
+          taken: commits remain the primary anchor (cheap range diffs, path
+          evidence), content is the recovery path.
+Trade-off: One extra frontmatter key; stamping hashes the watched files
+          (~milliseconds). A digest mismatch can't enumerate committed changed
+          paths (no anchor to diff against) — evidence degrades to working-tree
+          changes plus `slate diff`'s sync preview.
+Revisit trigger: Repos big enough that hashing watched files on sync is felt
+          (>1s), or field demand for same-commit sync — the digest makes a
+          content-primary anchor possible if commits keep proving too fragile.
 ```
 
 ---
 
-*Last updated: 2026-07-16 — added agent integration (MCP server, access ceiling, editor toggle); previously 2026-07-15 — (1) repositioned from hosted step-level agent debugger to repo-local context control plane: CLI + Markdown context layer + git-anchored freshness engine + deterministic verification score; entire hosted stack removed (see §14 pivot entries). (2) Phases 2 and 3 built: `slate diff`, pre-push hook + pre-commit-framework support, watch inference, opt-in LLM prose, PyPI release automation, GitHub PR bot action, VS Code extension, `slate fleet` (see §9, §11, and the 2026-07-15 build entries in §14). Update this document when architectural decisions change, new competitive intelligence arrives, or phase scope is adjusted.*
+*Last updated: 2026-07-20 — freshness engine hardened against its two premortem failure modes: (1) content verification — `stale` now requires that a change actually alters the doc's claims (regenerated auto-block differs, or a human section references a changed path), killing the alarm-fatigue noise of broad watch globs; (2) `slate_synced_digest` content fallback — squash-merge/rebase no longer degrades the layer to `needs-verification` when the watched content provably matches the last sync (see §8 and the 2026-07-20 decisions in §14). Previously 2026-07-16 — added agent integration (MCP server, access ceiling, editor toggle); previously 2026-07-15 — (1) repositioned from hosted step-level agent debugger to repo-local context control plane: CLI + Markdown context layer + git-anchored freshness engine + deterministic verification score; entire hosted stack removed (see §14 pivot entries). (2) Phases 2 and 3 built: `slate diff`, pre-push hook + pre-commit-framework support, watch inference, opt-in LLM prose, PyPI release automation, GitHub PR bot action, VS Code extension, `slate fleet` (see §9, §11, and the 2026-07-15 build entries in §14). Update this document when architectural decisions change, new competitive intelligence arrives, or phase scope is adjusted.*

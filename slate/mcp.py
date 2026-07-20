@@ -241,7 +241,8 @@ class SlateMCPServer:
             "trust_protocol": (
                 "fresh: safe to rely on. stale: watched code changed since the doc "
                 "was synced — verify against the code before acting. "
-                "needs-verification: freshness anchor lost — treat as a rumor."
+                "needs-verification: freshness anchor lost and content unverifiable "
+                "— treat as a rumor."
             ),
         }
         return json.dumps(payload, indent=2), False
@@ -257,6 +258,7 @@ class SlateMCPServer:
                 "status": r.status,
                 "reason": r.reason,
                 "changed_watched": r.changed_watched,
+                "content_verified": r.content_verified,
             }
             for r in reports
         ], indent=2), False
@@ -334,7 +336,7 @@ class SlateMCPServer:
         commit = gitutil.head_commit(self.root)
         for name in names:
             doc = by_name[name]
-            context.stamp(doc, commit)
+            context.stamp(self.root, doc, commit)
             context.save(self.root, doc)
         return json.dumps({"marked": names, "verified_at": commit}, indent=2), False
 
@@ -351,7 +353,7 @@ class SlateMCPServer:
         if landmines:
             doc.body = replace_section(doc.body, "## Landmines", landmines)
         commit = gitutil.head_commit(self.root)
-        context.stamp(doc, commit)
+        context.stamp(self.root, doc, commit)
         context.save(self.root, doc)
         return json.dumps({
             "updated": spec.rel_path,
@@ -376,7 +378,7 @@ class SlateMCPServer:
         entry = "\n```\n" + "\n".join(lines) + "\n```\n"
         doc.body = doc.body.rstrip("\n") + "\n" + entry
         commit = gitutil.head_commit(self.root)
-        context.stamp(doc, commit)
+        context.stamp(self.root, doc, commit)
         context.save(self.root, doc)
         return json.dumps({"appended_to": spec.rel_path, "verified_at": commit}, indent=2), False
 

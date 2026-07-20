@@ -54,9 +54,48 @@ def test_watched_changes_drop_score(repo: Path) -> None:
     assert v.score < baseline
 
 
+def orphan_anchor(repo: Path, doc: str, strip_digest: bool = False) -> None:
+    path = repo / ".slate" / f"{doc}.md"
+    text = path.read_text().replace("slate_synced_commit: ", "slate_synced_commit: deadbee")
+    if strip_digest:
+        text = "\n".join(
+            line for line in text.splitlines()
+            if not line.startswith("slate_synced_digest")
+        ) + "\n"
+    path.write_text(text)
+
+
 def test_unverifiable_doc_is_capped(repo: Path) -> None:
     init_layer(repo)
-    path = repo / ".slate" / "modules.md"
-    text = path.read_text().replace("slate_synced_commit: ", "slate_synced_commit: deadbee")
-    path.write_text(text)
+    orphan_anchor(repo, "modules", strip_digest=True)
     assert score_for(repo, "modules").score <= 0.25
+
+
+def test_digest_recovered_doc_is_not_capped(repo: Path) -> None:
+    # Orphaned anchor + matching content digest = provably current, so the
+    # squash-merge workflow must not tank the score.
+    init_layer(repo)
+    orphan_anchor(repo, "modules")
+    v = score_for(repo, "modules")
+    assert v.report.status == "fresh"
+    assert v.score >= 0.9
+
+
+def test_digest_mismatch_scores_as_known_stale(repo: Path) -> None:
+    init_layer(repo)
+    orphan_anchor(repo, "modules")
+    (repo / "demo" / "widget.py").write_text("x = 1\n")
+    v = score_for(repo, "modules")
+    assert v.report.status == "stale"
+    assert v.score <= 0.5
+
+
+def test_content_verified_change_keeps_score_high(repo: Path) -> None:
+    # A watched edit that doesn't change the scanned facts takes no
+    # watch-quiet penalty — "stale noise" must not erode trust either.
+    init_layer(repo)
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    v = score_for(repo, "modules")
+    assert v.report.status == "fresh"
+    assert v.report.content_verified
+    assert v.score >= 0.9

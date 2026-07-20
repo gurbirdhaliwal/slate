@@ -11,34 +11,33 @@ The MVP score is deliberately simple and fully deterministic (product doc
                               still exist; a doc pointing at deleted files
                               is actively misleading
     watch quiet (0.35)        1.0 when no watched path changed since the
-                              sync anchor, decaying 0.1 per changed path
+                              sync anchor — or when the doc is content-
+                              verified despite changes — decaying 0.1 per
+                              unverified changed path
     anchor drift (0.15)       decays with commits landed since the anchor,
                               even when no watched path changed — old
                               attestations are weaker than recent ones
 
-A doc with no sync anchor is capped at 0.25: unverifiable ≠ trustworthy.
+An orphaned anchor is scored by what the content digest can prove: digest
+matches → full scoring (the doc is provably current); digest mismatch →
+known-stale, only references count; no digest → capped at 0.25, because
+unverifiable ≠ trustworthy.
 """
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from . import gitutil
-from .context import ContextDoc, load_all
+from .context import NEEDS_VERIFICATION, STALE, ContextDoc, load_all
 from .freshness import DocReport, evaluate_doc
+from .refs import extract_path_refs  # re-exported for compatibility  # noqa: F401
 
 W_REFERENCES = 0.5
 W_WATCH_QUIET = 0.35
 W_ANCHOR = 0.15
 UNVERIFIABLE_CAP = 0.25
-
-# Path-like tokens: markdown link targets and backticked segments with a "/",
-# or well-known root files. Anchors/URLs are excluded.
-_LINK = re.compile(r"\]\(([^)#\s]+)\)")
-_TICKED = re.compile(r"`([A-Za-z0-9_./-]+)`")
-_ROOT_FILES = {"Makefile", "README.md", "pyproject.toml", "package.json", "pom.xml"}
 
 
 @dataclass
@@ -53,19 +52,6 @@ class Verification:
         return self.report.rel_path
 
 
-def extract_path_refs(body: str) -> list[str]:
-    refs: set[str] = set()
-    for match in _LINK.finditer(body):
-        target = match.group(1)
-        if "://" not in target:
-            refs.add(target.strip("/"))
-    for match in _TICKED.finditer(body):
-        token = match.group(1)
-        if "/" in token.rstrip("/") or token in _ROOT_FILES:
-            refs.add(token.strip("/"))
-    return sorted(r for r in refs if r and not r.startswith("."))
-
-
 def verify_doc(root: Path, doc: ContextDoc) -> Verification:
     report = evaluate_doc(root, doc)
 
@@ -74,12 +60,22 @@ def verify_doc(root: Path, doc: ContextDoc) -> Verification:
     ref_score = 1.0 if not refs else (len(refs) - len(missing)) / len(refs)
 
     anchor = doc.synced_commit
-    if not anchor or not gitutil.commit_exists(root, anchor):
-        score = min(UNVERIFIABLE_CAP, ref_score * UNVERIFIABLE_CAP)
-        return Verification(report, round(score, 2), len(refs), missing)
+    anchored = bool(anchor) and gitutil.commit_exists(root, anchor)
+    if not anchored:
+        if report.status == NEEDS_VERIFICATION:
+            score = min(UNVERIFIABLE_CAP, ref_score * UNVERIFIABLE_CAP)
+            return Verification(report, round(score, 2), len(refs), missing)
+        if report.status == STALE:
+            # Known-stale via the content digest: no quiet or drift credit.
+            return Verification(report, round(W_REFERENCES * ref_score, 2), len(refs), missing)
+        # Digest-recovered fresh: content is proven current, so the anchor's
+        # age proxy is unnecessary — fall through with full quiet and drift.
 
-    quiet = max(0.0, 1.0 - 0.1 * len(report.changed_watched))
-    drift = max(0.0, 1.0 - 0.02 * gitutil.commits_since(root, anchor))
+    if report.content_verified:
+        quiet = 1.0
+    else:
+        quiet = max(0.0, 1.0 - 0.1 * len(report.changed_watched))
+    drift = max(0.0, 1.0 - 0.02 * gitutil.commits_since(root, anchor)) if anchored else 1.0
     score = W_REFERENCES * ref_score + W_WATCH_QUIET * quiet + W_ANCHOR * drift
     return Verification(report, round(score, 2), len(refs), missing)
 

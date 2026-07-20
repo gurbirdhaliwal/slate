@@ -22,12 +22,36 @@ def test_everything_fresh_after_init(repo: Path) -> None:
         assert r.status == FRESH, (r.rel_path, r.reason)
 
 
-def test_uncommitted_watched_change_marks_stale(repo: Path) -> None:
+def test_content_edit_that_keeps_facts_stays_fresh(repo: Path) -> None:
+    # Editing a function body doesn't move a module: the regenerated
+    # auto-block is identical, so the doc provably still checks out.
     init_layer(repo)
     (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
     r = report_for(repo, "modules")
+    assert r.status == FRESH
+    assert r.content_verified
+    assert r.changed_watched == ["demo/engine.py"]  # evidence still reported
+
+
+def test_uncommitted_new_file_marks_stale(repo: Path) -> None:
+    # A new file changes the module map's file counts — genuinely stale.
+    init_layer(repo)
+    (repo / "demo" / "widget.py").write_text("x = 1\n")
+    r = report_for(repo, "modules")
     assert r.status == STALE
-    assert r.changed_watched == ["demo/engine.py"]
+    assert r.changed_watched == ["demo/widget.py"]
+
+
+def test_human_claim_about_changed_path_marks_stale(repo: Path) -> None:
+    # The scan can't vouch for hand-written claims: if a human section
+    # references the changed path, content verification must not apply.
+    init_layer(repo)
+    path = repo / ".slate" / "modules.md"
+    path.write_text(path.read_text() + "\n`demo/engine.py` is the hot path.\n")
+    commit_all(repo, "note the hot path")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    r = report_for(repo, "modules")
+    assert r.status == STALE
 
 
 def test_committed_watched_change_marks_stale(repo: Path) -> None:
@@ -68,14 +92,74 @@ def test_sync_clears_staleness(repo: Path) -> None:
     assert "demo/" in context.spec_by_name("modules").path(repo).read_text()
 
 
-def test_missing_anchor_needs_verification(repo: Path) -> None:
-    init_layer(repo)
-    path = repo / ".slate" / "modules.md"
+def orphan_anchor(repo: Path, doc: str) -> Path:
+    """Point a doc's sync anchor at a commit that doesn't exist (squash/rebase)."""
+    path = repo / ".slate" / f"{doc}.md" if doc != "agents" else repo / "AGENTS.md"
     text = path.read_text().replace("slate_synced_commit: ", "slate_synced_commit: deadbee")
     path.write_text(text)
+    return path
+
+
+def test_orphaned_anchor_recovers_via_digest(repo: Path) -> None:
+    # Squash-merge kills commit anchors; the content digest must prove the
+    # watched files are unchanged so the layer doesn't degrade to a rumor.
+    init_layer(repo)
+    orphan_anchor(repo, "modules")
+    r = report_for(repo, "modules")
+    assert r.status == FRESH
+    assert r.content_verified
+    assert "rewritten" in r.reason
+
+
+def test_orphaned_anchor_with_changed_content_is_stale(repo: Path) -> None:
+    init_layer(repo)
+    orphan_anchor(repo, "modules")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    r = report_for(repo, "modules")
+    assert r.status == STALE
+    assert "demo/engine.py" in r.changed_watched  # working-tree evidence
+
+
+def test_orphaned_anchor_with_committed_change_is_stale(repo: Path) -> None:
+    init_layer(repo)
+    (repo / "demo" / "widget.py").write_text("x = 1\n")
+    commit_all(repo, "add widget")
+    orphan_anchor(repo, "modules")
+    r = report_for(repo, "modules")
+    assert r.status == STALE
+    assert "rewritten" in r.reason
+
+
+def test_orphaned_anchor_without_digest_needs_verification(repo: Path) -> None:
+    # Pre-digest layers (or hand-stripped metadata) stay unknowable.
+    init_layer(repo)
+    path = orphan_anchor(repo, "modules")
+    lines = [
+        line for line in path.read_text().splitlines()
+        if not line.startswith("slate_synced_digest")
+    ]
+    path.write_text("\n".join(lines) + "\n")
     r = report_for(repo, "modules")
     assert r.status == NEEDS_VERIFICATION
     assert "deadbee" in r.reason
+
+
+def test_orphaned_anchor_on_human_doc_recovers(repo: Path) -> None:
+    # Human-owned docs have no watches, so nothing watchable can have
+    # changed — an orphaned anchor must not turn the attestation into a rumor.
+    init_layer(repo)
+    orphan_anchor(repo, "read-next")
+    assert report_for(repo, "read-next").status == FRESH
+
+
+def test_digest_ignores_context_doc_edits(repo: Path) -> None:
+    # AGENTS.md watches .slate/**, but docs never invalidate docs — editing
+    # the layer must not break digest recovery after a history rewrite.
+    init_layer(repo)
+    orphan_anchor(repo, "agents")
+    read_next = repo / ".slate" / "read-next.md"
+    read_next.write_text(read_next.read_text() + "\n- working on the parser\n")
+    assert report_for(repo, "agents").status == FRESH
 
 
 def test_no_anchor_needs_verification(repo: Path) -> None:
@@ -89,11 +173,24 @@ def test_no_anchor_needs_verification(repo: Path) -> None:
     assert report_for(repo, "decisions").status == NEEDS_VERIFICATION
 
 
-def test_rename_counts_as_change(repo: Path) -> None:
+def test_rename_that_changes_facts_counts_as_change(repo: Path) -> None:
+    # main.py is an entry hint, so this rename alters the module map's claims.
+    init_layer(repo)
+    git(repo, "mv", "demo/engine.py", "demo/main.py")
+    r = report_for(repo, "modules")
+    assert r.status == STALE
+    assert "demo/main.py" in r.changed_watched
+
+
+def test_rename_that_keeps_facts_is_content_verified(repo: Path) -> None:
+    # Neither name is an entry hint: counts, language, and hints are all
+    # unchanged, so the doc provably still checks out — rename detection
+    # still supplies the evidence.
     init_layer(repo)
     git(repo, "mv", "demo/engine.py", "demo/core.py")
     r = report_for(repo, "modules")
-    assert r.status == STALE
+    assert r.status == FRESH
+    assert r.content_verified
     assert "demo/core.py" in r.changed_watched
 
 

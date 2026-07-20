@@ -40,14 +40,21 @@ slate hook install      # pre-push gate: refuses to push a stale context layer
 slate fleet ~/code      # freshness roll-up across many repos
 ```
 
-Every context doc carries freshness metadata (sync anchor commit + watch
-globs) in its frontmatter and is always in one of three states:
+Every context doc carries freshness metadata (sync anchor commit + content
+digest + watch globs) in its frontmatter and is always in one of three states:
 
 | Status | Meaning |
 |--------|---------|
-| `fresh` | no watched code changed since the doc was synced — safe to rely on |
-| `stale` | watched code changed (committed *or* uncommitted) — verify before acting |
-| `needs-verification` | the freshness anchor is gone (rebase/squash/hand-edit) — treat as a rumor |
+| `fresh` | nothing watched changed since the doc was synced — or something did, but the doc provably still checks out (a fresh scan generates the same facts, and no hand-written claim references a changed path) |
+| `stale` | watched code changed (committed *or* uncommitted) in a way the doc can't be proven to survive — verify before acting |
+| `needs-verification` | the freshness anchor is gone *and* the content digest can't vouch for the doc — treat as a rumor |
+
+Two properties keep the signal honest in real workflows: `stale` means *"sync
+would actually change something"* — an edit inside a watched tree that doesn't
+alter what the doc claims stays `fresh (content-verified)`, so the flag never
+becomes ritual noise. And squash-merges/rebases don't nuke the layer: when the
+commit anchor dies, the content digest proves the watched files still match
+the last sync and the doc stays `fresh` (a `slate sync` re-anchors it).
 
 ## What it generates
 

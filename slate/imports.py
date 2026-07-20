@@ -122,7 +122,7 @@ def suggest(root: Path, doc: ContextDoc, scan: RepoScan,
                     )
 
     # Signal 2 — paths the doc body references (any doc).
-    from .verify import extract_path_refs  # local import: verify imports nothing from here
+    from .refs import extract_path_refs
 
     for ref in extract_path_refs(doc.body):
         if not (root / ref).exists() or "/" not in ref:

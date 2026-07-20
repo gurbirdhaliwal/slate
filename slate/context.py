@@ -10,11 +10,12 @@ Human edits outside the auto-block always survive a sync.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import frontmatter
+from . import frontmatter, gitutil, globs
 from .frontmatter import Meta
 from .scanner import RepoScan
 
@@ -48,6 +49,11 @@ DOC_SPECS: list[DocSpec] = [
     DocSpec("workflows", f"{SLATE_DIR}/workflows.md", "Workflows", True, 5),
     DocSpec("decisions", f"{SLATE_DIR}/decisions.md", "Decision log", False, 6),
 ]
+
+
+# Docs never invalidate docs: these paths are excluded from change detection
+# and from the watched-content digest alike.
+CONTEXT_DOC_PATHS = {spec.rel_path for spec in DOC_SPECS}
 
 
 def spec_by_name(name: str) -> DocSpec | None:
@@ -110,13 +116,45 @@ def save(root: Path, doc: ContextDoc) -> None:
     path.write_text(frontmatter.render(doc.meta, doc.body))
 
 
-def stamp(doc: ContextDoc, commit: str | None) -> None:
-    """Record that this doc reflects the repo as of ``commit``."""
+def stamp(root: Path, doc: ContextDoc, commit: str | None) -> None:
+    """Record that this doc reflects the repo as of ``commit``.
+
+    Alongside the commit anchor, a content digest of the watched file set is
+    recorded: history rewrites (rebase/squash-merge) kill commit anchors, and
+    the digest lets the freshness engine prove "nothing watched changed since
+    the last sync" even when the anchor is gone.
+    """
     doc.meta["slate_doc"] = doc.spec.name
     doc.meta["slate_generated"] = doc.spec.generated
     if commit:
         doc.meta["slate_synced_commit"] = commit
     doc.meta["slate_synced_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    doc.meta["slate_synced_digest"] = watched_digest(root, doc.watches)
+    if "slate_watches" in doc.meta:  # keep the watch list last in the frontmatter
+        doc.meta["slate_watches"] = doc.meta.pop("slate_watches")
+
+
+def watched_digest(root: Path, watches: list[str]) -> str:
+    """Deterministic fingerprint of the watched files' current content.
+
+    sha256 over sorted (path, content-hash) pairs of every working-tree file
+    matching the watch globs, context docs excluded. Same watched content →
+    same digest, regardless of what happened to the commit graph.
+    """
+    h = hashlib.sha256()
+    if watches:
+        matched = sorted(
+            p for p in gitutil.list_files(root)
+            if p not in CONTEXT_DOC_PATHS and globs.any_match(watches, p)
+        )
+        for path in matched:
+            h.update(path.encode("utf-8", "replace") + b"\0")
+            try:
+                h.update(hashlib.sha256((root / path).read_bytes()).digest())
+            except OSError:
+                h.update(b"unreadable")
+            h.update(b"\n")
+    return h.hexdigest()[:16]
 
 
 def get_auto_block(body: str) -> str | None:

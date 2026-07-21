@@ -1,8 +1,8 @@
 ---
 slate_doc: decisions
 slate_generated: false
-slate_synced_commit: a196b0e
-slate_synced_at: 2026-07-21T22:09:14+00:00
+slate_synced_commit: a1e8db6
+slate_synced_at: 2026-07-21T22:21:57+00:00
 slate_synced_digest: e3b0c44298fc1c14
 slate_watches:
 ---
@@ -57,6 +57,25 @@ Revisit trigger: Prose grows beyond one paragraph per doc.
 ```
 
 ```
+Date: 2026-07-21
+Decision: Module dependency edges are tracked facts (Part C). The import graph
+          `imports.py` computed only to propose watches is now a field on
+          `RepoScan` (via `imports.compute_edges`, parsing reused not forked)
+          and renders as a deterministic "Module boundaries (scanned)" section
+          in the architecture auto-block. No new freshness code: a changed edge
+          set regenerates the block, so `_claims_still_check_out` + the sync
+          preview flag and heal it; each edge line is a Part B claim.
+Rationale: The auto-block was a directory census that rarely changes, giving the
+          freshness engine little semantic surface. Dependency edges are exactly
+          the fact that moves when architecture shifts — but they were discarded,
+          so a new cross-module import produced no signal (invisible drift).
+Trade-off: Top-level-dir granularity only — shallow, resolver-free, no false
+          precision (an intra-dir import is not an edge). Rendering sorts sources
+          and targets so identical repo state is byte-identical across hash seeds
+          — a flaky fact manufactures false stale, as corrosive as a false fresh.
+Revisit trigger: Top-level-dir edges prove too coarse (want symbol-level edges),
+          or a repo where the shallow regex import parse misleads.
+
 Date: 2026-07-21
 Decision: Trust resolves at the claim, not the doc (Part B). Evaluation yields a
           per-claim verdict (fresh/stale/unknowable) plus a conservative doc

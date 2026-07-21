@@ -1,8 +1,8 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: a196b0e
-slate_synced_at: 2026-07-21T22:09:14+00:00
+slate_synced_commit: a1e8db6
+slate_synced_at: 2026-07-21T22:21:57+00:00
 slate_synced_digest: e3b0c44298fc1c14
 slate_watches:
 ---
@@ -37,14 +37,25 @@ out. The doc-level status stays the authoritative whole-text roll-up in
 `_claims_still_check_out` (never a false fresh); the breakdown is the finer view.
 `--json` is additive (status/verify/diff gained claim fields; MCP mirrors them).
 
-**Next: Part C — dependency-edge facts.** Part B knows which claim a change
-touched; Part C should record *edges* (this doc's claim depends on that
-module/symbol) so a change to a dependency can flag dependents that don't
-textually reference it. Carry-over follow-ups still open: (1) the orphaned-anchor
-path is digest-gated (no baseline to diff) — a safe refinement compares the
-recorded digest against the digest *at HEAD*, then resolves working-tree changes
-by symbol; (2) shallow resolution treats `module.symbol` as living in `module` —
-re-export aliases aren't followed (accepted bound, matches `imports.py`).
+**Part C — dependency edges as tracked facts — landed (2026-07-21).** The
+module-level import graph `imports.py` used only to suggest watches is now a
+field on `RepoScan` (`scanner` computes it via `imports.compute_edges`, parsing
+reused not forked) and renders as a deterministic "Module boundaries (scanned)"
+section in the architecture auto-block. Crossing a module boundary now
+regenerates the block differently, so the existing freshness/sync machinery
+flags and heals it with no new trust code; each edge line is a Part B claim.
+Rendering sorts sources and targets (byte-identical across `PYTHONHASHSEED`),
+top-level-dir granularity only — no resolver, no false precision.
+
+**The precision-upgrade arc (A→B→C) is complete.** File→symbol→claim resolution
+plus dependency-edge facts. Remaining carry-overs, both optional refinements
+(not blockers): (1) the orphaned-anchor path is digest-gated (no baseline to
+diff) — a safe narrowing compares the recorded digest against the digest *at
+HEAD*, then resolves working-tree changes by symbol; (2) shallow resolution
+treats `module.symbol` as living in `module` — re-export aliases aren't followed
+(accepted bound, matches `imports.py`). A natural next arc is symbol-level edges
+(which *symbol* imports which), but only if top-level-dir granularity proves too
+coarse in practice.
 
 ## Landmines
 

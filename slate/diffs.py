@@ -34,8 +34,13 @@ class DocDiff:
         return self.report.rel_path
 
     @property
+    def suspect_claims(self):
+        """The specific claims a change put at risk — text + what threatens them."""
+        return self.report.suspect_claims
+
+    @property
     def has_findings(self) -> bool:
-        return bool(self.changes or self.missing_refs or self.sync_preview)
+        return bool(self.changes or self.missing_refs or self.sync_preview or self.suspect_claims)
 
 
 def doc_diff(root: Path, doc: ContextDoc, scan: RepoScan) -> DocDiff:

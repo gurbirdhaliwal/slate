@@ -284,6 +284,7 @@ class SlateMCPServer:
                 "reason": r.reason,
                 "changed_watched": r.changed_watched,
                 "content_verified": r.content_verified,
+                "claims": [c.as_dict() for c in r.claims],
             }
             for r in reports
         ], indent=2), False
@@ -299,6 +300,8 @@ class SlateMCPServer:
                 "status": v.report.status,
                 "score": v.score,
                 "missing_paths": v.missing,
+                "total_claims": v.total_claims,
+                "suspect_claims": v.suspect_claims,
             }
             for v in results
         ], indent=2), False
@@ -319,6 +322,7 @@ class SlateMCPServer:
                 "status": d.report.status,
                 "watched_changes": d.changes,
                 "broken_claims": d.missing_refs,
+                "suspect_claims": [c.as_dict() for c in d.suspect_claims],
                 "sync_preview": d.sync_preview,
             }
             for d in suspect

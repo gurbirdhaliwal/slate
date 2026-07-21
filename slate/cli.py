@@ -239,6 +239,7 @@ def cmd_status(root: Path, args: argparse.Namespace) -> int:
                 "reason": r.reason,
                 "changed_watched": r.changed_watched,
                 "content_verified": r.content_verified,
+                "claims": [_claim_json(c) for c in r.claims],
             }
             for r in reports
         ], indent=2))
@@ -251,6 +252,13 @@ def cmd_status(root: Path, args: argparse.Namespace) -> int:
                 print(f"    ↳ {path}")
             if len(r.changed_watched) > 5:
                 print(f"    ↳ … and {len(r.changed_watched) - 5} more")
+            # The novel Part B signal: which hand-written claim is now suspect.
+            human_suspect = [c for c in r.suspect_claims if c.kind == "human"]
+            for c in human_suspect[:3]:
+                marker = "?" if c.status == freshness.CLAIM_UNKNOWABLE else "✗"
+                print(f"    {marker} {_claim_line(c)}")
+            if len(human_suspect) > 3:
+                print(f"    … and {len(human_suspect) - 3} more suspect claim(s)")
     problems = [r for r in reports if r.status != FRESH]
     if args.ci and problems:
         print(f"\n{len(problems)} doc(s) not fresh", file=sys.stderr)
@@ -323,6 +331,8 @@ def cmd_verify(root: Path, args: argparse.Namespace) -> int:
                 "score": v.score,
                 "referenced_paths": v.referenced,
                 "missing_paths": v.missing,
+                "total_claims": v.total_claims,
+                "suspect_claims": v.suspect_claims,
             }
             for v in results
         ], indent=2))
@@ -331,7 +341,10 @@ def cmd_verify(root: Path, args: argparse.Namespace) -> int:
     for v in results:
         icon = STATUS_ICONS[v.report.status]
         bar = _bar(v.score)
-        print(f"{icon} {v.rel_path:<{width}} {v.score:.2f} {bar}")
+        tail = ""
+        if v.suspect_claims:
+            tail = f"  {v.total_claims - v.suspect_claims}/{v.total_claims} claims check out"
+        print(f"{icon} {v.rel_path:<{width}} {v.score:.2f} {bar}{tail}")
         for path in v.missing[:5]:
             print(f"    ✗ references missing path: {path}")
     return 0
@@ -381,6 +394,13 @@ def cmd_diff(root: Path, args: argparse.Namespace) -> int:
             print("  watched changes:")
             for path, kind in d.changes.items():
                 print(f"    {kind}  {path}  ({kinds.get(kind, kind)})")
+        if d.suspect_claims:
+            print("  claims put at risk (the specific sentence + what threatens it):")
+            for c in d.suspect_claims:
+                marker = "?" if c.status == freshness.CLAIM_UNKNOWABLE else "✗"
+                print(f"    {marker} {_claim_line(c)}")
+                if c.risk:
+                    print(f"        risk: {', '.join(c.risk)}")
         if d.missing_refs:
             print("  broken claims (doc references paths that no longer exist):")
             for ref in d.missing_refs:
@@ -576,6 +596,16 @@ def _select(docs: list[context.ContextDoc], names: list[str]) -> list[context.Co
 def _bar(score: float, width: int = 20) -> str:
     filled = round(score * width)
     return "█" * filled + "░" * (width - filled)
+
+
+def _claim_line(c: "freshness.ClaimVerdict", limit: int = 72) -> str:
+    text = c.text if len(c.text) <= limit else c.text[: limit - 1] + "…"
+    where = f" [{c.section}]" if c.section and c.section != "(generated facts)" else ""
+    return f"{text}{where}"
+
+
+def _claim_json(c: "freshness.ClaimVerdict") -> dict:
+    return c.as_dict()
 
 
 if __name__ == "__main__":

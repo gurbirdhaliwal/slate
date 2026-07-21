@@ -99,6 +99,32 @@ def test_slate_status_flags_stale_after_change(repo: Path) -> None:
     assert "demo/extra.py" in by_doc["modules"]["changed_watched"]
 
 
+def test_status_json_is_backward_compatible_and_adds_claims(repo: Path) -> None:
+    # The VS Code extension + PR bot parse these keys — additive only.
+    init_layer(repo)
+    (repo / "demo" / "extra.py").write_text("x = 1\n")
+    payload, _ = call(SlateMCPServer(repo), "slate_status")
+    modules = next(d for d in payload if d["doc"] == "modules")
+    for key in ("doc", "path", "status", "reason", "changed_watched", "content_verified"):
+        assert key in modules  # old contract intact
+    assert isinstance(modules["claims"], list)  # new field
+    stale_gen = [c for c in modules["claims"] if c["status"] == "stale"]
+    assert stale_gen and {"text", "section", "kind", "status", "refs", "risk"} <= set(stale_gen[0])
+
+
+def test_verify_and_diff_json_carry_claim_breakdown(repo: Path) -> None:
+    init_layer(repo)
+    (repo / "demo" / "extra.py").write_text("x = 1\n")
+    verify_payload, _ = call(SlateMCPServer(repo), "slate_verify")
+    modules_v = next(d for d in verify_payload if d["doc"] == "modules")
+    assert "score" in modules_v and "missing_paths" in modules_v  # old keys
+    assert modules_v["total_claims"] >= modules_v["suspect_claims"] >= 1  # new keys
+    diff_payload, _ = call(SlateMCPServer(repo), "slate_diff")
+    modules_d = next(d for d in diff_payload if d["doc"] == "modules")
+    assert "watched_changes" in modules_d and "broken_claims" in modules_d  # old keys
+    assert isinstance(modules_d["suspect_claims"], list)  # new key
+
+
 def test_slate_sync_via_mcp_clears_staleness(repo: Path) -> None:
     init_layer(repo)
     agentcfg.set_access(repo, agentcfg.FULL)

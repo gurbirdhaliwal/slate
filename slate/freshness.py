@@ -25,14 +25,46 @@ is the one bug that destroys the product's promise (product doc §10).
 
 from __future__ import annotations
 
+import difflib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from . import claims as claims_mod
 from . import context, generator, gitutil, globs, scanner, symbols
 from .context import CONTEXT_DOC_PATHS, FRESH, NEEDS_VERIFICATION, STALE, ContextDoc, load_all
 from .refs import extract_path_refs, extract_symbol_refs
 from .scanner import CODE_EXTENSIONS, RepoScan
+
+# Per-claim verdicts (a finer grain than the doc-level status). "unknowable"
+# is a claim whose reference can't be resolved to prove either way — an opaque
+# file, an unresolvable symbol; it keeps the doc out of `fresh` just like a
+# stale claim, but tells the reader "verify this by hand" rather than "this
+# changed". fresh/stale reuse the doc-level constants.
+CLAIM_FRESH = FRESH
+CLAIM_STALE = STALE
+CLAIM_UNKNOWABLE = "unknowable"
+_CLAIM_SEVERITY = {CLAIM_FRESH: 0, CLAIM_UNKNOWABLE: 1, CLAIM_STALE: 2}
+
+
+@dataclass
+class ClaimVerdict:
+    text: str                # the claim's display text
+    section: str             # enclosing heading, for orientation
+    kind: str                # "human" | "generated"
+    status: str              # fresh | stale | unknowable
+    refs: list[str] = field(default_factory=list)   # code refs that scope it
+    risk: list[str] = field(default_factory=list)   # the refs that put it at risk
+
+    def as_dict(self) -> dict:
+        return {
+            "text": self.text,
+            "section": self.section,
+            "kind": self.kind,
+            "status": self.status,
+            "refs": self.refs,
+            "risk": self.risk,
+        }
 
 
 @dataclass
@@ -44,10 +76,17 @@ class DocReport:
     # True when the status was established by comparing content (scan facts
     # or the watched-file digest) rather than by an all-quiet anchor diff.
     content_verified: bool = False
+    # Per-claim breakdown (populated when watched paths changed). The doc-level
+    # status is a conservative roll-up: `fresh` only if every claim is fresh.
+    claims: list[ClaimVerdict] = field(default_factory=list)
 
     @property
     def rel_path(self) -> str:
         return self.doc.spec.rel_path
+
+    @property
+    def suspect_claims(self) -> list[ClaimVerdict]:
+        return [c for c in self.claims if c.status != CLAIM_FRESH]
 
 
 def evaluate_doc(root: Path, doc: ContextDoc, scan: RepoScan | None = None) -> DocReport:
@@ -85,23 +124,34 @@ def _evaluate(root: Path, doc: ContextDoc, get_scan: Callable[[], RepoScan]) -> 
     hits = globs.filter_paths(doc.watches, changed) if doc.watches else []
     if not hits:
         return DocReport(doc, FRESH, reason=f"synced at {anchor}")
-    if _claims_still_check_out(root, doc, anchor, hits, get_scan):
+
+    scan = get_scan()
+    changed_syms = _changed_symbols(root, anchor, hits)
+    all_stems = {_stem(f) for f in scan.files if _is_code(f)}
+    claims = _build_claims(doc, hits, scan, changed_syms, all_stems)
+
+    if _claims_still_check_out(doc, hits, scan, changed_syms, all_stems):
         return DocReport(
-            doc, FRESH, changed_watched=hits, content_verified=True,
+            doc, FRESH, changed_watched=hits, content_verified=True, claims=claims,
             reason=(
-                f"{len(hits)} watched path(s) changed since {anchor}, but the doc "
-                "still checks out (a fresh scan generates the same facts)"
+                f"{len(hits)} watched path(s) changed since {anchor}, but every claim "
+                "the doc makes provably still checks out"
             ),
         )
+    suspect = [c for c in claims if c.status != CLAIM_FRESH]
+    detail = (
+        f"{len(suspect)} of {len(claims)} claim(s) suspect"
+        if claims else f"{len(hits)} watched path(s) changed"
+    )
     return DocReport(
-        doc, STALE, changed_watched=hits,
-        reason=f"{len(hits)} watched path(s) changed since {anchor}",
+        doc, STALE, changed_watched=hits, claims=claims,
+        reason=f"{detail} since {anchor}",
     )
 
 
 def _claims_still_check_out(
-    root: Path, doc: ContextDoc, anchor: str | None,
-    hits: list[str], get_scan: Callable[[], RepoScan],
+    doc: ContextDoc, hits: list[str], scan: RepoScan,
+    changed_syms: list[tuple[str, set[str] | None]], all_stems: set[str],
 ) -> bool:
     """True when the watched changes provably did not invalidate the doc.
 
@@ -119,21 +169,23 @@ def _claims_still_check_out(
       lines were *not* among the change, so a claim about ``context.get_auto_block``
       only stales when that function actually moved (§ symbol resolution).
 
-    Anything unprovable — an unparseable file, an unresolvable symbol — stays
-    stale. A false "fresh" is the catastrophic bug (product doc §10); symbol
-    resolution may only ever *narrow* stale→fresh, never the reverse.
+    This is the authoritative doc-level roll-up: it scans the *whole* human
+    text (not a segmentation of it), so a claim the segmenter might miss can
+    never sneak the doc to `fresh`. It is provably equivalent to "every claim
+    fresh" whenever segmentation is complete — the breakdown in ``_build_claims``
+    is the finer-grained view, this is the safety net. A false "fresh" is the
+    catastrophic bug (product doc §10); symbol resolution may only ever *narrow*
+    stale→fresh, never the reverse.
     """
     if not doc.spec.generated:
         return False
     current = context.get_auto_block(doc.body)
     if current is None:
         return False
-    regenerated = generator.auto_content(doc.spec, get_scan())
+    regenerated = generator.auto_content(doc.spec, scan)
     if current != regenerated and not current.endswith("\n\n" + regenerated):
         return False
-    begin = doc.body.find(context.AUTO_BEGIN)
-    end = doc.body.find(context.AUTO_END) + len(context.AUTO_END)
-    human_text = doc.body[:begin] + doc.body[end:]
+    human_text = _human_text(doc.body)
 
     # A claim about a whole file (a path reference) can't be narrowed — any
     # edit inside it might touch what the claim depends on. Unchanged behavior.
@@ -142,17 +194,18 @@ def _claims_still_check_out(
             if hit == ref or hit.startswith(ref + "/"):
                 return False
 
-    symbol_refs = extract_symbol_refs(human_text)
-    if not symbol_refs:
-        return True
-    changed = _changed_symbols(root, anchor, hits)
-    all_stems = {
-        _stem(f) for f in get_scan().files if _is_code(f)
-    }
-    for ref in symbol_refs:
-        if not _symbol_untouched(ref, changed, all_stems):
+    for ref in extract_symbol_refs(human_text):
+        if _symbol_verdict(ref, changed_syms, all_stems) != CLAIM_FRESH:
             return False
     return True
+
+
+def _human_text(body: str) -> str:
+    begin = body.find(context.AUTO_BEGIN)
+    if begin == -1:
+        return body
+    end = body.find(context.AUTO_END) + len(context.AUTO_END)
+    return body[:begin] + body[end:]
 
 
 def _is_code(path: str) -> bool:
@@ -181,40 +234,133 @@ def _changed_symbols(
     return resolved
 
 
-def _symbol_untouched(
+def _symbol_verdict(
     ref: str, changed: list[tuple[str, set[str] | None]], all_stems: set[str]
-) -> bool:
-    """True only when the referenced symbol is *provably* untouched.
+) -> str:
+    """Classify a ``module.symbol`` reference against the change.
 
     ``ref`` is ``…qualifier.symbol``; the qualifier is the enclosing module or
-    class. The symbol is touched when a changed file that could hold it either
-    can't be parsed or lists the symbol among its changes. If no changed file
-    can hold it, the symbol's file didn't change — provably untouched.
+    class. Returns:
+
+    - ``stale`` — a changed file provably moved the referenced symbol;
+    - ``unknowable`` — a file that could hold it can't be parsed, or the
+      qualifier is unresolvable and a same-named symbol moved somewhere, so we
+      can't prove it's a different one (verify by hand);
+    - ``fresh`` — no changed file can hold it, or the file changed elsewhere.
+
+    ``stale`` and ``unknowable`` both keep the doc out of `fresh`; only ``fresh``
+    lets the doc-level roll-up vouch for the claim.
     """
     parts = ref.split(".")
     if len(parts) < 2:
-        return False  # not a resolvable module.symbol — refuse to vouch
+        return CLAIM_UNKNOWABLE  # not a resolvable module.symbol — refuse to vouch
     symbol, qualifier = parts[-1], parts[-2]
     dotted = f"{qualifier}.{symbol}"
+    verdict = CLAIM_FRESH
     for stem, syms in changed:
         if syms is None:
             # Opaque changed file. It could hold the symbol unless the ref
             # clearly names a *different*, known module.
             if stem == qualifier or qualifier not in all_stems:
-                return False
+                verdict = _worse(verdict, CLAIM_UNKNOWABLE)
             continue
         if stem == qualifier and symbol in syms:
-            return False  # `module.symbol` — the referenced def changed here
+            return CLAIM_STALE  # `module.symbol` — the referenced def changed here
         if dotted in syms:
-            return False  # `Class.method` — the referenced method changed here
+            return CLAIM_STALE  # `Class.method` — the referenced method changed here
     if qualifier not in all_stems:
         # An unresolvable qualifier (not a known module, not a matched class):
         # if any changed file moved a symbol of this name, we can't prove ours
-        # is a different one. Conservative — fall back to stale.
+        # is a different one. Conservative — unknowable, never fresh.
         for _stem_, syms in changed:
             if syms is not None and symbol in syms:
-                return False
-    return True
+                verdict = _worse(verdict, CLAIM_UNKNOWABLE)
+    return verdict
+
+
+def _worse(a: str, b: str) -> str:
+    return a if _CLAIM_SEVERITY[a] >= _CLAIM_SEVERITY[b] else b
+
+
+def _build_claims(
+    doc: ContextDoc, hits: list[str], scan: RepoScan,
+    changed_syms: list[tuple[str, set[str] | None]], all_stems: set[str],
+) -> list[ClaimVerdict]:
+    """The per-claim breakdown behind the doc-level status (presentation/score).
+
+    Generated facts get a line-level verdict against a fresh scan; human claims
+    get the same symbol/path resolution the roll-up uses, so the two can't
+    disagree on any reference they both see.
+    """
+    return _generated_claims(doc, scan) + _human_claim_verdicts(doc, hits, changed_syms, all_stems)
+
+
+def _generated_claims(doc: ContextDoc, scan: RepoScan) -> list[ClaimVerdict]:
+    if not doc.spec.generated:
+        return []
+    current = context.get_auto_block(doc.body)
+    regenerated = generator.auto_content(doc.spec, scan)
+    if current is None:
+        return [ClaimVerdict(
+            "auto-block markers missing", "(generated)", "generated",
+            CLAIM_STALE, risk=["auto-block boundary"],
+        )]
+    facts = current
+    if current != regenerated and current.endswith("\n\n" + regenerated):
+        facts = regenerated  # an LLM prose prefix isn't a fact — score the facts
+    fresh_lines = _unchanged_lines(facts.splitlines(), regenerated.splitlines())
+    out: list[ClaimVerdict] = []
+    for index, line in enumerate(facts.splitlines()):
+        if not _is_fact_line(line):
+            continue
+        status = CLAIM_FRESH if index in fresh_lines else CLAIM_STALE
+        out.append(ClaimVerdict(
+            line.strip(), "(generated facts)", "generated", status,
+            refs=extract_path_refs(line),
+            risk=[] if status == CLAIM_FRESH else ["sync would rewrite this line"],
+        ))
+    return out
+
+
+def _unchanged_lines(current: list[str], regenerated: list[str]) -> set[int]:
+    """Indices in ``current`` that survive regeneration verbatim (the fresh facts)."""
+    fresh: set[int] = set()
+    matcher = difflib.SequenceMatcher(None, current, regenerated, autojunk=False)
+    for tag, i1, i2, _j1, _j2 in matcher.get_opcodes():
+        if tag == "equal":
+            fresh.update(range(i1, i2))
+    return fresh
+
+
+def _is_fact_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    # Table separators and horizontal rules carry no claim.
+    return not set(stripped) <= set("|-: ")
+
+
+def _human_claim_verdicts(
+    doc: ContextDoc, hits: list[str],
+    changed_syms: list[tuple[str, set[str] | None]], all_stems: set[str],
+) -> list[ClaimVerdict]:
+    out: list[ClaimVerdict] = []
+    for claim in claims_mod.human_claims(doc.body):
+        status = CLAIM_FRESH
+        risk: list[str] = []
+        for ref in claim.path_refs:
+            if any(hit == ref or hit.startswith(ref + "/") for hit in hits):
+                status = CLAIM_STALE
+                risk.append(ref)
+        for ref in claim.symbol_refs:
+            verdict = _symbol_verdict(ref, changed_syms, all_stems)
+            if verdict != CLAIM_FRESH:
+                status = _worse(status, verdict)
+                risk.append(ref)
+        out.append(ClaimVerdict(
+            claim.text, claim.section, "human", status, refs=claim.refs, risk=risk,
+        ))
+    return out
 
 
 def _evaluate_orphaned(root: Path, doc: ContextDoc, anchor: str) -> DocReport:

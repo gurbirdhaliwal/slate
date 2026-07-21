@@ -157,6 +157,94 @@ def test_unparseable_referenced_file_falls_back_to_stale(repo: Path) -> None:
     assert r.status == STALE
 
 
+def setup_two_symbol_claims(repo: Path) -> None:
+    """engine.py has two functions; modules.md claims each by symbol.
+
+    Editing one function's body must stale exactly its claim and leave the
+    other fresh — the whole point of claim-level attribution.
+    """
+    (repo / "demo" / "engine.py").write_text(
+        "def run():\n    return 42\n\n\ndef helper():\n    return 1\n"
+    )
+    commit_all(repo, "engine with two functions")
+    init_layer(repo)
+    path = repo / ".slate" / "modules.md"
+    path.write_text(
+        path.read_text()
+        + "\n## Claims\n\n"
+        + "- The `engine.run` function drives the loop.\n"
+        + "- The `engine.helper` function is a pure helper.\n"
+    )
+    commit_all(repo, "two symbol claims")
+
+
+def human_claims(report: freshness.DocReport) -> list[freshness.ClaimVerdict]:
+    return [c for c in report.claims if c.kind == "human"]
+
+
+def test_only_the_referencing_claim_goes_stale(repo: Path) -> None:
+    setup_two_symbol_claims(repo)
+    (repo / "demo" / "engine.py").write_text(
+        "def run():\n    return 99\n\n\ndef helper():\n    return 1\n"
+    )
+    r = report_for(repo, "modules")
+    hc = human_claims(r)
+    stale = [c for c in hc if c.status == STALE]
+    fresh = [c for c in hc if c.status == FRESH]
+    assert len(stale) == 1 and "engine.run" in stale[0].refs
+    assert any("engine.helper" in c.refs for c in fresh)
+
+
+def test_one_suspect_claim_keeps_doc_out_of_fresh(repo: Path) -> None:
+    # Roll-up invariant: a single non-fresh claim blocks doc-level fresh.
+    setup_two_symbol_claims(repo)
+    (repo / "demo" / "engine.py").write_text(
+        "def run():\n    return 99\n\n\ndef helper():\n    return 1\n"
+    )
+    r = report_for(repo, "modules")
+    assert r.status == STALE
+    assert len(r.suspect_claims) == 1
+
+
+def test_all_claims_fresh_rolls_up_to_fresh(repo: Path) -> None:
+    setup_two_symbol_claims(repo)
+    # Touch neither referenced symbol: add an unrelated top-level name.
+    (repo / "demo" / "engine.py").write_text(
+        "def run():\n    return 42\n\n\ndef helper():\n    return 1\n\n\nUNUSED = 0\n"
+    )
+    r = report_for(repo, "modules")
+    # engine.py changed but no claim's symbol moved → every claim fresh → fresh.
+    assert r.status == FRESH
+    assert r.content_verified
+    assert all(c.status == FRESH for c in r.claims)
+
+
+def test_unknowable_claim_blocks_fresh(repo: Path) -> None:
+    # An unparseable referenced file can't prove the symbol untouched: the
+    # claim is `unknowable`, and unknowable keeps the doc out of fresh (§10).
+    setup_two_symbol_claims(repo)
+    (repo / "demo" / "engine.py").write_text(
+        "def run(:\n    return 42\n\n\ndef helper():\n    return 1\n"
+    )
+    r = report_for(repo, "modules")
+    assert r.status == STALE
+    unknowable = [c for c in human_claims(r) if c.status == freshness.CLAIM_UNKNOWABLE]
+    assert unknowable, "expected an unknowable claim for the unparseable file"
+
+
+def test_generated_fact_change_is_a_stale_claim(repo: Path) -> None:
+    # Adding a file moves the module map: the specific generated line is a
+    # stale claim, attributed at the line level.
+    setup_two_symbol_claims(repo)
+    (repo / "demo" / "widget.py").write_text("x = 1\n")
+    r = report_for(repo, "modules")
+    assert r.status == STALE
+    gen_stale = [c for c in r.claims if c.kind == "generated" and c.status == STALE]
+    assert gen_stale
+    # The two human symbol claims are untouched by adding an unrelated file.
+    assert all(c.status == FRESH for c in human_claims(r))
+
+
 def orphan_anchor(repo: Path, doc: str) -> Path:
     """Point a doc's sync anchor at a commit that doesn't exist (squash/rebase)."""
     path = repo / ".slate" / f"{doc}.md" if doc != "agents" else repo / "AGENTS.md"

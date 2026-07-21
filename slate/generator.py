@@ -170,7 +170,25 @@ def _architecture_auto(scan: RepoScan) -> str:
             + (f", mostly {module.primary_language}" if module.primary_language else "")
             + hint
         )
+    lines += ["", "## Module boundaries (scanned)", ""]
+    lines += _edge_lines(scan.edges)
     return "\n".join(lines)
+
+
+def _edge_lines(edges: dict[str, set[str]]) -> list[str]:
+    """Dependency edges as a tracked fact — one line per module that imports.
+
+    Deterministic by construction: sources and targets are both sorted, so the
+    same graph always renders byte-identical (a flaky fact would manufacture
+    false `stale`). Top-level-dir granularity only, matching the shallow,
+    resolver-free import graph — no false precision.
+    """
+    out: list[str] = []
+    for source in sorted(edges):
+        targets = sorted(edges[source])
+        if targets:
+            out.append(f"- `{source}/` → " + ", ".join(f"`{t}/`" for t in targets))
+    return out or ["- _no cross-module imports detected_"]
 
 
 def _modules_auto(scan: RepoScan) -> str:

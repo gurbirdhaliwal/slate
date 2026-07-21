@@ -308,28 +308,30 @@ def _generated_claims(doc: ContextDoc, scan: RepoScan) -> list[ClaimVerdict]:
     facts = current
     if current != regenerated and current.endswith("\n\n" + regenerated):
         facts = regenerated  # an LLM prose prefix isn't a fact — score the facts
-    fresh_lines = _unchanged_lines(facts.splitlines(), regenerated.splitlines())
+
+    on_disk = facts.splitlines()
+    fresh_scan = regenerated.splitlines()
     out: list[ClaimVerdict] = []
-    for index, line in enumerate(facts.splitlines()):
-        if not _is_fact_line(line):
+    matcher = difflib.SequenceMatcher(None, on_disk, fresh_scan, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            out += [_gen_claim(line, CLAIM_FRESH) for line in on_disk[i1:i2] if _is_fact_line(line)]
             continue
-        status = CLAIM_FRESH if index in fresh_lines else CLAIM_STALE
-        out.append(ClaimVerdict(
-            line.strip(), "(generated facts)", "generated", status,
-            refs=extract_path_refs(line),
-            risk=[] if status == CLAIM_FRESH else ["sync would rewrite this line"],
-        ))
+        # A line the fresh scan drops or rewrites — the fact on disk is suspect.
+        out += [_gen_claim(line, CLAIM_STALE, "sync would rewrite this line")
+                for line in on_disk[i1:i2] if _is_fact_line(line)]
+        # A line the fresh scan adds — a new fact (e.g. a crossed module
+        # boundary) the doc doesn't state yet.
+        out += [_gen_claim(line, CLAIM_STALE, "sync would add this line")
+                for line in fresh_scan[j1:j2] if _is_fact_line(line)]
     return out
 
 
-def _unchanged_lines(current: list[str], regenerated: list[str]) -> set[int]:
-    """Indices in ``current`` that survive regeneration verbatim (the fresh facts)."""
-    fresh: set[int] = set()
-    matcher = difflib.SequenceMatcher(None, current, regenerated, autojunk=False)
-    for tag, i1, i2, _j1, _j2 in matcher.get_opcodes():
-        if tag == "equal":
-            fresh.update(range(i1, i2))
-    return fresh
+def _gen_claim(line: str, status: str, risk: str = "") -> ClaimVerdict:
+    return ClaimVerdict(
+        line.strip(), "(generated facts)", "generated", status,
+        refs=extract_path_refs(line), risk=[risk] if risk else [],
+    )
 
 
 def _is_fact_line(line: str) -> bool:

@@ -70,6 +70,9 @@ class RepoScan:
     commands: dict[str, list[str]]  # tool -> invocations, e.g. "make" -> ["make test"]
     ci_workflows: list[str]
     readme_title: str | None
+    # Module-level dependency graph: top-level dir -> dirs it imports from.
+    # A tracked fact (rendered into the auto-block), not just a watch hint.
+    edges: dict[str, set[str]] = field(default_factory=dict)
 
     @property
     def source_dirs(self) -> list[str]:
@@ -94,6 +97,10 @@ def scan(root: Path) -> RepoScan:
         Path(p).stem for p in files
         if p.startswith(".github/workflows/") and p.endswith((".yml", ".yaml"))
     )
+    source_dirs = [m.name for m in modules if m.name != "."]
+    # Lazy import breaks the scanner<->imports cycle (imports needs RepoScan).
+    from . import imports
+    edges = imports.compute_edges(root, files, source_dirs)
     return RepoScan(
         root=root,
         files=files,
@@ -102,6 +109,7 @@ def scan(root: Path) -> RepoScan:
         commands=commands,
         ci_workflows=ci,
         readme_title=_readme_title(root),
+        edges=edges,
     )
 
 

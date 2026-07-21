@@ -41,9 +41,21 @@ class Suggestion:
 
 def import_edges(scan: RepoScan) -> dict[str, set[str]]:
     """top-level dir -> set of other top-level dirs it imports from."""
-    top_dirs = set(scan.source_dirs)
+    return compute_edges(scan.root, scan.files, scan.source_dirs)
+
+
+def compute_edges(
+    root: Path, files: list[str], source_dirs: list[str]
+) -> dict[str, set[str]]:
+    """The module-level dependency graph, from primitives (no RepoScan needed).
+
+    Split out so ``scanner`` can compute edges *while building* a scan without
+    an import cycle, and so the graph is parsed in exactly one place — watch
+    inference (``import_edges``) and the tracked-fact renderer share it.
+    """
+    top_dirs = set(source_dirs)
     edges: dict[str, set[str]] = {d: set() for d in top_dirs}
-    for rel in scan.files:
+    for rel in files:
         suffix = PurePosixPath(rel).suffix.lower()
         if suffix not in _PY_SUFFIXES | _JS_SUFFIXES or "/" not in rel:
             continue
@@ -51,7 +63,7 @@ def import_edges(scan: RepoScan) -> dict[str, set[str]]:
         if top not in top_dirs:
             continue
         try:
-            text = (scan.root / rel).read_text(errors="ignore")
+            text = (root / rel).read_text(errors="ignore")
         except OSError:
             continue
         targets = (

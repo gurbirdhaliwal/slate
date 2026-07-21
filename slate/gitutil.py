@@ -142,3 +142,19 @@ def _unquote(path: str) -> str:
     if path.startswith('"') and path.endswith('"'):
         return path[1:-1]
     return path
+
+
+def fleet_roots(paths: list[Path]) -> list[Path]:
+    """Each arg is a repo, or a parent whose immediate children are checked."""
+    roots: list[Path] = []
+    for path in paths:
+        path = path.resolve()
+        if (path / ".git").exists():
+            roots.append(path)
+            continue
+        if path.is_dir():
+            roots.extend(sorted(
+                child for child in path.iterdir()
+                if child.is_dir() and (child / ".git").exists()
+            ))
+    return roots

@@ -23,7 +23,18 @@ from datetime import date
 from pathlib import Path
 from typing import IO
 
-from . import __version__, agentcfg, context, diffs, freshness, generator, gitutil, scanner, verify
+from . import (
+    __version__,
+    agentcfg,
+    context,
+    diffs,
+    freshness,
+    generator,
+    gitutil,
+    imports as imports_mod,
+    scanner,
+    verify,
+)
 from .context import DOC_SPECS, FRESH
 
 PROTOCOL_VERSION = "2025-06-18"
@@ -131,6 +142,17 @@ class SlateMCPServer:
                 "a preview of what slate_sync would rewrite.",
                 {},
             ),
+            _tool(
+                "slate_watches",
+                "Watch globs per context doc (the paths whose changes make the "
+                "doc suspect) plus proposed additions derived from the repo's "
+                "import graph. Pass apply=true (needs full access) to write the "
+                "proposals into the docs.",
+                {"apply": {
+                    "type": "boolean",
+                    "description": "Apply the proposed watches (default false; requires full access).",
+                }},
+            ),
         ]
         if self.access == agentcfg.FULL:
             tools += [
@@ -194,11 +216,14 @@ class SlateMCPServer:
     def _call(self, name: str, args: dict) -> tuple[str, bool]:
         if name in self._WRITE_TOOLS and self.access != agentcfg.FULL:
             return _WRITE_DENIED, True
+        if name == "slate_watches" and args.get("apply") and self.access != agentcfg.FULL:
+            return _WRITE_DENIED, True
         handlers = {
             "slate_read": self._t_read,
             "slate_status": self._t_status,
             "slate_verify": self._t_verify,
             "slate_diff": self._t_diff,
+            "slate_watches": self._t_watches,
             "slate_sync": self._t_sync,
             "slate_mark": self._t_mark,
             "slate_update_focus": self._t_update_focus,
@@ -298,6 +323,31 @@ class SlateMCPServer:
             }
             for d in suspect
         ], indent=2), False
+
+    def _t_watches(self, args: dict) -> tuple[str, bool]:
+        docs = context.load_all(self.root)
+        if not docs:
+            return _NO_LAYER, True
+        scan = scanner.scan(self.root)
+        edges = imports_mod.import_edges(scan)
+        apply = bool(args.get("apply"))
+        out = []
+        for doc in docs:
+            suggestions = imports_mod.suggest(self.root, doc, scan, edges)
+            entry = {
+                "doc": doc.spec.name,
+                "path": doc.spec.rel_path,
+                "watches": doc.watches,
+                "proposed": [
+                    {"pattern": s.pattern, "reason": s.reason} for s in suggestions
+                ],
+            }
+            if apply and suggestions:
+                doc.meta["slate_watches"] = doc.watches + [s.pattern for s in suggestions]
+                context.save(self.root, doc)
+                entry["applied"] = len(suggestions)
+            out.append(entry)
+        return json.dumps(out, indent=2), False
 
     # --- write tools (access: full) ----------------------------------------
 

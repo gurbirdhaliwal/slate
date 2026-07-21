@@ -92,6 +92,71 @@ def test_sync_clears_staleness(repo: Path) -> None:
     assert "demo/" in context.spec_by_name("modules").path(repo).read_text()
 
 
+def setup_symbol_claim(repo: Path) -> None:
+    """Give engine.py two functions and have modules.md claim one by symbol.
+
+    The module map's auto-block is identical for any body edit to engine.py
+    (counts, language, and entry hints don't move), so the *only* thing that
+    can flip modules.md fresh↔stale is the symbol-level claim.
+    """
+    (repo / "demo" / "engine.py").write_text(
+        "def run():\n    return 42\n\n\ndef helper():\n    return 1\n"
+    )
+    commit_all(repo, "engine with two functions")
+    init_layer(repo)
+    path = repo / ".slate" / "modules.md"
+    path.write_text(path.read_text() + "\nThe `engine.run` entry point drives the loop.\n")
+    commit_all(repo, "claim engine.run by symbol")
+
+
+def test_change_to_referenced_symbol_marks_stale(repo: Path) -> None:
+    # modules.md claims `engine.run`; run's body changed → the claim is in
+    # question. Before symbol resolution this was a false *fresh* (the path was
+    # never backticked and the auto-block regenerates identically).
+    setup_symbol_claim(repo)
+    (repo / "demo" / "engine.py").write_text(
+        "def run():\n    return 99\n\n\ndef helper():\n    return 1\n"
+    )
+    r = report_for(repo, "modules")
+    assert r.status == STALE
+
+
+def test_change_to_unreferenced_symbol_stays_fresh(repo: Path) -> None:
+    # `helper` changed but the doc only claims `engine.run` — provably
+    # untouched, so the doc stays fresh (the headline precision win).
+    setup_symbol_claim(repo)
+    (repo / "demo" / "engine.py").write_text(
+        "def run():\n    return 42\n\n\ndef helper():\n    return 2\n"
+    )
+    r = report_for(repo, "modules")
+    assert r.status == FRESH
+    assert r.content_verified
+    assert "demo/engine.py" in r.changed_watched  # evidence still attached
+
+
+def test_docstring_only_edit_to_referenced_file_stays_fresh(repo: Path) -> None:
+    # A module-docstring typo in the referenced file touches no symbol — the
+    # old path-level rule would have flagged this file stale (false positive).
+    setup_symbol_claim(repo)
+    (repo / "demo" / "engine.py").write_text(
+        '"""Engine internals."""\n\n\ndef run():\n    return 42\n\n\ndef helper():\n    return 1\n'
+    )
+    r = report_for(repo, "modules")
+    assert r.status == FRESH
+    assert r.content_verified
+
+
+def test_unparseable_referenced_file_falls_back_to_stale(repo: Path) -> None:
+    # A syntax error makes engine.py opaque; the referenced symbol can't be
+    # proven untouched, so the conservative fallback keeps the doc stale.
+    setup_symbol_claim(repo)
+    (repo / "demo" / "engine.py").write_text(
+        "def run(:\n    return 42\n\n\ndef helper():\n    return 1\n"
+    )
+    r = report_for(repo, "modules")
+    assert r.status == STALE
+
+
 def orphan_anchor(repo: Path, doc: str) -> Path:
     """Point a doc's sync anchor at a commit that doesn't exist (squash/rebase)."""
     path = repo / ".slate" / f"{doc}.md" if doc != "agents" else repo / "AGENTS.md"

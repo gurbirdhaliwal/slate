@@ -3,6 +3,7 @@
 Commands (product doc §9):
 
     slate help      show help for slate or a specific command
+    slate ui        interactive dashboard (also: bare `slate` in a terminal)
     slate init      scan the repo and generate the context layer
     slate status    freshness of every context doc (--ci exits 1 on problems)
     slate sync      regenerate auto-blocks, re-anchor freshness to HEAD
@@ -32,6 +33,7 @@ from pathlib import Path
 from . import (
     __version__,
     agentcfg,
+    banner,
     context,
     diffs,
     freshness,
@@ -52,6 +54,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     if not args.command:
+        code = _try_ui(Path(args.repo).resolve())
+        if code is not None:
+            return code
+        print(banner.banner(), end="")
         parser.print_help()
         return 2
 
@@ -62,6 +68,25 @@ def main(argv: list[str] | None = None) -> int:
         print("error: not inside a git repository (slate anchors freshness to git)", file=sys.stderr)
         return 2
     return args.func(root, args)
+
+
+def _try_ui(start: Path) -> int | None:
+    """Launch the interactive dashboard for a bare `slate` in a real terminal.
+
+    Returns None when the UI is not applicable (piped output, no TTY, no
+    curses, no repo) so the caller falls back to help. A repo without a
+    context layer gets the dashboard's welcome screen, which offers init.
+    """
+    if not (sys.stdout.isatty() and sys.stdin.isatty()):
+        return None
+    root = _find_root(start)
+    if root is None:
+        return None
+    try:
+        from . import ui  # imported lazily: scripted commands never pay for it
+    except ImportError:
+        return None
+    return ui.run(root)
 
 
 _WORKFLOW_EPILOG = """\
@@ -94,6 +119,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("help", help="show help for slate or a specific command", description="show help for slate or a specific command")
     p.add_argument("topic", nargs="?", help="command name, e.g. `slate help sync`")
     p.set_defaults(func=cmd_help, needs_repo=False)
+
+    p = sub.add_parser("ui", help="interactive dashboard (also: bare `slate` in a terminal)", description="interactive dashboard: freshness, diffs, sync/mark — built on curses")
+    p.set_defaults(func=cmd_ui)
 
     p = sub.add_parser("init", help="scan the repo and generate the context layer", description="scan the repo and generate the context layer")
     p.add_argument("--force", action="store_true", help="overwrite existing context docs")
@@ -413,6 +441,7 @@ def cmd_hook(root: Path, args: argparse.Namespace) -> int:
 def cmd_help(_root: Path | None, args: argparse.Namespace) -> int:
     parser = _build_parser()
     if not args.topic:
+        print(banner.banner(), end="")
         parser.print_help()
         return 0
     subcommand = parser.slate_subcommands.get(args.topic)
@@ -422,6 +451,15 @@ def cmd_help(_root: Path | None, args: argparse.Namespace) -> int:
         return 2
     subcommand.print_help()
     return 0
+
+
+def cmd_ui(root: Path, args: argparse.Namespace) -> int:
+    try:
+        from . import ui  # imported lazily: scripted commands never pay for it
+    except ImportError:
+        print("error: the interactive UI needs the curses module (not available on this platform)", file=sys.stderr)
+        return 2
+    return ui.run(root)
 
 
 def cmd_mcp(root: Path, args: argparse.Namespace) -> int:
@@ -482,7 +520,7 @@ def cmd_agent_status(root: Path, args: argparse.Namespace) -> int:
 
 
 def cmd_fleet(_root: Path | None, args: argparse.Namespace) -> int:
-    roots = _fleet_roots([Path(p) for p in args.paths] or [Path.cwd()])
+    roots = gitutil.fleet_roots([Path(p) for p in args.paths] or [Path.cwd()])
     if not roots:
         print("no git repositories found", file=sys.stderr)
         return 2
@@ -518,22 +556,6 @@ def cmd_fleet(_root: Path | None, args: argparse.Namespace) -> int:
         print(f"\n{len(problems)} repo(s) with freshness problems", file=sys.stderr)
         return 1
     return 0
-
-
-def _fleet_roots(paths: list[Path]) -> list[Path]:
-    """Each arg is a repo, or a parent whose immediate children are checked."""
-    roots: list[Path] = []
-    for path in paths:
-        path = path.resolve()
-        if (path / ".git").exists():
-            roots.append(path)
-            continue
-        if path.is_dir():
-            roots.extend(sorted(
-                child for child in path.iterdir()
-                if child.is_dir() and (child / ".git").exists()
-            ))
-    return roots
 
 
 def _select(docs: list[context.ContextDoc], names: list[str]) -> list[context.ContextDoc] | None:

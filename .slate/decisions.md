@@ -1,8 +1,8 @@
 ---
 slate_doc: decisions
 slate_generated: false
-slate_synced_commit: 6f28164
-slate_synced_at: 2026-07-21T18:55:35+00:00
+slate_synced_commit: a196b0e
+slate_synced_at: 2026-07-21T22:09:14+00:00
 slate_synced_digest: e3b0c44298fc1c14
 slate_watches:
 ---
@@ -57,6 +57,27 @@ Revisit trigger: Prose grows beyond one paragraph per doc.
 ```
 
 ```
+Date: 2026-07-21
+Decision: Trust resolves at the claim, not the doc (Part B). Evaluation yields a
+          per-claim verdict (fresh/stale/unknowable) plus a conservative doc
+          roll-up; the score's watch-quiet component becomes the fraction of
+          claims that check out. New `claims.py` segments the human body into
+          referencing units; `freshness` adds `ClaimVerdict`/`DocReport.claims`
+          and line-diffs the generated facts; `verify`/`diffs`/`cli`/`ui`/`mcp`
+          surface it. `--json` is additive only (VS Code + PR bot unchanged).
+Rationale: One label per doc drags a solid doc amber for a single suspect
+          sentence and never tells the AI *which* sentence to re-verify
+          (product doc §1 pain #5). Part A already knows which symbol changed;
+          Part B attributes it to the claim that references it.
+Trade-off: The doc-level status stays the authoritative *whole-text* roll-up in
+          `_claims_still_check_out` (not `all(claim fresh)`) so a claim the
+          segmenter might miss can never sneak a doc to fresh — the breakdown is
+          the finer view, the whole-text scan is the §10 safety net. Claim
+          segmentation is deterministic markdown-block splitting, no parser.
+Revisit trigger: A claim the segmenter drops that the whole-text roll-up
+          catches (status stale, zero suspect claims shown); or a need to score
+          generated vs human claims with different weights.
+
 Date: 2026-07-21
 Decision: Freshness resolves a changed watched file to the symbols it touched
           (Part A). `_claims_still_check_out` now clears a human claim about

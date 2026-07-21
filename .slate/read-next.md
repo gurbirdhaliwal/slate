@@ -1,8 +1,8 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: 6f28164
-slate_synced_at: 2026-07-21T18:55:35+00:00
+slate_synced_commit: a196b0e
+slate_synced_at: 2026-07-21T22:09:14+00:00
 slate_synced_digest: e3b0c44298fc1c14
 slate_watches:
 ---
@@ -25,15 +25,26 @@ The rewire lives in `freshness._claims_still_check_out`; symbol resolution may
 only ever *narrow* stale→fresh, and any unparseable/ambiguous file falls back
 to path-level "assume stale". See the decision log entry dated 2026-07-21.
 
-**Next: Part B — claim-level attribution.** Part A resolves at the symbol; Part
-B should attribute *which sentence/claim* a changed symbol invalidates (today a
-whole doc goes stale) and lay in dependency-edge facts. Two known follow-ups
-surfaced by Part A: (1) the orphaned-anchor path is still digest-gated — it
-can't narrow because it has no baseline to diff; a safe refinement is to
-compare `slate_synced_digest` against the digest *at HEAD* and, on a match,
-resolve the remaining working-tree changes by symbol; (2) shallow resolution
-treats `module.symbol` as living in `module` — a re-export alias can't be
-followed (accepted bound, matches `imports.py`'s no-resolver philosophy).
+**Part B — claim-level trust — landed (2026-07-21).** Evaluation now yields a
+per-claim verdict (fresh/stale/unknowable) plus a conservative doc roll-up, so
+`slate status` reads "2 of 5 claims suspect" and names the sentence. New
+`slate/claims.py` segments the human body into referencing units (its walk is
+*total* — the union of a doc's claim refs equals its whole-text refs, so nothing
+the trust path relies on is dropped); `freshness` adds `ClaimVerdict` +
+`DocReport.claims`, reuses Part A's `_symbol_verdict`, and line-diffs the
+generated facts. `verify` watch-quiet is now the fraction of claims that check
+out. The doc-level status stays the authoritative whole-text roll-up in
+`_claims_still_check_out` (never a false fresh); the breakdown is the finer view.
+`--json` is additive (status/verify/diff gained claim fields; MCP mirrors them).
+
+**Next: Part C — dependency-edge facts.** Part B knows which claim a change
+touched; Part C should record *edges* (this doc's claim depends on that
+module/symbol) so a change to a dependency can flag dependents that don't
+textually reference it. Carry-over follow-ups still open: (1) the orphaned-anchor
+path is digest-gated (no baseline to diff) — a safe refinement compares the
+recorded digest against the digest *at HEAD*, then resolves working-tree changes
+by symbol; (2) shallow resolution treats `module.symbol` as living in `module` —
+re-export aliases aren't followed (accepted bound, matches `imports.py`).
 
 ## Landmines
 

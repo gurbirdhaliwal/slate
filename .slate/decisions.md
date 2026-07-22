@@ -1,8 +1,8 @@
 ---
 slate_doc: decisions
 slate_generated: false
-slate_synced_commit: 4222b06
-slate_synced_at: 2026-07-21T00:40:24+00:00
+slate_synced_commit: 6f28164
+slate_synced_at: 2026-07-21T18:55:35+00:00
 slate_synced_digest: e3b0c44298fc1c14
 slate_watches:
 ---
@@ -57,6 +57,26 @@ Revisit trigger: Prose grows beyond one paragraph per doc.
 ```
 
 ```
+Date: 2026-07-21
+Decision: Freshness resolves a changed watched file to the symbols it touched
+          (Part A). `_claims_still_check_out` now clears a human claim about
+          `module.symbol` only when that symbol's lines were provably untouched;
+          a claim about a whole *path* still stales on any edit (unchanged).
+          New: `symbols.py` (stdlib `ast` for Python, shallow regex for JS/TS,
+          in the spirit of `imports.py`), `gitutil.changed_hunks` (new-side line
+          ranges from `git diff --unified=0`, untracked files reported whole),
+          `refs.extract_symbol_refs`. No frontmatter/schema change.
+Rationale: Watch globs resolve at the file; claims live at the symbol. The old
+          rule ignored `module.symbol` refs entirely — a body change to a
+          described function was a silent false *fresh* (the path was never
+          backticked and the coarse auto-block regenerates identically).
+Trade-off: Symbol resolution may only *narrow* stale→fresh; any unparseable or
+          ambiguous file (SyntaxError, deleted, non-Python/JS, unresolvable
+          qualifier) falls back to path-level "assume stale" — never a false
+          fresh (§10). Re-export aliases aren't followed (shallow, no resolver).
+Revisit trigger: Any observed false fresh from symbol resolution; a real need
+          to follow re-exports or to narrow the orphaned-anchor (digest) path.
+
 Date: 2026-07-16
 Decision: Agent integration = MCP stdio server + two-layer consent: editor prompts per call, .slate/agent-access is the read-default capability ceiling
 Rationale: MCP is what coding agents already speak; a server-side ceiling caps the blast radius of an over-eager always-allow and is committable team policy

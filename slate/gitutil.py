@@ -8,6 +8,7 @@ explicitly — nothing here depends on process CWD.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -87,6 +88,66 @@ def changed_files(root: Path, since: str | None) -> list[str]:
         else:
             changed.add(_unquote(path))
     return sorted(changed)
+
+
+_HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+
+
+def changed_hunks(root: Path, since: str | None) -> dict[str, list[tuple[int, int]]]:
+    """Per-file changed line ranges (new-side) between ``since`` and the worktree.
+
+    ``git diff --unified=0 <since>`` diffs the commit against the working tree
+    (committed *and* uncommitted edits), so the ranges are line numbers in the
+    file currently on disk — exactly what ``symbols.changed_symbols`` parses.
+    Untracked files never appear in that diff, so each is reported whole; a new
+    file is entirely changed.
+
+    A pure deletion hunk (``+c,0``) records the gap around line ``c`` so the
+    enclosing definition still counts as touched. When ``since`` is missing or
+    unresolvable only untracked files can be reported — the caller treats an
+    unknowable history conservatively rather than guessing.
+    """
+    hunks: dict[str, list[tuple[int, int]]] = {}
+    if since and commit_exists(root, since):
+        out = _git(root, "diff", "--unified=0", "-M", "--no-color", since, "--")
+        _parse_hunks(out, hunks)
+    others = _git(root, "ls-files", "--others", "--exclude-standard")
+    for rel in others.splitlines():
+        if not rel or not (root / rel).exists():
+            continue
+        try:
+            line_count = (root / rel).read_text(errors="ignore").count("\n") + 1
+        except OSError:
+            line_count = 1
+        hunks.setdefault(rel, []).append((1, max(line_count, 1)))
+    return hunks
+
+
+def _parse_hunks(diff: str, hunks: dict[str, list[tuple[int, int]]]) -> None:
+    current: str | None = None
+    for line in diff.splitlines():
+        if line.startswith("+++ "):
+            target = line[4:]
+            current = None if target == "/dev/null" else _strip_diff_prefix(target)
+            continue
+        if current is None:
+            continue
+        match = _HUNK_HEADER.match(line)
+        if not match:
+            continue
+        start = int(match.group(1))
+        length = int(match.group(2)) if match.group(2) is not None else 1
+        if length == 0:  # pure deletion: mark the gap around the anchor line
+            anchor = max(start, 1)
+            hunks.setdefault(current, []).append((anchor, anchor + 1))
+        else:
+            hunks.setdefault(current, []).append((start, start + length - 1))
+
+
+def _strip_diff_prefix(target: str) -> str:
+    # `+++ b/path`, or `+++ "b/quoted path"` when git quotes special chars.
+    target = _unquote(target)
+    return target[2:] if target.startswith("b/") else target
 
 
 def changed_with_status(root: Path, since: str | None) -> dict[str, str]:

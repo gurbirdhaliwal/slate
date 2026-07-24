@@ -1,8 +1,8 @@
 ---
 slate_doc: decisions
 slate_generated: false
-slate_synced_commit: a1e8db6
-slate_synced_at: 2026-07-21T22:21:57+00:00
+slate_synced_commit: 8d4e03e
+slate_synced_at: 2026-07-24T18:59:11+00:00
 slate_synced_digest: e3b0c44298fc1c14
 slate_watches:
 ---
@@ -141,4 +141,25 @@ Trade-off: status may run a repo scan when watched paths changed (still
           sub-second); digest mismatch can't enumerate committed paths.
 Revisit trigger: Any observed false fresh from content verification; digest
           hashing felt (>1s) on large repos.
+```
+
+```
+Date: 2026-07-24
+Decision: Quantified-value surface — measured one-line receipts on every
+          read/status/sync, a `slate value` cumulative ledger, and additive
+          "value" fields on MCP slate_read/slate_sync. Ledger is clone-local
+          (.git/slate/value.json), never committed, entirely outside trust math.
+Rationale: The user should see what Slate saves on every run, not take it on
+          faith — and a context-trust product cannot hallucinate its own
+          marketing. The ledger stores measured events only (real file sizes,
+          real runs, real wall-clock); token/dollar figures are display-time
+          arithmetic under the same stated assumptions as benchmarks/benchmark.py.
+          Catches dedupe per (doc, sync anchor); fresh-doc syncs record nothing
+          avoided; small repos where the layer exceeds the baseline are reported
+          as exactly that.
+Trade-off: read/sync now run a freshness/scan pass for measurement (sub-second,
+          local); one clone-local state file inside .git. Recording is
+          best-effort by construction — a ledger failure never breaks a command.
+Revisit trigger: Receipts reading as noise in the field, or evidence the
+          exploration baseline misstates real agent behavior.
 ```

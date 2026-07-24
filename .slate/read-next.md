@@ -1,8 +1,8 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: a1e8db6
-slate_synced_at: 2026-07-21T22:21:57+00:00
+slate_synced_commit: 8d4e03e
+slate_synced_at: 2026-07-24T18:59:11+00:00
 slate_synced_digest: e3b0c44298fc1c14
 slate_watches:
 ---
@@ -46,6 +46,22 @@ regenerates the block differently, so the existing freshness/sync machinery
 flags and heals it with no new trust code; each edge line is a Part B claim.
 Rendering sorts sources and targets (byte-identical across `PYTHONHASHSEED`),
 top-level-dir granularity only — no resolver, no false precision.
+
+**Value ledger — landed (2026-07-24).** Slate now shows the user what it saves,
+with measured evidence only. New `slate/value.py`: a clone-local ledger at
+`.git/slate/value.json` (via `gitutil.state_dir`; never committed, never in
+trust math) records real events — context tokens served vs. a measured
+re-exploration baseline on every `read`, stale docs caught before use (deduped
+per doc + sync anchor) on `status`/`diff`, and per-sync receipts (measured
+wall-clock, 0 tokens, vs. the measured size of a manual AI rewrite of the
+non-fresh docs). One-line `value:` footers on read/status/sync (human output
+only — `--json` shapes gained only additive fields), a `slate value [--json]`
+cumulative report with assumptions disclosed, additive `value` fields on MCP
+`slate_read`/`slate_sync`, and `SLATE_NO_VALUE=1` to opt out. Methodology is
+`benchmarks/benchmark.py`'s: stored numbers are measured; dollars are
+display-time arithmetic at labeled list prices. Every record path is
+best-effort — a ledger failure can never break a command
+(`tests/test_value.py` pins this, dedupe, and the JSON contracts).
 
 **The precision-upgrade arc (A→B→C) is complete.** File→symbol→claim resolution
 plus dependency-edge facts. Remaining carry-overs, both optional refinements

@@ -38,7 +38,25 @@ slate sync --prose      # opt-in: LLM-drafted orientation paragraph above the
 slate watches --apply   # propose watch globs from import graphs + doc references
 slate hook install      # pre-push gate: refuses to push a stale context layer
 slate fleet ~/code      # freshness roll-up across many repos
+slate value             # what slate has saved you in this repo — measured
 ```
+
+Every `read`, `status`, and `sync` also leaves a one-line **receipt** of the
+value it just delivered, so the savings stay visible as you work:
+
+```
+value: served 4,183 tokens of trusted context — re-exploring measures 31,280 tokens (7 files + tree); ~27,097 input tokens avoided
+value: caught 2 stale docs before an agent trusted them — 2 catch(es) all-time in this clone
+value: healed 2 stale doc(s) in 87 ms, 0 tokens — a manual AI rewrite measures ~24,374 in + ~624 out tokens (≈$0.08 at list price)
+```
+
+Nothing is invented: counts come from real command runs, token numbers from
+real file sizes in your working tree, timings from a real clock. Dollar
+figures are labeled estimates (4 chars/token, published list prices) computed
+from those measured sizes — the same methodology as
+[benchmarks/RESULTS.md](benchmarks/RESULTS.md). The ledger lives in
+`.git/slate/value.json` (per-clone, never committed, never part of trust
+math); set `SLATE_NO_VALUE=1` to turn receipts off.
 
 Every context doc carries freshness metadata (sync anchor commit + content
 digest + watch globs) in its frontmatter and is always in one of three states:

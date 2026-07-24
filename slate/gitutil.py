@@ -191,6 +191,17 @@ def hooks_dir(root: Path) -> Path:
     return path if path.is_absolute() else root / path
 
 
+def state_dir(root: Path) -> Path:
+    """Slate's clone-local state directory inside the git dir (worktree-aware).
+
+    State here (e.g. the value ledger) is per-clone by design: never tracked,
+    never in the diff, and invisible to the freshness engine.
+    """
+    out = _git(root, "rev-parse", "--git-path", "slate").strip()
+    path = Path(out)
+    return path if path.is_absolute() else root / path
+
+
 def commits_since(root: Path, since: str) -> int:
     try:
         return int(_git(root, "rev-list", "--count", f"{since}..HEAD").strip())

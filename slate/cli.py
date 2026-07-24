@@ -11,6 +11,7 @@ Commands (product doc §9):
     slate mark      attest that a human-owned doc is accurate at HEAD
     slate verify    verification score per doc
     slate read      print the first-read path (what an AI should read, in order)
+    slate value     measured savings from slate in this repo (tokens, catches, cost)
     slate diff      what changed vs. what each doc claims; preview of sync
     slate watches   show watch globs and propose additions (--apply writes them)
     slate hook      install/uninstall the pre-push freshness gate
@@ -42,6 +43,7 @@ from . import (
     hooks,
     imports as imports_mod,
     scanner,
+    value,
     verify,
 )
 from .agentcfg import CLIENTS
@@ -153,6 +155,16 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--paths", action="store_true", help="print file paths only")
     p.set_defaults(func=cmd_read)
 
+    p = sub.add_parser(
+        "value",
+        help="measured savings from slate in this repo (tokens, catches, cost)",
+        description="cumulative value ledger: context served vs. measured re-exploration, "
+                    "stale docs caught before use, and what deterministic syncs replaced. "
+                    "Measured events only; cost estimates are labeled with their assumptions.",
+    )
+    p.add_argument("--json", action="store_true", help="machine-readable output")
+    p.set_defaults(func=cmd_value)
+
     p = sub.add_parser("diff", help="what changed vs. what each doc claims (+ sync preview)", description="what changed vs. what each doc claims (+ sync preview)")
     p.add_argument("docs", nargs="*", help="doc names (default: every doc that isn't fresh)")
     p.set_defaults(func=cmd_diff)
@@ -259,6 +271,9 @@ def cmd_status(root: Path, args: argparse.Namespace) -> int:
                 print(f"    {marker} {_claim_line(c)}")
             if len(human_suspect) > 3:
                 print(f"    … and {len(human_suspect) - 3} more suspect claim(s)")
+    caught = value.record_catches(root, reports)
+    if not args.json and (footer := value.catches_footer(caught)):
+        print(f"\n{footer}")
     problems = [r for r in reports if r.status != FRESH]
     if args.ci and problems:
         print(f"\n{len(problems)} doc(s) not fresh", file=sys.stderr)
@@ -286,21 +301,29 @@ def cmd_sync(root: Path, args: argparse.Namespace) -> int:
             return 2
         prose = llm.prose_writer(api_key)
 
+    # Measured before the sync: what the manual AI-rewrite workflow would have
+    # had to read/write for the docs that are actually stale right now.
+    reports = {r.doc.spec.name: r for r in freshness.evaluate_all(root)}
+    baseline = value.sync_baseline(root, reports, [d.spec.name for d in selected])
+
     scan = scanner.scan(root)
-    for doc in selected:
-        try:
-            generator.sync_doc(doc, scan, prose=prose)
-        except Exception as exc:
-            from .llm import ProseError
-            if not isinstance(exc, ProseError):
-                raise
-            # Prose is additive — never let it block the deterministic sync.
-            print(f"warning: prose skipped for {doc.spec.rel_path}: {exc}", file=sys.stderr)
-            generator.sync_doc(doc, scan)
-        print(f"synced {doc.spec.rel_path}")
+    with value.timer() as t:
+        for doc in selected:
+            try:
+                generator.sync_doc(doc, scan, prose=prose)
+            except Exception as exc:
+                from .llm import ProseError
+                if not isinstance(exc, ProseError):
+                    raise
+                # Prose is additive — never let it block the deterministic sync.
+                print(f"warning: prose skipped for {doc.spec.rel_path}: {exc}", file=sys.stderr)
+                generator.sync_doc(doc, scan)
+            print(f"synced {doc.spec.rel_path}")
     skipped = [d.spec.name for d in docs if d not in selected and not d.spec.generated]
     if not args.docs and skipped:
         print(f"human-owned docs untouched ({', '.join(skipped)}) — review and `slate mark` them")
+    if footer := value.sync_footer(value.record_sync(root, baseline, t.ms)):
+        print(footer)
     return 0
 
 
@@ -359,6 +382,8 @@ def cmd_read(root: Path, args: argparse.Namespace) -> int:
         (s for s in DOC_SPECS if s.read_order and s.name in reports),
         key=lambda s: s.read_order,
     )
+    measured = value.record_session(root)
+    value.record_catches(root, reports.values())
     if args.paths:
         for spec in ordered:
             print(spec.rel_path)
@@ -368,6 +393,25 @@ def cmd_read(root: Path, args: argparse.Namespace) -> int:
         r = reports[spec.name]
         icon = STATUS_ICONS[r.status]
         print(f"{i}. {icon} {spec.rel_path} [{r.status}] — {spec.title}")
+    if footer := value.session_footer(measured):
+        print(f"\n{footer}")
+    return 0
+
+
+def cmd_value(root: Path, args: argparse.Namespace) -> int:
+    t = value.totals(root)
+    if args.json:
+        print(json.dumps(t, indent=2))
+        return 0
+    m = t["measured"]
+    if not (m["sessions_served"] or m["syncs_run"] or m["stale_docs_caught"]):
+        print(
+            "no value recorded in this clone yet — slate keeps a measured receipt\n"
+            "of every `read`, `status`, and `sync` as you work; check back after a\n"
+            "few sessions (ledger: " + t["assumptions"]["ledger"] + ")"
+        )
+        return 0
+    print(value.render_report(t))
     return 0
 
 
@@ -411,6 +455,9 @@ def cmd_diff(root: Path, args: argparse.Namespace) -> int:
                 print(f"    {line}")
         elif d.report.doc.spec.generated and d.report.status != FRESH:
             print("  auto-block already matches a fresh scan — `slate sync` would just re-anchor")
+    caught = value.record_catches(root, [d.report for d in results])
+    if footer := value.catches_footer(caught):
+        print(f"\n{footer}")
     return 0
 
 

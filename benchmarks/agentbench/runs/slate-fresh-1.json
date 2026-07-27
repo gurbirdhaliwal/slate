@@ -2,7 +2,6 @@
   "arm": "slate-fresh",
   "trial": 1,
   "ok": true,
-  "context_delivered": false,
   "input_tokens": 1237803,
   "fresh_input": 58,
   "cache_creation": 33585,

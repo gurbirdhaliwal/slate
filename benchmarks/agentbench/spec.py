@@ -294,7 +294,6 @@ class Metrics:
     arm: str = ""
     trial: int = 0
     ok: bool = False
-    context_delivered: bool = False  # the layer reached the model
 
     input_tokens: int = 0          # fresh + cache-creation + cache-read
     fresh_input: int = 0

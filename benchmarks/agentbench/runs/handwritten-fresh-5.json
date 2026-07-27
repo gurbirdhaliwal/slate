@@ -2,7 +2,6 @@
   "arm": "handwritten-fresh",
   "trial": 5,
   "ok": true,
-  "context_delivered": false,
   "input_tokens": 1844720,
   "fresh_input": 76,
   "cache_creation": 42602,

@@ -2,7 +2,6 @@
   "arm": "handwritten-stale",
   "trial": 5,
   "ok": true,
-  "context_delivered": false,
   "input_tokens": 1723072,
   "fresh_input": 72,
   "cache_creation": 41363,

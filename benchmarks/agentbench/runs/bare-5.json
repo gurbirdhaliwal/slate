@@ -2,7 +2,6 @@
   "arm": "bare",
   "trial": 5,
   "ok": true,
-  "context_delivered": false,
   "input_tokens": 2354716,
   "fresh_input": 100,
   "cache_creation": 44232,

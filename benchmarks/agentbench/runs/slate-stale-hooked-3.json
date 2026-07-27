@@ -2,7 +2,6 @@
   "arm": "slate-stale-hooked",
   "trial": 3,
   "ok": true,
-  "context_delivered": false,
   "input_tokens": 1357118,
   "fresh_input": 60,
   "cache_creation": 37447,

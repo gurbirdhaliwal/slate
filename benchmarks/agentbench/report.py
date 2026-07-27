@@ -13,6 +13,7 @@ check. Correctness is reported as a fraction of trials, never averaged away.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import statistics
 import sys
@@ -29,8 +30,23 @@ def load() -> dict[str, list[dict]]:
     by_arm: dict[str, list[dict]] = {}
     for path in sorted(RUNS.glob("*.json")):
         record = json.loads(path.read_text())
+        # When an arm is re-run its records are overwritten in place, so arms
+        # in this directory can come from different sweeps on different days.
+        # Carry the mtime so the report can say so rather than presenting a
+        # cross-sweep comparison as if it were within-sweep.
+        record["_ran_at"] = dt.datetime.fromtimestamp(
+            path.stat().st_mtime, dt.UTC).date().isoformat()
         by_arm.setdefault(record["arm"], []).append(record)
     return by_arm
+
+
+def provenance(by_arm: dict[str, list[dict]]) -> dict[str, str]:
+    """Which day's sweep each arm's records came from."""
+    out = {}
+    for arm, records in by_arm.items():
+        days = sorted({r["_ran_at"] for r in records})
+        out[arm] = days[0] if len(days) == 1 else f"{days[0]}–{days[-1]}"
+    return out
 
 
 def med(values: list[float]) -> float:
@@ -69,6 +85,11 @@ def aggregate(records: list[dict]) -> dict:
         "any_correction": sum(1 for r in records if r["correction_cycles"] > 0),
         "slate_tool_calls": sum(r.get("slate_tool_calls", 0) for r in records),
         "total_tool_calls": sum(r["tool_calls"] for r in records),
+        # Hook-injected freshness. Unlike slate_tool_calls this does not depend
+        # on the agent choosing anything, so it separates "the signal was
+        # delivered" from "the agent went looking for it".
+        "hook_injections": sum(r.get("hook_injections", 0) for r in records),
+        "any_hook": sum(1 for r in records if r.get("hook_injections", 0) > 0),
     }
 
 
@@ -91,6 +112,21 @@ def markdown(by_arm: dict[str, list[dict]]) -> str:
       "the transcript, correctness from pytest. Raw transcripts for every "
       "trial are in `runs/`.")
     w()
+
+    prov = provenance(by_arm)
+    days = sorted({prov[a.name] for a in arms})
+    if len(days) > 1:
+        w("> **Arms here were not all run on the same day.** Re-running an arm "
+          "overwrites its records in place, so this table mixes sweeps:")
+        w(">")
+        for arm in arms:
+            w(f"> - `{arm.name}` — {prov[arm.name]}")
+        w(">")
+        w("> Comparisons *within* a single day are sound; comparisons across "
+          "days carry an extra confound (model updates, account state, time of "
+          "day). Where a claim depends on a cross-day comparison it is flagged "
+          "at the point it is made.")
+        w()
     w("## Setup")
     w()
     w(f"- **Task** — a real merged Flask PR (`{spec.SOLUTION_COMMIT}`, #5928): "
@@ -208,6 +244,33 @@ def markdown(by_arm: dict[str, list[dict]]) -> str:
       "every arm and discriminates less than the others.")
     w()
 
+    hooked = [a for a in arms if getattr(a, "hooks", False)]
+    unhooked_slate = [a for a in arms if a.context == "slate" and not getattr(a, "hooks", False)]
+    if hooked:
+        w("### Was the freshness signal actually delivered?")
+        w()
+        w("The first sweep's load-bearing finding was that the agent never "
+          "consulted the freshness signal at all, so every other number in it "
+          "described prose sitting in the context window rather than the "
+          "mechanism Slate exists to provide. These arms replace the *offer* "
+          "(an MCP tool the agent may call) with an *injection* (a "
+          "SessionStart/PreToolUse hook the agent cannot decline).")
+        w()
+        w("| Arm | Hooks | Slate MCP tool calls | Hook injections | Trials reached |")
+        w("|---|---|---|---|---|")
+        for arm in [*unhooked_slate, *hooked]:
+            a = agg[arm.name]
+            w(f"| `{arm.name}` | {'yes' if getattr(arm, 'hooks', False) else 'no'} "
+              f"| {a['slate_tool_calls']} | {a['hook_injections']} "
+              f"| {a['any_hook']}/{a['trials']} |")
+        w()
+        starved = [a.name for a in hooked if agg[a.name]["hook_injections"] == 0]
+        if starved:
+            w(f"**{', '.join(starved)} recorded zero hook injections.** The "
+              "delivery mechanism did not fire, so those arms say nothing about "
+              "hooks and must not be read as evidence either way.")
+            w()
+
     slate_arms = [a for a in arms if a.context == "slate"]
     if slate_arms:
         used = sum(agg[a.name]["slate_tool_calls"] for a in slate_arms)
@@ -217,7 +280,7 @@ def markdown(by_arm: dict[str, list[dict]]) -> str:
         w(f"Across the Slate arms the agent made **{used} calls to Slate's own "
           f"MCP tools out of {opportunities} tool calls**.")
         w()
-        if used == 0:
+        if used == 0 and not hooked:
             w("Zero. Not a delivery failure — the MCP server reported "
               "`connected`, `slate_read` / `slate_status` / `slate_diff` / "
               "`slate_verify` were all exposed in the session, and the "
@@ -231,6 +294,41 @@ def markdown(by_arm: dict[str, list[dict]]) -> str:
               "arms show about tokens or turns comes from the prose sitting "
               "in the context window, not from the mechanism Slate exists to "
               "provide.")
+        w()
+
+    # The pre-registered hypothesis: injecting freshness changes behaviour that
+    # offering it did not. Paired so each hooked arm is read against the arm it
+    # is identical to except for delivery.
+    pairs = [(u, h) for u in unhooked_slate for h in hooked
+             if h.name == f"{u.name}-hooked"]
+    if pairs:
+        w("### Hook delivery vs. tool offer, head to head")
+        w()
+        w("Each pair is the same context layer, the same task and the same "
+          "grader. The only difference is whether freshness was injected or "
+          "offered.")
+        w()
+        w("| Comparison | Correct | Decoy hits (median) | Trials hitting a decoy "
+          "| Turns | Cost |")
+        w("|---|---|---|---|---|---|")
+        for base, hook in pairs:
+            for arm in (base, hook):
+                a = agg[arm.name]
+                w(f"| `{arm.name}` | {a['correct']}/{a['trials']} "
+                  f"| {a['decoy_hits']:.0f} [{span(by_arm[arm.name], 'decoy_hits')}] "
+                  f"| {a['any_decoy']}/{a['trials']} "
+                  f"| {a['turns']:.0f} | ${a['cost']:.3f} |")
+        w()
+        w("**How to read this.** `decoy_hits` — reaching for `RequestContext` "
+          "or `_cv_request`, the two names the refactor deleted — is what being "
+          "misled by a stale doc looks like in a transcript, and it is the "
+          "metric hook delivery should move. `correct` was 0/25 across every "
+          "arm of the first sweep; it is a floor effect on this task and is "
+          "reported as a control, not as the hypothesis.")
+        w()
+        w("At n=5 per arm, with the spreads shown in brackets, only a large "
+          "effect is visible here. Treat a difference of one or two trials as "
+          "noise unless the spans separate.")
         w()
 
     if "slate-stale" in agg and "handwritten-stale" in agg:

@@ -132,6 +132,9 @@ class Arm:
     # Commit the context describes. None means BASE_COMMIT (i.e. accurate).
     doc_commit: str | None = None
     blurb: str = ""
+    # Install Slate's Claude Code hooks, so freshness is injected rather than
+    # offered as an MCP tool the agent may decline to call.
+    hooks: bool = False
 
 
 ARMS: tuple[Arm, ...] = (
@@ -169,7 +172,42 @@ ARMS: tuple[Arm, ...] = (
         blurb="A Slate layer generated before the context refactor; the code "
               "then advanced. `slate status` reports the docs stale.",
     ),
+    # --- hook delivery (added 2026-07-27) ----------------------------------
+    # The first sweep's load-bearing finding was that the agent made 0 calls to
+    # any slate_* tool in 320 tool calls, so the freshness signal was never
+    # consulted and E2-vs-E1 measured nothing about freshness. These arms are
+    # identical to the two above except that freshness is *injected* by a
+    # SessionStart/PreToolUse hook instead of being offered as a tool call.
+    #
+    # The decisive comparison is slate-stale vs slate-stale-hooked, and the
+    # metric that should move is `decoy_hits` — reaching for RequestContext or
+    # _cv_request is what being misled by the stale doc looks like. `correct`
+    # was 0/25 across every arm last time and is unlikely to be the metric that
+    # discriminates; treat it as a control, not the hypothesis.
+    Arm(
+        name="slate-fresh-hooked",
+        experiment="E1",
+        context="slate",
+        hooks=True,
+        blurb="`slate init` at the task commit plus hook delivery. Control for "
+              "the cost of injecting a signal when nothing is wrong.",
+    ),
+    Arm(
+        name="slate-stale-hooked",
+        experiment="E2",
+        context="slate",
+        doc_commit=STALE_DOC_COMMIT,
+        hooks=True,
+        blurb="The stale Slate layer, with freshness injected by hooks rather "
+              "than offered as a tool. The agent is told the docs are stale "
+              "whether or not it asks.",
+    ),
 )
+
+# Text only Slate's hooks emit. Used to measure delivery from the transcript
+# itself rather than assuming the hook fired — the same discipline that caught
+# the first sweep measuring five identical arms.
+HOOK_MARKERS = ("Slate context layer", "context doc(s) that are not fresh")
 
 
 # The hand-written baseline. Written to be genuinely useful — this is the
@@ -259,6 +297,11 @@ class Metrics:
     # this is the metric that decides whether the mechanism is reachable at
     # all — separately from whether it is correct.
     slate_tool_calls: int = 0
+    # Times Slate's hook injected freshness into the window. Unlike
+    # slate_tool_calls this does not depend on the agent choosing anything, so
+    # a hooked arm reading 0 here means the delivery mechanism failed and the
+    # trial says nothing about hooks.
+    hook_injections: int = 0
     files_read: int = 0            # unique paths opened
     decoy_hits: int = 0            # reaches for a name the refactor removed
     found_target_after: int = 0    # tool calls before first ground-truth touch

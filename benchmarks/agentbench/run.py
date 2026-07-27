@@ -69,10 +69,33 @@ def _grader_python() -> str:
     return sys.executable
 
 
+def _is_git_repo(path: Path) -> bool:
+    """Is `path` itself a git repo?
+
+    `rev-parse --git-dir` alone is not enough: it walks *up* the tree, so a
+    broken clone nested inside this checkout resolves to Slate's own .git and
+    reports success. Compare the resolved dir against the path to be sure.
+    """
+    if not path.exists():
+        return False
+    proc = subprocess.run(["git", "-C", str(path), "rev-parse", "--absolute-git-dir"],
+                          capture_output=True, text=True)
+    if proc.returncode != 0:
+        return False
+    return Path(proc.stdout.strip()).resolve() == path.resolve()
+
+
 def setup() -> None:
     WORK.mkdir(parents=True, exist_ok=True)
     RUNS.mkdir(parents=True, exist_ok=True)
-    if not MIRROR.exists():
+    # `.exists()` is not a validity check: an interrupted clone leaves a
+    # directory with HEAD and config but no objects, and setup then reports
+    # "ready" while every trial fails with "repository does not exist".
+    # Ask git whether it is actually a repo.
+    if not _is_git_repo(MIRROR):
+        if MIRROR.exists():
+            print(f"{MIRROR.name} is not a valid git repo — re-cloning")
+            shutil.rmtree(MIRROR, ignore_errors=True)
         print(f"cloning {spec.REPO_URL} ...")
         subprocess.run(["git", "clone", "--quiet", "--bare", spec.REPO_URL,
                         str(MIRROR)], check=True)
@@ -120,8 +143,14 @@ def build_trial(arm: spec.Arm, trial: int) -> Path:
     elif arm.context == "slate":
         subprocess.run([str(SLATE_BIN), "init"], cwd=root,
                        capture_output=True, check=True)
-        subprocess.run([str(SLATE_BIN), "agent", "enable", "claude"], cwd=root,
-                       capture_output=True, check=True)
+        # --no-hooks keeps the un-hooked arms as they were in the first sweep,
+        # so `slate agent enable claude` gaining hook installation does not
+        # silently change the control.
+        subprocess.run([str(SLATE_BIN), "agent", "enable", "claude", "--no-hooks"],
+                       cwd=root, capture_output=True, check=True)
+        if arm.hooks:
+            subprocess.run([str(SLATE_BIN), "agent", "hooks", "install"],
+                           cwd=root, capture_output=True, check=True)
 
     _bridge_to_claude_md(root)
     git(root, "add", "-A")
@@ -156,8 +185,20 @@ def _bridge_to_claude_md(root: Path) -> None:
 DELIVERY_CANARY = "CTXPROBE-4417"
 
 
+DELIVERY_ATTEMPTS = 3
+
+
 def verify_delivery(arm: spec.Arm) -> bool:
-    """Confirm this arm's context actually lands in the model's window."""
+    """Confirm this arm's context actually lands in the model's window.
+
+    Retried, because the check is a sampled model response and a single
+    refusal or off-format answer is not evidence that delivery is broken —
+    but it *is* enough to abort a 70-minute sweep, which happened. Delivery
+    is a property of the tree, so it does not vary run to run; a false
+    negative here costs far more than the extra call. Any single success
+    proves the context arrived, so the retries only ever reduce flake and
+    can never manufacture a pass for an arm that genuinely delivers nothing.
+    """
     if arm.context == "none":
         return True
     root = build_trial(arm, 0)
@@ -166,18 +207,27 @@ def verify_delivery(arm: spec.Arm) -> bool:
 
     env = dict(os.environ)
     env["PATH"] = f"{SLATE_BIN.parent}:{env['PATH']}"
-    proc = subprocess.run(
-        ["claude", "-p",
-         "Without using any tools, state the context probe token from your "
-         "project instructions verbatim. If you have none, say NONE.",
-         "--output-format", "json", "--permission-mode", "bypassPermissions",
-         "--model", spec.MODEL],
-        cwd=root, env=env, capture_output=True, text=True, stdin=subprocess.DEVNULL)
-    shutil.rmtree(root, ignore_errors=True)
     try:
-        return DELIVERY_CANARY in json.loads(proc.stdout).get("result", "")
-    except (json.JSONDecodeError, AttributeError):
+        for attempt in range(DELIVERY_ATTEMPTS):
+            proc = subprocess.run(
+                ["claude", "-p",
+                 "Without using any tools, state the context probe token from your "
+                 "project instructions verbatim. If you have none, say NONE.",
+                 "--output-format", "json", "--permission-mode", "bypassPermissions",
+                 "--model", spec.MODEL],
+                cwd=root, env=env, capture_output=True, text=True,
+                stdin=subprocess.DEVNULL)
+            try:
+                if DELIVERY_CANARY in json.loads(proc.stdout).get("result", ""):
+                    return True
+            except (json.JSONDecodeError, AttributeError):
+                pass
+            if attempt + 1 < DELIVERY_ATTEMPTS:
+                print(f"    delivery check for {arm.name} inconclusive, retrying "
+                      f"({attempt + 2}/{DELIVERY_ATTEMPTS})")
         return False
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 def _strip_context(root: Path) -> None:
@@ -240,8 +290,18 @@ def _read_transcript(path: Path) -> str:
 
 
 def parse_transcript(path: Path, m: spec.Metrics) -> None:
+    raw = _read_transcript(path)
+
+    # Hook-injected freshness is counted off the raw transcript rather than a
+    # specific event shape: the injection is context, not a tool call, and the
+    # envelope it arrives in is Claude Code's to change. A hooked arm reading 0
+    # here means delivery failed, which invalidates that trial's claim about
+    # hooks — the same check that caught the first sweep measuring five
+    # identical arms.
+    m.hook_injections = sum(raw.count(marker) for marker in spec.HOOK_MARKERS)
+
     events = []
-    for line in _read_transcript(path).splitlines():
+    for line in raw.splitlines():
         line = line.strip()
         if not line:
             continue

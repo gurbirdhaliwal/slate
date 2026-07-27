@@ -252,13 +252,34 @@ def cmd_init(root: Path, args: argparse.Namespace) -> int:
         for path in existing:
             print(f"  {path}")
         return 2
+    # Written before the scan so the scan counts it: a file that appears after
+    # the facts are generated leaves the doc describing a tree that no longer
+    # exists, and the very next sync would rewrite it.
+    bridge = agentcfg.bridge_claude(root)
     scan = scanner.scan(root)
     written = generator.generate_all(scan, force=args.force)
     print(f"initialized context layer at {gitutil.head_commit(root) or '(no commits yet)'}:")
     for path in written:
         print(f"  wrote {path}")
+    _print_claude_bridge(bridge)
     print("\nnext: fill in the (human) sections, then commit the context layer.")
     return 0
+
+
+def _print_claude_bridge(result: str) -> None:
+    """Say which happened.
+
+    Staying quiet here would reproduce the exact failure the bridge exists to
+    fix: a layer that looks installed and is never read.
+    """
+    if result == agentcfg.WROTE:
+        print(f"  wrote {agentcfg.CLAUDE_BRIDGE} (imports AGENTS.md — Claude "
+              f"Code does not read AGENTS.md itself)")
+    elif result == agentcfg.MANUAL:
+        print(f"\n! {agentcfg.CLAUDE_BRIDGE} exists but does not import the layer.")
+        print(f"  Claude Code reads {agentcfg.CLAUDE_BRIDGE}, not AGENTS.md, so it "
+              f"will not see this context layer.")
+        print(f"  Add this line to {agentcfg.CLAUDE_BRIDGE}: {agentcfg.BRIDGE_IMPORT}")
 
 
 def cmd_status(root: Path, args: argparse.Namespace) -> int:
@@ -325,6 +346,11 @@ def cmd_sync(root: Path, args: argparse.Namespace) -> int:
             return 2
         prose = llm.prose_writer(api_key)
 
+    # Backfill for repos initialised before the bridge existed — they have run
+    # `init` already and would otherwise keep shipping Claude Code nothing.
+    # Before the scan, so the regenerated facts count it (see cmd_init).
+    bridge = agentcfg.bridge_claude(root)
+
     # Measured before the sync: what the manual AI-rewrite workflow would have
     # had to read/write for the docs that are actually stale right now.
     reports = {r.doc.spec.name: r for r in freshness.evaluate_all(root)}
@@ -343,6 +369,7 @@ def cmd_sync(root: Path, args: argparse.Namespace) -> int:
                 print(f"warning: prose skipped for {doc.spec.rel_path}: {exc}", file=sys.stderr)
                 generator.sync_doc(doc, scan)
             print(f"synced {doc.spec.rel_path}")
+    _print_claude_bridge(bridge)
     skipped = [d.spec.name for d in docs if d not in selected and not d.spec.generated]
     if not args.docs and skipped:
         print(f"human-owned docs untouched ({', '.join(skipped)}) — review and `slate mark` them")
@@ -626,6 +653,11 @@ def cmd_agent_enable(root: Path, args: argparse.Namespace) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 2
         print(f"registered slate MCP server for {client}: wrote {rel}")
+        if client == "claude" and (root / "AGENTS.md").exists():
+            # The MCP tools are opt-in — the agent has to choose to call them.
+            # The instruction file is what it reads unprompted, so wiring the
+            # server without the bridge leaves the layer invisible by default.
+            _print_claude_bridge(agentcfg.bridge_claude(root))
     if args.full:
         agentcfg.set_access(root, agentcfg.FULL)
     mode = agentcfg.get_access(root)

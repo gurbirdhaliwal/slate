@@ -55,9 +55,17 @@ DOC_SPECS: list[DocSpec] = [
 ]
 
 
+# Claude Code reads this file, not AGENTS.md, so Slate writes it as a one-line
+# import of the layer (see agentcfg.bridge_claude). It makes no claims about
+# the code, so it is a context-layer path rather than a tracked doc.
+CLAUDE_BRIDGE = "CLAUDE.md"
+
 # Docs never invalidate docs: these paths are excluded from change detection
-# and from the watched-content digest alike.
-CONTEXT_DOC_PATHS = {spec.rel_path for spec in DOC_SPECS}
+# and from the watched-content digest alike. The Claude bridge is in here for
+# the same reason — on a repo with no source directories the module map
+# watches `**`, and a doc going stale because Slate wrote its own pointer file
+# would be pure noise.
+CONTEXT_DOC_PATHS = {spec.rel_path for spec in DOC_SPECS} | {CLAUDE_BRIDGE}
 
 
 def spec_by_name(name: str) -> DocSpec | None:

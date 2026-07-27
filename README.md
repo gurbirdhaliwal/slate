@@ -79,6 +79,7 @@ the last sync and the doc stays `fresh` (a `slate sync` re-anchors it).
 
 ```
 AGENTS.md                 routing + trust protocol at the repo root (read first)
+CLAUDE.md                 one-line `@AGENTS.md` import — see below
 .slate/read-next.md       current focus — the smallest useful context for the task at hand
 .slate/architecture.md    what the system is and its invariants
 .slate/modules.md         where things live (scanned module map)
@@ -90,6 +91,16 @@ Generated docs contain a marked auto-block that `slate sync` rewrites from a
 deterministic repo scan; everything outside the block is human-owned and
 survives every sync. `read-next.md` and `decisions.md` are fully human-owned —
 Slate only tracks their freshness (`slate mark` attests them).
+
+**Why a `CLAUDE.md` as well.** Claude Code reads `CLAUDE.md` and *not*
+`AGENTS.md` — it treats AGENTS.md as another tool's format and only reads it
+when importing from Codex ([docs](https://code.claude.com/docs/en/memory)). A
+repo whose context layer hangs off AGENTS.md alone therefore ships Claude Code
+nothing, and does it silently: the MCP server still connects and the docs still
+sit in the tree. `slate init` writes a `CLAUDE.md` containing `@AGENTS.md` so
+the layer actually loads; commit it alongside AGENTS.md, and add any
+Claude-specific instructions below the import. If you already have a
+`CLAUDE.md`, Slate never touches it — it tells you to add the one line.
 
 ## Install
 

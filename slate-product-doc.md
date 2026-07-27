@@ -110,7 +110,7 @@ The core mechanism has three parts:
 ### Why This Wedge
 
 - **Value on day one, zero integration.** `pip install`, `slate init`, done. No SDK, no server, no API key, no design partners needed to prove value — unlike the debugger wedge this replaces.
-- **It rides an existing convention instead of creating one.** AGENTS.md is already read by the major tools; Slate makes it trustworthy rather than asking anyone to change behavior.
+- **It rides an existing convention instead of creating one.** AGENTS.md is a convention several coding agents follow; Slate makes it trustworthy rather than asking anyone to change behavior. **Correction, measured 2026-07-26:** Claude Code is not one of them. It loads `CLAUDE.md` only and treats `AGENTS.md` as a foreign format, read solely when importing from Codex ([docs](https://code.claude.com/docs/en/memory)). A canary instruction placed in AGENTS.md was ignored in 3/3 headless runs; the same text in CLAUDE.md was followed every time. `slate init` now also writes a `CLAUDE.md` that `@`-imports the layer. The general lesson is the sharper one: **do not assume a client reads the layer — verify it per client, because the failure is silent.** A repo can carry a perfectly maintained context layer that the agent never sees.
 - **The moat is workflow embedding, not IP.** Once the context layer lives in the repo, travels through PRs, and gates CI, ripping Slate out means losing the maintained layer and the freshness discipline. Same integration-depth moat as the old strategy, at 1% of the infrastructure.
 - **Narrow enough for one person to own.** The MVP is ~1,500 lines of stdlib Python with a fully deterministic core. No COGS, no ops, no on-call.
 - **Broad enough to expand.** IDE integrations, PR bots that flag "this change stales 3 context docs," team dashboards, LLM-assisted prose updates — all natural layers on top of a trusted freshness signal.
@@ -384,6 +384,16 @@ slate watches [--apply]     current watch globs + proposed additions inferred
                             from import graphs and doc body references
 slate hook install|uninstall  pre-push gate running `status --ci` (pre-PUSH, not
                             pre-commit — see the 2026-07-15 hook decision)
+
+# Multi-dev merges (2026-07-24)
+slate merge install|uninstall|status  git merge driver for the context layer:
+                            3-way-merges the hand-written text and leaves the
+                            auto-block to `slate sync` (it is a function of the
+                            merged tree), unions watch globs, and unions the
+                            append-only decision log. install writes committed
+                            .gitattributes + per-clone `merge.slate.driver`;
+                            status reports which half is present
+slate merge run O A B P     the driver git invokes; not for humans
 
 # Phase 3
 slate fleet [PATH...] [--ci]  freshness roll-up across repos (a path is a repo,

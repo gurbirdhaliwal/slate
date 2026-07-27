@@ -279,6 +279,22 @@ EDIT_TOOLS = {"Edit", "Write", "NotebookEdit", "MultiEdit"}
 OPEN_TOOLS = {"Read", "Grep", "Glob"}
 
 
+def _current_transcripts() -> list[Path]:
+    """The newest transcript for each trial, one per stem.
+
+    A trial can have both a `.jsonl` (just written) and a `.jsonl.gz` (from an
+    earlier sweep, committed). They are different runs of the same arm, so
+    reading both double-counts and, worse, lets the older one win.
+    """
+    newest: dict[str, Path] = {}
+    for path in [*RUNS.glob("*.jsonl"), *RUNS.glob("*.jsonl.gz")]:
+        stem = path.name.split(".jsonl")[0]
+        current = newest.get(stem)
+        if current is None or path.stat().st_mtime > current.stat().st_mtime:
+            newest[stem] = path
+    return [newest[k] for k in sorted(newest)]
+
+
 def _read_transcript(path: Path) -> str:
     """Transcripts are committed gzipped — 13 MB of raw JSONL is 3.3 MB as
     evidence, and the evidence is the point."""
@@ -520,7 +536,12 @@ def main() -> int:
         # Metric definitions can change without spending another token: the
         # transcripts are the record, the JSON files are just a view of them.
         # Grading results are preserved — they came from pytest, not the text.
-        transcripts = sorted(RUNS.glob("*.jsonl")) + sorted(RUNS.glob("*.jsonl.gz"))
+        # One transcript per trial, newest wins. Re-running an arm writes a
+        # fresh `.jsonl` beside the previous sweep's committed `.jsonl.gz`, and
+        # globbing both processed the stale one *second* — silently replacing
+        # today's metrics with the older sweep's. Dedupe by stem before
+        # parsing anything.
+        transcripts = _current_transcripts()
         for transcript in transcripts:
             stem = transcript.name.split(".jsonl")[0]
             sidecar = RUNS / f"{stem}.json"

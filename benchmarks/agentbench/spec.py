@@ -207,7 +207,21 @@ ARMS: tuple[Arm, ...] = (
 # Text only Slate's hooks emit. Used to measure delivery from the transcript
 # itself rather than assuming the hook fired — the same discipline that caught
 # the first sweep measuring five identical arms.
-HOOK_MARKERS = ("Slate context layer", "context doc(s) that are not fresh")
+#
+# KNOWN BLIND SPOT, measured not assumed: only the SessionStart marker is
+# observable. Claude Code records SessionStart's injected context in the
+# stream-json transcript but does *not* record PreToolUse's, so a PreToolUse
+# warning that genuinely fired and genuinely reached the model leaves no trace
+# here. Verified by instrumenting the hook command itself to log every
+# invocation: in a session that read a covered file, both `SessionStart` and
+# `PreToolUse Read` fired and both returned additionalContext, while the
+# transcript for the same session contained only the SessionStart marker.
+#
+# So `hook_injections` is a floor on delivery, never a ceiling, and it cannot
+# separate "SessionStart only" from "SessionStart plus PreToolUse". Do not read
+# a zero PreToolUse count as the hook not firing.
+HOOK_MARKERS = ("Slate context layer",)
+HOOK_MARKERS_UNOBSERVABLE = ("context doc(s) that are not fresh",)
 
 
 # The hand-written baseline. Written to be genuinely useful — this is the

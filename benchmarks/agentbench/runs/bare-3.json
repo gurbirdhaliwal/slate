@@ -13,6 +13,7 @@
   "cost_usd": 1.0788099999999998,
   "tool_calls": 43,
   "slate_tool_calls": 0,
+  "hook_injections": 0,
   "files_read": 4,
   "decoy_hits": 0,
   "found_target_after": 2,

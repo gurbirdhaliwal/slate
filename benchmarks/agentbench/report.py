@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import itertools
 import json
 import statistics
 import sys
@@ -32,10 +33,17 @@ def load() -> dict[str, list[dict]]:
         record = json.loads(path.read_text())
         # When an arm is re-run its records are overwritten in place, so arms
         # in this directory can come from different sweeps on different days.
-        # Carry the mtime so the report can say so rather than presenting a
-        # cross-sweep comparison as if it were within-sweep.
+        # Date the run by its *transcript*, not the sidecar: `--reparse`
+        # rewrites every sidecar, which would date them all to the reparse and
+        # erase exactly the distinction this is here to preserve.
+        stem = path.stem
+        transcripts = [RUNS / f"{stem}.jsonl", RUNS / f"{stem}.jsonl.gz"]
+        source = next((t for t in transcripts if t.exists()), path)
+        # Local time, deliberately: an evening sweep converted to UTC rolls
+        # onto the next day and merges two sweeps into one apparent date,
+        # erasing the distinction this exists to record.
         record["_ran_at"] = dt.datetime.fromtimestamp(
-            path.stat().st_mtime, dt.UTC).date().isoformat()
+            source.stat().st_mtime).date().isoformat()
         by_arm.setdefault(record["arm"], []).append(record)
     return by_arm
 
@@ -51,6 +59,37 @@ def provenance(by_arm: dict[str, list[dict]]) -> dict[str, str]:
 
 def med(values: list[float]) -> float:
     return statistics.median(values) if values else 0.0
+
+
+def mannwhitney_exact(a: list[float], b: list[float]) -> float:
+    """Exact two-sided Mann-Whitney U p-value by full enumeration.
+
+    Written out rather than imported because this package has no runtime
+    dependencies and the samples are tiny (5 vs 5 = 252 partitions), where an
+    exact test is both cheap and more honest than a normal approximation.
+    Ties contribute 0.5, the standard correction.
+    """
+    n1, n2 = len(a), len(b)
+    if not n1 or not n2:
+        return 1.0
+
+    def u_stat(x: list[float], y: list[float]) -> float:
+        return (sum(1 for i in x for j in y if i < j)
+                + 0.5 * sum(1 for i in x for j in y if i == j))
+
+    observed = u_stat(a, b)
+    extreme = min(observed, n1 * n2 - observed)
+    pool = a + b
+    hits = total = 0
+    for combo in itertools.combinations(range(len(pool)), n1):
+        picked = set(combo)
+        x = [pool[i] for i in combo]
+        y = [pool[i] for i in range(len(pool)) if i not in picked]
+        u = u_stat(x, y)
+        total += 1
+        if min(u, n1 * n2 - u) <= extreme:
+            hits += 1
+    return hits / total if total else 1.0
 
 
 def span(records: list[dict], key: str) -> str:
@@ -178,7 +217,7 @@ def markdown(by_arm: dict[str, list[dict]]) -> str:
       "layer — Slate's or anyone's — makes an agent more likely to get a hard "
       "change right.")
     w()
-    w("What the run does establish is narrower and mostly uncomfortable:")
+    w("What the run does establish is narrower:")
     w()
     w("1. Context measurably speeds up orientation. Documented arms reach a "
       "file the fix touches on tool call 1 rather than 2, and run fewer turns "
@@ -186,9 +225,20 @@ def markdown(by_arm: dict[str, list[dict]]) -> str:
     w("2. Slate's generated layer did that on fewer ingested tokens than a "
       "hand-written doc, and never reproduced a stale claim, because it does "
       "not make prose claims that can rot.")
-    w("3. The agent never called a Slate tool once — see below. The freshness "
-      "engine, which is the product's entire thesis, was not exercised by any "
-      "of these 25 sessions.")
+    slate_mcp = sum(agg[a.name]["slate_tool_calls"]
+                    for a in arms if a.context == "slate")
+    slate_ops = sum(agg[a.name]["total_tool_calls"]
+                    for a in arms if a.context == "slate")
+    w(f"3. **Offering the freshness signal still does not work.** Across every "
+      f"Slate arm the agent made {slate_mcp} calls to a `slate_*` MCP tool out "
+      f"of {slate_ops} tool calls. Injecting it does work — the hooked arms "
+      f"received it in every trial without the agent asking.")
+    if any(getattr(a, "hooks", False) for a in arms):
+        w("4. **The pre-registered hypothesis failed.** Hook delivery did not "
+          "reduce decoy hits, the metric chosen in advance to detect an agent "
+          "being misled by a stale doc. An unplanned effect did show up in "
+          "cost on the stale arm; it is reported below as exploratory, "
+          "because that is what it is.")
     w()
     w("## Results")
     w()
@@ -270,6 +320,17 @@ def markdown(by_arm: dict[str, list[dict]]) -> str:
               "delivery mechanism did not fire, so those arms say nothing about "
               "hooks and must not be read as evidence either way.")
             w()
+        w("**This column counts SessionStart only, and undercounts delivery.** "
+          "Claude Code writes SessionStart's injected context into the "
+          "stream-json transcript but not PreToolUse's, so a PreToolUse warning "
+          "that fired and reached the model leaves no trace to count. That was "
+          "verified rather than assumed: instrumenting the hook command to log "
+          "its own invocations showed both `SessionStart` and `PreToolUse Read` "
+          "firing and returning context in a session whose transcript recorded "
+          "only the former. Treat the number as a floor on delivery — it "
+          "establishes that the mechanism reached every trial, and it cannot "
+          "attribute the effect below to one hook or the other.")
+        w()
 
     slate_arms = [a for a in arms if a.context == "slate"]
     if slate_arms:
@@ -326,9 +387,44 @@ def markdown(by_arm: dict[str, list[dict]]) -> str:
           "arm of the first sweep; it is a floor effect on this task and is "
           "reported as a control, not as the hypothesis.")
         w()
-        w("At n=5 per arm, with the spreads shown in brackets, only a large "
-          "effect is visible here. Treat a difference of one or two trials as "
-          "noise unless the spans separate.")
+        w("Exact two-sided Mann-Whitney U, computed by enumeration (n=5 per "
+          "arm, so 0.0079 is the smallest p this design can produce):")
+        w()
+        w("| Comparison | Metric | Median | Exact p |")
+        w("|---|---|---|---|")
+        for base, hook in pairs:
+            for key, label in (("decoy_hits", "decoy hits (pre-registered)"),
+                               ("tool_calls", "tool calls"),
+                               ("num_turns", "turns"),
+                               ("new_input", "context ingested")):
+                a = [r[key] for r in by_arm[base.name]]
+                b = [r[key] for r in by_arm[hook.name]]
+                p = mannwhitney_exact(a, b)
+                shown = f"**{p:.4f}**" if p < 0.05 else f"{p:.4f}"
+                w(f"| `{base.name}` → `{hook.name}` | {label} "
+                  f"| {statistics.median(a):,.0f} → {statistics.median(b):,.0f} "
+                  f"| {shown} |")
+        w()
+        w("**What this does and does not license.** The pre-registered metric "
+          "moved nowhere (p=1.0, and directionally the wrong way: 1/5 trials "
+          "hit a decoy un-hooked, 2/5 hooked). The cost metrics separate "
+          "cleanly on the *stale* arm and not at all on the *fresh* one — "
+          "which is the interaction the mechanism predicts, since a freshness "
+          "signal has nothing to say when nothing is stale, and it is harder "
+          "to explain by a confound like model drift or time of day, because "
+          "such a confound would move both arms.")
+        w()
+        w("Three caveats, none of them small. **(1)** Tool calls, turns and "
+          "context ingested are not three findings; they are one behavioural "
+          "change measured three ways. Cache-creation per turn is near "
+          "identical between the arms (1,344 vs 1,294), so the token "
+          "difference is the turn difference, and the turn difference is the "
+          "tool-call difference. **(2)** This was not the hypothesis. Eight "
+          "tests were run; a strict Bonferroni correction over all of them "
+          "puts the best result at the edge of significance. **(3)** n=5. The "
+          "honest status is a promising exploratory result that needs "
+          "replication at higher n, pre-registered on cost rather than "
+          "decoys — not a demonstrated win.")
         w()
 
     if "slate-stale" in agg and "handwritten-stale" in agg:
@@ -343,18 +439,22 @@ def markdown(by_arm: dict[str, list[dict]]) -> str:
         w(f"- **Decoy hits: {h['any_decoy']}/{h['trials']} trials in "
           f"`handwritten-stale` vs {s['any_decoy']}/{s['trials']} in "
           "`slate-stale`.** This looks like the freshness signal working. It "
-          "is not. The agent never called a Slate tool, so no freshness "
-          "signal was ever read. The real cause is that Slate's layer — "
+          "is not. The agent essentially never called a Slate tool, so no "
+          "freshness signal was read in these arms. The real cause is that "
+          "Slate's layer — "
           "module maps, file counts, dependency edges — never names "
           "`RequestContext` or `_cv_request` anywhere, while the hand-written "
           "doc describes them in prose. Slate avoided the trap by not making "
           "the kind of claim that can rot, not by detecting that it had.")
-        w("- **Turns and cost differences between arms are inside the "
-          "noise.** `slate-stale` posts the lowest medians in the table (29 "
-          "turns, $0.847), *better* than `slate-fresh` at 37 turns. A stale "
-          "layer outperforming a fresh one is not a mechanism; it is five "
-          "samples with a 23-42 turn spread. No ranking in this table "
-          "survives its own error bars.")
+        sf = agg.get("slate-fresh")
+        if sf:
+            w(f"- **Turns and cost across the un-hooked arms are inside the "
+              f"noise.** `slate-stale` posts {s['turns']:.0f} turns against "
+              f"`slate-fresh`'s {sf['turns']:.0f}, on spreads of "
+              f"[{span(by_arm['slate-stale'], 'num_turns')}] and "
+              f"[{span(by_arm['slate-fresh'], 'num_turns')}]. Read the paired "
+              "table above for the comparison that is actually controlled; no "
+              "ranking among the un-hooked arms survives its own error bars.")
         w()
         w("The one defensible reading of E2: a context layer made of scanned "
           "facts degrades more gracefully than a context layer made of prose, "
@@ -368,6 +468,22 @@ def markdown(by_arm: dict[str, list[dict]]) -> str:
     w("Stated up front, because a benchmark run by the tool's author on the "
       "tool's own behalf deserves the scrutiny:")
     w()
+    if any(getattr(a, "hooks", False) for a in arms):
+        w("- **The cost result was not the hypothesis.** `decoy_hits` was "
+          "pre-registered in `spec.py` as the metric hook delivery should "
+          "move; it did not move. The tool-call/turn/token effect was found "
+          "afterwards, in data collected to test something else. That is a "
+          "weaker epistemic position than it looks in a table, and it is why "
+          "it is labelled exploratory throughout. The replication to run is "
+          "one that pre-registers cost, at higher n.")
+        w("- **Which hook produced the effect is unknown.** SessionStart and "
+          "PreToolUse were installed together and the transcript can only "
+          "observe the first, so the sweep cannot attribute the difference to "
+          "either. A follow-up should run them as separate arms.")
+        w("- **Hooked and un-hooked arms differ in one more way than intended.** "
+          "The hooked arms carry a `.claude/settings.json` the un-hooked arms "
+          "lack. It configures nothing but the hooks, but it is a file in the "
+          "tree that the agent could in principle read.")
     w("- **One repo, one task.** Flask is mid-sized, pure Python, and unusually "
       "well organised. The orientation cost of context scales with repo size "
       "and messiness, so E1 here is close to a worst case for Slate; a "

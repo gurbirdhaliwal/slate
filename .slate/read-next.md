@@ -106,24 +106,48 @@ calls `freshness.evaluate_all` and renders, like `cli` and `mcp`), and every
 entry point fails to *silence* — never to a false `fresh`, never to a broken
 session. Pinned by `tests/test_claude_hook.py` (30 tests; 225 total).
 
-**What is proven and what is not.** Delivery is verified end-to-end: in a repo
-with two deliberately stale docs, a headless session named both docs, their
-claim counts, the anchor commit and the culprit file in one turn with zero tool
-calls, and reproduced the PreToolUse warning verbatim on reading a covered
-file. **Task-level outcomes are NOT measured** — the 0/25-correct sweep has not
-been re-run against this path. Do not claim an accuracy win.
+**Measured (2026-07-27 sweep, 4 arms × 5 trials, all same-day).** Delivery
+works and is verified end-to-end. What it buys is less settled:
 
-**Next, in priority order.** (1) Re-run `benchmarks/agentbench` against
-hook-based delivery (~90 min, one sweep) — the harness is reusable and this is
-now the question worth answering; note the handoff's caution that n=5 did not
-survive its error bars, so consider more trials or a sharper task. (2) The old
+- **The pre-registered metric failed.** `decoy_hits` was named in `spec.py` in
+  advance as the thing hook delivery should move. It did not move (exact
+  p=1.0) and went the wrong way directionally (1/5 → 2/5 trials).
+- **An unplanned cost effect appeared, on the stale arm only.** tool calls
+  41→31 (p=0.0159), turns 42→32 (p=0.0159), context 56.5K→41.5K (p=0.0079,
+  the floor for n=5). The fresh arm showed nothing (p=0.44–0.69). Effect
+  present where the layer is stale and absent where it is fresh is the
+  interaction the mechanism predicts, and a confound like model drift would
+  have moved both arms.
+- **It is exploratory, not a win.** The three cost numbers are one behavioural
+  change measured three ways (cache-creation per turn is 1,344 vs 1,294, so
+  tokens track turns track tool calls). Eight tests, Bonferroni puts the best
+  at the edge, n=5.
+- **Correctness is still 0/5 in every arm** (0/35 cumulative). Nothing claims
+  context makes an agent likelier to get a hard change right.
+- **Offering still fails:** 3 `slate_*` MCP calls in 687 tool calls. Injecting
+  reached every trial.
+
+**Do not repeat this measurement mistake.** `hook_injections` cannot see
+PreToolUse — Claude Code writes SessionStart's injected context into the
+stream-json transcript and not PreToolUse's, so the raw count reads as
+"PreToolUse never fired" when it fires every time. Confirmed by instrumenting
+the hook command to log its own invocations. The metric is a *floor* on
+delivery and cannot attribute the effect to either hook.
+
+**Next, in priority order.** (1) Replicate the cost effect with cost
+*pre-registered* and higher n, and run SessionStart and PreToolUse as separate
+arms — right now the sweep cannot say which hook did the work. (2) The old
 `benchmarks/RESULTS.md` + `benchmark.py` are still self-referential and
 estimate-based, and its numbers predate the package-granularity scanner —
-re-run or retire it; the repo currently ships two RESULTS.md files making
-different kinds of claim. (3) `InstructionsLoaded` (no decision control, side
-effects only) would turn "the layer loaded" from an assumption into a logged
-fact — the natural answer to the per-client verification the CLAUDE.md decision
-entry called for.
+re-run or retire it; the repo ships two RESULTS.md files making different
+kinds of claim. (3) Portability: `claudehook.py` splits cleanly into
+agent-neutral rendering (`session_start_text`, `pre_tool_use_text`,
+`_covering`) and a Claude-specific surface (`_rel_target`, `_output`, the
+settings writer). Codex uses the same event names via `hooks.json` /
+`[hooks]` in `config.toml`; Cursor uses `.cursor/hooks.json` with different
+names (`beforeReadFile`, `afterFileEdit`) and is still beta. Only worth
+porting once the effect replicates. (4) `InstructionsLoaded` (no decision
+control, side effects only) would turn "the layer loaded" into a logged fact.
 
 ## Landmines
 

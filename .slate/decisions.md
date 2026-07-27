@@ -326,3 +326,67 @@ Revisit trigger: Evidence that the SessionStart text is being ignored the way
           benchmark was not re-run against this delivery path; do not claim a
           task-level improvement until it is.
 ```
+
+```
+Date: 2026-07-27
+Decision: Hook delivery ships, but the benchmark's claim about it is limited to
+          "the signal now arrives". The cost effect measured alongside it is
+          recorded as exploratory and must not be quoted as a demonstrated win.
+Rationale: The sweep did what it was built to do — it falsified the hypothesis
+          it was given. `decoy_hits` was pre-registered in spec.py as the metric
+          hook delivery should move; it did not move (exact p=1.0) and went the
+          wrong way (1/5 -> 2/5 trials). Reporting the cost effect that *did*
+          appear as if it had been the hypothesis is precisely the move this
+          repo has caught itself making before (the "28% token saving" that was
+          two doc types on a turn-scaled metric).
+Evidence:  slate-stale -> slate-stale-hooked: tool calls 41->31 (p=0.0159),
+          turns 42->32 (p=0.0159), context 56.5K->41.5K (p=0.0079, the floor
+          for n=5). slate-fresh -> slate-fresh-hooked: nothing (p=0.44-0.69).
+          Effect present only where the layer is stale is the interaction the
+          mechanism predicts and is not what a time-of-day or model-drift
+          confound looks like — those move both arms. Exact two-sided
+          Mann-Whitney by enumeration, written into report.py rather than
+          imported, since the package has no runtime dependencies.
+Trade-off: The three cost metrics are one behavioural change measured three
+          ways, not three findings: cache-creation per turn is 1,344 vs 1,294,
+          so tokens track turns track tool calls. Eight tests were run; strict
+          Bonferroni puts the best result at the edge of significance. n=5.
+Safety:    Correctness stayed 0/5 in every arm (0/35 cumulative), so nothing
+          here supports a claim about accuracy. The report says so in its
+          headline rather than in a footnote.
+Revisit trigger: A replication that pre-registers cost at higher n, with
+          SessionStart and PreToolUse as separate arms — the current sweep
+          installed both together and cannot attribute the effect to either.
+```
+
+```
+Date: 2026-07-27
+Decision: `hook_injections` is documented as a floor on delivery, not a count
+          of it, and the PreToolUse marker is recorded in spec.py as
+          unobservable rather than dropped.
+Rationale: The raw metric read "PreToolUse fired 0 times in 10 trials", which
+          would have been published as half the feature being dead. It is
+          false. Claude Code writes SessionStart's injected context into the
+          stream-json transcript but not PreToolUse's, so a warning that fired
+          and reached the model leaves no trace to count.
+Evidence:  Established by instrumenting the hook command itself to append every
+          invocation to a log: a session that read a covered file logged both
+          `SessionStart` and `PreToolUse Read`, each returning
+          additionalContext, while the transcript for that same session
+          contained only the SessionStart marker. The agent had read
+          src/flask/ctx.py — the exact file the stale doc misdescribes and the
+          one a manual probe warns on.
+Trade-off: The sweep therefore cannot attribute its effect to SessionStart or
+          PreToolUse. That is a real limit on the result and is stated in the
+          report's threats-to-validity rather than left implicit.
+Safety:    The general rule this is an instance of: a benchmark metric that can
+          only observe part of the mechanism must say so at the point it is
+          read, or the next person to read it will draw the confident wrong
+          conclusion. Two other instruments were wrong in the same sweep —
+          `--reparse` let an older sweep's transcript overwrite a newer one's
+          metrics, and run provenance was dated by a mtime that `--reparse`
+          resets and a UTC conversion that merged two evenings into one day.
+Revisit trigger: Claude Code recording PreToolUse additionalContext in the
+          transcript, which would make the count exact and let the two hooks be
+          told apart without separate arms.
+```

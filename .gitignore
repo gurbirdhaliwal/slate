@@ -12,3 +12,7 @@ build/
 .idea/
 .vscode/
 .DS_Store
+
+# agent benchmark working data (large; transcripts are committed selectively)
+benchmarks/agentbench/.work/
+benchmarks/agentbench/runs/*.jsonl

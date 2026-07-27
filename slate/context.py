@@ -36,6 +36,10 @@ class DocSpec:
     title: str
     generated: bool    # True → has an auto-block Slate rewrites on sync
     read_order: int    # position in the "first read" path (0 = skip)
+    # True → entries are only ever added, never rewritten. Lets the merge
+    # driver union two branches' entries instead of conflicting on the
+    # append point; see merge.py.
+    append_only: bool = False
 
     def path(self, root: Path) -> Path:
         return root / self.rel_path
@@ -47,13 +51,21 @@ DOC_SPECS: list[DocSpec] = [
     DocSpec("architecture", f"{SLATE_DIR}/architecture.md", "Architecture", True, 3),
     DocSpec("modules", f"{SLATE_DIR}/modules.md", "Module map", True, 4),
     DocSpec("workflows", f"{SLATE_DIR}/workflows.md", "Workflows", True, 5),
-    DocSpec("decisions", f"{SLATE_DIR}/decisions.md", "Decision log", False, 6),
+    DocSpec("decisions", f"{SLATE_DIR}/decisions.md", "Decision log", False, 6, append_only=True),
 ]
 
 
+# Claude Code reads this file, not AGENTS.md, so Slate writes it as a one-line
+# import of the layer (see agentcfg.bridge_claude). It makes no claims about
+# the code, so it is a context-layer path rather than a tracked doc.
+CLAUDE_BRIDGE = "CLAUDE.md"
+
 # Docs never invalidate docs: these paths are excluded from change detection
-# and from the watched-content digest alike.
-CONTEXT_DOC_PATHS = {spec.rel_path for spec in DOC_SPECS}
+# and from the watched-content digest alike. The Claude bridge is in here for
+# the same reason — on a repo with no source directories the module map
+# watches `**`, and a doc going stale because Slate wrote its own pointer file
+# would be pure noise.
+CONTEXT_DOC_PATHS = {spec.rel_path for spec in DOC_SPECS} | {CLAUDE_BRIDGE}
 
 
 def spec_by_name(name: str) -> DocSpec | None:

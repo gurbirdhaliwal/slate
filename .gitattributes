@@ -1,0 +1,8 @@
+# slate context layer — added by `slate merge install`
+AGENTS.md merge=slate
+.slate/read-next.md merge=slate
+.slate/architecture.md merge=slate
+.slate/modules.md merge=slate
+.slate/workflows.md merge=slate
+.slate/decisions.md merge=slate
+# end slate context layer

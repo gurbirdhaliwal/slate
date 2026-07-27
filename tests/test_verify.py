@@ -54,6 +54,56 @@ def test_watched_changes_drop_score(repo: Path) -> None:
     assert v.score < baseline
 
 
+def setup_two_symbol_claims(repo: Path) -> None:
+    (repo / "demo" / "engine.py").write_text(
+        "def run():\n    return 42\n\n\ndef helper():\n    return 1\n"
+    )
+    commit_all(repo, "engine with two functions")
+    init_layer(repo)
+    path = repo / ".slate" / "modules.md"
+    path.write_text(
+        path.read_text()
+        + "\n## Claims\n\n"
+        + "- The `engine.run` function drives the loop.\n"
+        + "- The `engine.helper` function is a pure helper.\n"
+    )
+    commit_all(repo, "two symbol claims")
+
+
+def test_one_suspect_claim_scores_higher_than_all_suspect(repo: Path) -> None:
+    # The Part B promise: a doc with one suspect claim out of many should score
+    # far higher than the whole-doc-penalty world where any change tanks it.
+    setup_two_symbol_claims(repo)
+
+    # Both referenced symbols moved → both human claims suspect.
+    (repo / "demo" / "engine.py").write_text(
+        "def run():\n    return 1\n\n\ndef helper():\n    return 2\n"
+    )
+    both = score_for(repo, "modules")
+    assert both.suspect_claims == 2
+
+    # Only `run` moved → one suspect claim, one still checks out.
+    (repo / "demo" / "engine.py").write_text(
+        "def run():\n    return 1\n\n\ndef helper():\n    return 1\n"
+    )
+    one = score_for(repo, "modules")
+    assert one.suspect_claims == 1
+    assert one.score > both.score  # same anchor, refs, drift — only quiet differs
+
+
+def test_content_verified_doc_keeps_full_quiet(repo: Path) -> None:
+    # A body change to an unreferenced symbol leaves every claim fresh; the
+    # score must not dip below the untouched baseline (no false penalty).
+    setup_two_symbol_claims(repo)
+    baseline = score_for(repo, "modules").score
+    (repo / "demo" / "engine.py").write_text(
+        "def run():\n    return 42\n\n\ndef helper():\n    return 1\n\n\nUNUSED = 0\n"
+    )
+    v = score_for(repo, "modules")
+    assert v.report.status == "fresh"
+    assert v.score >= baseline
+
+
 def orphan_anchor(repo: Path, doc: str, strip_digest: bool = False) -> None:
     path = repo / ".slate" / f"{doc}.md"
     text = path.read_text().replace("slate_synced_commit: ", "slate_synced_commit: deadbee")

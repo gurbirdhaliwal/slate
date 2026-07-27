@@ -498,6 +498,15 @@ def _detail_lines(app: _App) -> list[tuple[str, int]]:
         lines.append(("  watched changes:", curses.A_BOLD))
         for path, kind in d.changes.items():
             lines.append((f"    {kind}  {path}", 0))
+    if d.suspect_claims:
+        lines.append(("  claims at risk:", curses.A_BOLD))
+        for c in d.suspect_claims:
+            text = c.text if len(c.text) <= 66 else c.text[:65] + "…"
+            marker = "?" if c.status == freshness.CLAIM_UNKNOWABLE else "✗"
+            attr = _status_attr(NEEDS_VERIFICATION if c.status == freshness.CLAIM_UNKNOWABLE else STALE)
+            lines.append((f"    {marker} {text}", attr))
+            if c.risk:
+                lines.append((f"        risk: {', '.join(c.risk)}", curses.A_DIM))
     if d.missing_refs:
         lines.append(("  broken claims (paths that no longer exist):", curses.A_BOLD))
         for ref in d.missing_refs:

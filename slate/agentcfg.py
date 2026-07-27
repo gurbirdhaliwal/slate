@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .context import SLATE_DIR
+from .context import CLAUDE_BRIDGE, SLATE_DIR
 
 READ = "read"
 FULL = "full"
@@ -84,6 +84,70 @@ def enable_client(root: Path, client: str) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(config, indent=2) + "\n")
     return rel
+
+
+# --- Claude Code instruction bridge -----------------------------------------
+# Claude Code loads CLAUDE.md, never AGENTS.md — it treats AGENTS.md as another
+# tool's format and only reads it when importing from Codex. A repo whose whole
+# context layer hangs off AGENTS.md therefore ships Claude Code nothing at all,
+# silently: the MCP tools still connect, the docs still sit in the tree, and
+# none of it reaches the model. The documented remedy is a CLAUDE.md that
+# `@`-imports the layer, which is what this writes.
+# See https://code.claude.com/docs/en/memory ("AGENTS.md").
+
+BRIDGE_IMPORT = "@AGENTS.md"
+
+# Block-level HTML comments are stripped before CLAUDE.md is injected, so the
+# explanation costs the reader nothing and the import is the only content.
+_BRIDGE_BODY = f"""\
+<!--
+  Written by Slate. Claude Code reads CLAUDE.md, not AGENTS.md, so this file
+  imports the context layer. Commit it alongside AGENTS.md. Add any
+  Claude-specific instructions below the import.
+  https://code.claude.com/docs/en/memory
+-->
+{BRIDGE_IMPORT}
+"""
+
+WROTE = "wrote"
+ALREADY = "already"
+MANUAL = "manual"
+
+
+def _imports_layer(text: str) -> bool:
+    """Does this CLAUDE.md already pull in AGENTS.md?
+
+    Deliberately literal: an import inside a code fence does not count for
+    Claude Code either, and anything cleverer would risk reporting a bridge
+    that is not actually live.
+    """
+    fenced = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            fenced = not fenced
+            continue
+        if not fenced and stripped.startswith(BRIDGE_IMPORT):
+            return True
+    return False
+
+
+def bridge_claude(root: Path) -> str:
+    """Ensure Claude Code can see the layer. Never clobbers a user's file.
+
+    Returns ``WROTE`` (created the bridge), ``ALREADY`` (it was there), or
+    ``MANUAL`` — a CLAUDE.md exists that does not import the layer, so the
+    caller must tell the human rather than overwrite their instructions.
+    """
+    path = root / CLAUDE_BRIDGE
+    if not path.exists():
+        path.write_text(_BRIDGE_BODY)
+        return WROTE
+    try:
+        text = path.read_text()
+    except OSError:
+        return MANUAL
+    return ALREADY if _imports_layer(text) else MANUAL
 
 
 def enabled_clients(root: Path) -> list[str]:

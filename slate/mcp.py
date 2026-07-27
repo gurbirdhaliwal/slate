@@ -33,6 +33,7 @@ from . import (
     gitutil,
     imports as imports_mod,
     scanner,
+    value,
     verify,
 )
 from .context import DOC_SPECS, FRESH
@@ -270,12 +271,21 @@ class SlateMCPServer:
                 "— treat as a rumor."
             ),
         }
+        measured = value.record_session(self.root)
+        value.record_catches(self.root, reports.values())
+        if measured:  # additive field: what this read saved vs. re-exploring (measured sizes)
+            payload["value"] = {
+                "context_tokens": measured["context_tokens"],
+                "exploration_baseline_tokens": measured["baseline_tokens"],
+                "note": "measured file sizes; " + value.BASELINE_NOTE,
+            }
         return json.dumps(payload, indent=2), False
 
     def _t_status(self, _args: dict) -> tuple[str, bool]:
         reports = freshness.evaluate_all(self.root)
         if not reports:
             return _NO_LAYER, True
+        value.record_catches(self.root, reports)
         return json.dumps([
             {
                 "doc": r.doc.spec.name,
@@ -284,6 +294,7 @@ class SlateMCPServer:
                 "reason": r.reason,
                 "changed_watched": r.changed_watched,
                 "content_verified": r.content_verified,
+                "claims": [c.as_dict() for c in r.claims],
             }
             for r in reports
         ], indent=2), False
@@ -299,6 +310,8 @@ class SlateMCPServer:
                 "status": v.report.status,
                 "score": v.score,
                 "missing_paths": v.missing,
+                "total_claims": v.total_claims,
+                "suspect_claims": v.suspect_claims,
             }
             for v in results
         ], indent=2), False
@@ -310,6 +323,7 @@ class SlateMCPServer:
         scan = scanner.scan(self.root)
         results = [diffs.doc_diff(self.root, doc, scan) for doc in docs]
         suspect = [d for d in results if d.report.status != FRESH]
+        value.record_catches(self.root, [d.report for d in results])
         if not suspect:
             return json.dumps({"message": "everything fresh — nothing to diff"}), False
         return json.dumps([
@@ -319,6 +333,7 @@ class SlateMCPServer:
                 "status": d.report.status,
                 "watched_changes": d.changes,
                 "broken_claims": d.missing_refs,
+                "suspect_claims": [c.as_dict() for c in d.suspect_claims],
                 "sync_preview": d.sync_preview,
             }
             for d in suspect
@@ -364,15 +379,30 @@ class SlateMCPServer:
             selected = [by_name[n] for n in names]
         else:
             selected = [d for d in docs if d.spec.generated]
+        reports = {r.doc.spec.name: r for r in freshness.evaluate_all(self.root)}
+        baseline = value.sync_baseline(self.root, reports, [d.spec.name for d in selected])
         scan = scanner.scan(self.root)
-        for doc in selected:
-            generator.sync_doc(doc, scan)
+        with value.timer() as t:
+            for doc in selected:
+                generator.sync_doc(doc, scan)
         synced = [d.spec.rel_path for d in selected]
-        return json.dumps({
+        payload = {
             "synced": synced,
             "anchored_at": gitutil.head_commit(self.root),
             "note": "Doc changes are unstaged — commit them with the code change.",
-        }, indent=2), False
+        }
+        event = value.record_sync(self.root, baseline, t.ms)
+        if event and event["healed"]:  # additive field: measured receipt for this sync
+            payload["value"] = {
+                "healed_stale_docs": event["healed"],
+                "elapsed_ms": event["elapsed_ms"],
+                "tokens_spent": 0,
+                "manual_rewrite_tokens_measured": {
+                    "input": event["manual_input_tokens"],
+                    "output": event["manual_output_tokens"],
+                },
+            }
+        return json.dumps(payload, indent=2), False
 
     def _t_mark(self, args: dict) -> tuple[str, bool]:
         names = args.get("docs") or []

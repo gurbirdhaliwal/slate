@@ -1,8 +1,8 @@
 ---
 slate_doc: decisions
 slate_generated: false
-slate_synced_commit: 6f28164
-slate_synced_at: 2026-07-21T18:55:35+00:00
+slate_synced_commit: c838ad6
+slate_synced_at: 2026-07-27T00:38:31+00:00
 slate_synced_digest: e3b0c44298fc1c14
 slate_watches:
 ---
@@ -58,6 +58,46 @@ Revisit trigger: Prose grows beyond one paragraph per doc.
 
 ```
 Date: 2026-07-21
+Decision: Module dependency edges are tracked facts (Part C). The import graph
+          `imports.py` computed only to propose watches is now a field on
+          `RepoScan` (via `imports.compute_edges`, parsing reused not forked)
+          and renders as a deterministic "Module boundaries (scanned)" section
+          in the architecture auto-block. No new freshness code: a changed edge
+          set regenerates the block, so `_claims_still_check_out` + the sync
+          preview flag and heal it; each edge line is a Part B claim.
+Rationale: The auto-block was a directory census that rarely changes, giving the
+          freshness engine little semantic surface. Dependency edges are exactly
+          the fact that moves when architecture shifts — but they were discarded,
+          so a new cross-module import produced no signal (invisible drift).
+Trade-off: Top-level-dir granularity only — shallow, resolver-free, no false
+          precision (an intra-dir import is not an edge). Rendering sorts sources
+          and targets so identical repo state is byte-identical across hash seeds
+          — a flaky fact manufactures false stale, as corrosive as a false fresh.
+Revisit trigger: Top-level-dir edges prove too coarse (want symbol-level edges),
+          or a repo where the shallow regex import parse misleads.
+
+Date: 2026-07-21
+Decision: Trust resolves at the claim, not the doc (Part B). Evaluation yields a
+          per-claim verdict (fresh/stale/unknowable) plus a conservative doc
+          roll-up; the score's watch-quiet component becomes the fraction of
+          claims that check out. New `claims.py` segments the human body into
+          referencing units; `freshness` adds `ClaimVerdict`/`DocReport.claims`
+          and line-diffs the generated facts; `verify`/`diffs`/`cli`/`ui`/`mcp`
+          surface it. `--json` is additive only (VS Code + PR bot unchanged).
+Rationale: One label per doc drags a solid doc amber for a single suspect
+          sentence and never tells the AI *which* sentence to re-verify
+          (product doc §1 pain #5). Part A already knows which symbol changed;
+          Part B attributes it to the claim that references it.
+Trade-off: The doc-level status stays the authoritative *whole-text* roll-up in
+          `_claims_still_check_out` (not `all(claim fresh)`) so a claim the
+          segmenter might miss can never sneak a doc to fresh — the breakdown is
+          the finer view, the whole-text scan is the §10 safety net. Claim
+          segmentation is deterministic markdown-block splitting, no parser.
+Revisit trigger: A claim the segmenter drops that the whole-text roll-up
+          catches (status stale, zero suspect claims shown); or a need to score
+          generated vs human claims with different weights.
+
+Date: 2026-07-21
 Decision: Freshness resolves a changed watched file to the symbols it touched
           (Part A). `_claims_still_check_out` now clears a human claim about
           `module.symbol` only when that symbol's lines were provably untouched;
@@ -101,4 +141,134 @@ Trade-off: status may run a repo scan when watched paths changed (still
           sub-second); digest mismatch can't enumerate committed paths.
 Revisit trigger: Any observed false fresh from content verification; digest
           hashing felt (>1s) on large repos.
+```
+
+```
+Date: 2026-07-24
+Decision: Quantified-value surface — measured one-line receipts on every
+          read/status/sync, a `slate value` cumulative ledger, and additive
+          "value" fields on MCP slate_read/slate_sync. Ledger is clone-local
+          (.git/slate/value.json), never committed, entirely outside trust math.
+Rationale: The user should see what Slate saves on every run, not take it on
+          faith — and a context-trust product cannot hallucinate its own
+          marketing. The ledger stores measured events only (real file sizes,
+          real runs, real wall-clock); token/dollar figures are display-time
+          arithmetic under the same stated assumptions as benchmarks/benchmark.py.
+          Catches dedupe per (doc, sync anchor); fresh-doc syncs record nothing
+          avoided; small repos where the layer exceeds the baseline are reported
+          as exactly that.
+Trade-off: read/sync now run a freshness/scan pass for measurement (sub-second,
+          local); one clone-local state file inside .git. Recording is
+          best-effort by construction — a ledger failure never breaks a command.
+Revisit trigger: Receipts reading as noise in the field, or evidence the
+          exploration baseline misstates real agent behavior.
+```
+
+```
+Date: 2026-07-24
+Decision: A git merge driver owns the context layer on merge (`slate merge
+          install`). Human-written text gets a real 3-way merge; both sides'
+          auto-blocks are placeheld out and the block is left to `slate sync`,
+          because it is a pure function of the merged tree. Frontmatter is
+          taken from ours, except `slate_watches`, which is unioned. The
+          append-only decision log merges with --union (new `DocSpec.append_only`)
+          so two branches' entries never collide.
+Rationale: The documented workflow syncs and commits docs alongside the code,
+          so every sync rewrites the anchor plus the block and *every*
+          concurrent PR pair conflicted in all four generated docs. Worse, the
+          obvious fix (`git checkout --ours` + `slate sync`) yields a correct
+          auto-block while silently deleting the other side's prose — the same
+          class of bug as clobbering human edits on sync (§4), but invisible.
+Trade-off: Two-part install with different lifetimes — .gitattributes is
+          committed, `merge.slate.driver` is per-clone, so each teammate runs
+          `slate merge install` once. A clone without the driver falls back to
+          git's built-in merge, i.e. today's behavior, never something worse.
+          Two branches appending prose at the same point still conflict
+          honestly; git cannot know the intended order.
+Safety:   Keeping ours' anchor cannot manufacture a false `fresh`. Freshness
+          diffs the anchor's *tree* against the merged worktree (`git diff
+          <anchor> HEAD`, not the `anchor..HEAD` range), so watched paths that
+          differ are reported no matter which branch they came from or whether
+          the anchor is an ancestor. A squashed anchor falls to the digest,
+          recomputed against the merged tree. Pinned by
+          tests/test_merge.py::test_merged_layer_is_not_falsely_fresh.
+Revisit trigger: A merge that loses human text, or field evidence that the
+          prose-append conflict is frequent enough to want section-aware merging.
+```
+
+```
+Date: 2026-07-26
+Decision: The module map and the dependency graph are derived at *package*
+          granularity, not first-path-segment. `_build_modules` descends
+          through pass-through directories (`src/` -> `src/flask/`) and breaks
+          out sub-packages holding >= 2 code files, capped at 14 rows with
+          supporting trees (tests/, examples/, docs_src/) yielding first.
+          `imports.compute_edges` resolves dotted import names against the
+          repo's real package layout instead of matching first segments.
+Rationale: Measured on eight well-known Python repos, the old heuristic
+          returned 2-5 module rows regardless of size — 4 rows for FastAPI's
+          1,130 files, the same 3 as for a 37-file repo — and 3 of 8 reported
+          "no cross-module imports detected", because `from flask.json import
+          x` names no directory called `flask`. Slate's own layout is flat
+          (`slate/`, `tests/`), so dogfooding structurally could not surface
+          this: every probe repo using the standard `src/<pkg>/` layout got a
+          context layer that answered none of the "where does X live"
+          questions modules.md exists to answer.
+Trade-off: Row selection is heuristic (threshold, cap, supporting-root list) —
+          §10 "vibecode freely" territory. Deliberately shallow: one level of
+          sub-package per source root, no resolver. A monorepo gets one row per
+          workspace package rather than a full tree.
+Safety:   Watch globs did NOT follow the map down. `RepoScan.source_dirs` stays
+          top-level and still feeds `context.default_watches`; a `src/flask/**`
+          watch would stop watching anything else later added under `src/`, and
+          an unwatched change is a false `fresh` — the one failure §10 forbids.
+          Watch inference projects the module-path graph back up to top-level
+          before proposing, so suggestions only ever widen the net. The
+          import-name index only falls back to basename matching at depth 1, so
+          a vendored `src/pkg/json/` cannot swallow `import json` and invent an
+          edge. Pinned by tests/test_src_layout.py (9 of its 12 tests fail
+          against the previous scanner; the 3 that pass are the anti-narrowing
+          invariants, which must hold in both).
+Revisit trigger: A repo shape where one level of sub-package is too shallow to
+          orient in, or field evidence that the 14-row cap hides real source.
+```
+
+```
+Date: 2026-07-26
+Decision: `slate init` (and `slate agent enable claude`) also writes a
+          `CLAUDE.md` containing `@AGENTS.md`. An existing CLAUDE.md is never
+          modified — Slate reports what to add and exits. The file is listed in
+          `CONTEXT_DOC_PATHS` so it cannot invalidate the layer it points at.
+Rationale: Claude Code loads CLAUDE.md and never AGENTS.md; it treats AGENTS.md
+          as a foreign format, read only when importing from Codex. Slate hangs
+          its entire layer off AGENTS.md, so every Slate repo shipped Claude
+          Code nothing — silently, because the MCP server still connects and the
+          docs still sit in the tree. Measured, not inferred: a canary
+          instruction in AGENTS.md was ignored in 3/3 headless runs and the same
+          text in CLAUDE.md was followed every time; a 25-session benchmark run
+          on this assumption produced five arms that were all secretly context-
+          free. The `@` import is the remedy Anthropic's own docs prescribe.
+Trade-off: A second, vendor-specific file at the repo root. A symlink would
+          avoid it but needs Administrator or Developer Mode on Windows, so the
+          import is the portable choice. Slate now writes a file for one
+          specific client, which sets a precedent: adding one per client does
+          not scale, and the real fix is per-client verification, not per-client
+          files.
+Safety:   The bridge makes no claims about the code, so it is a context-layer
+          path rather than a tracked doc — no frontmatter, no freshness. It is
+          in CONTEXT_DOC_PATHS because a repo with no source directories has the
+          module map watching `**`, where an unexcluded bridge would stale a doc
+          the moment Slate wrote it. Never clobbering an existing CLAUDE.md is
+          the load-bearing rule: overwriting a user's instructions to install a
+          pointer would be a worse bug than the one being fixed. Pinned by
+          tests/test_claude_bridge.py, including that an import inside a code
+          fence does not count as wired (Claude Code skips fenced blocks, so
+          reporting it as live would leave the user believing the layer loads).
+Revisit trigger: Claude Code adding native AGENTS.md support (then drop the
+          bridge), or a second client needing its own file (then design a
+          general delivery-verification mechanism instead of a third special
+          case). Note the deeper unsolved problem: across 320 tool calls in the
+          benchmark the agent never once called a slate_* tool, so delivery of
+          the *prose* is fixed while the freshness signal itself still depends
+          on an agent choosing to ask for it.
 ```

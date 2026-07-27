@@ -184,9 +184,66 @@ def changed_with_status(root: Path, since: str | None) -> dict[str, str]:
     return kinds
 
 
+def config_get(root: Path, key: str) -> str | None:
+    try:
+        return _git(root, "config", "--get", key).strip()
+    except GitError:
+        return None
+
+
+def config_set(root: Path, key: str, value: str) -> None:
+    _git(root, "config", key, value)
+
+
+def config_unset(root: Path, key: str) -> bool:
+    """Unset a key. Returns False when it wasn't set."""
+    try:
+        _git(root, "config", "--unset", key)
+        return True
+    except GitError:
+        return False
+
+
+def merge_file(current: Path, base: Path, other: Path, union: bool = False) -> int:
+    """3-way merge ``other`` into ``current`` in place; returns conflict count.
+
+    Wraps ``git merge-file``, which needs no repository — the merge driver
+    is handed three temp files and a path, not a worktree. git reports the
+    number of conflicts as the exit status and -1 (255) for a real failure.
+
+    ``union`` resolves overlaps by keeping both sides' lines instead of
+    emitting markers — correct only for content that is appended and never
+    rewritten (see ``DocSpec.append_only``).
+    """
+    proc = subprocess.run(
+        [
+            "git", "merge-file",
+            *(["--union"] if union else []),
+            "-L", "ours", "-L", "base", "-L", "theirs",
+            str(current), str(base), str(other),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode > 127 or proc.returncode < 0:
+        raise GitError(proc.stderr.strip() or "git merge-file failed")
+    return proc.returncode
+
+
 def hooks_dir(root: Path) -> Path:
     """The active hooks directory (worktree- and core.hooksPath-aware)."""
     out = _git(root, "rev-parse", "--git-path", "hooks").strip()
+    path = Path(out)
+    return path if path.is_absolute() else root / path
+
+
+def state_dir(root: Path) -> Path:
+    """Slate's clone-local state directory inside the git dir (worktree-aware).
+
+    State here (e.g. the value ledger) is per-clone by design: never tracked,
+    never in the diff, and invisible to the freshness engine.
+    """
+    out = _git(root, "rev-parse", "--git-path", "slate").strip()
     path = Path(out)
     return path if path.is_absolute() else root / path
 

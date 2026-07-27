@@ -110,7 +110,7 @@ The core mechanism has three parts:
 ### Why This Wedge
 
 - **Value on day one, zero integration.** `pip install`, `slate init`, done. No SDK, no server, no API key, no design partners needed to prove value — unlike the debugger wedge this replaces.
-- **It rides an existing convention instead of creating one.** AGENTS.md is already read by the major tools; Slate makes it trustworthy rather than asking anyone to change behavior.
+- **It rides an existing convention instead of creating one.** AGENTS.md is a convention several coding agents follow; Slate makes it trustworthy rather than asking anyone to change behavior. **Correction, measured 2026-07-26:** Claude Code is not one of them. It loads `CLAUDE.md` only and treats `AGENTS.md` as a foreign format, read solely when importing from Codex ([docs](https://code.claude.com/docs/en/memory)). A canary instruction placed in AGENTS.md was ignored in 3/3 headless runs; the same text in CLAUDE.md was followed every time. `slate init` now also writes a `CLAUDE.md` that `@`-imports the layer. The general lesson is the sharper one: **do not assume a client reads the layer — verify it per client, because the failure is silent.** A repo can carry a perfectly maintained context layer that the agent never sees.
 - **The moat is workflow embedding, not IP.** Once the context layer lives in the repo, travels through PRs, and gates CI, ripping Slate out means losing the maintained layer and the freshness discipline. Same integration-depth moat as the old strategy, at 1% of the infrastructure.
 - **Narrow enough for one person to own.** The MVP is ~1,500 lines of stdlib Python with a fully deterministic core. No COGS, no ops, no on-call.
 - **Broad enough to expand.** IDE integrations, PR bots that flag "this change stales 3 context docs," team dashboards, LLM-assisted prose updates — all natural layers on top of a trusted freshness signal.
@@ -364,6 +364,15 @@ slate verify [--json]       verification score per doc, with missing-path eviden
 slate read [--paths]        the ordered first-read path with trust labels
                             (--paths = machine-consumable file list)
 
+# Value ledger (2026-07-24)
+slate value [--json]        cumulative measured savings in this clone: context
+                            tokens served vs. a measured re-exploration
+                            baseline, stale docs caught before use, and what
+                            each 0-token sync replaced. read/status/sync also
+                            print a one-line receipt per run. Ledger is
+                            clone-local (.git/slate/value.json), measured
+                            events only; SLATE_NO_VALUE=1 disables.
+
 # Phase 2
 slate diff [DOC...]         per suspect doc: watched changes with kinds (A/M/D/R),
                             broken claims (referenced paths that no longer exist),
@@ -375,6 +384,16 @@ slate watches [--apply]     current watch globs + proposed additions inferred
                             from import graphs and doc body references
 slate hook install|uninstall  pre-push gate running `status --ci` (pre-PUSH, not
                             pre-commit — see the 2026-07-15 hook decision)
+
+# Multi-dev merges (2026-07-24)
+slate merge install|uninstall|status  git merge driver for the context layer:
+                            3-way-merges the hand-written text and leaves the
+                            auto-block to `slate sync` (it is a function of the
+                            merged tree), unions watch globs, and unions the
+                            append-only decision log. install writes committed
+                            .gitattributes + per-clone `merge.slate.driver`;
+                            status reports which half is present
+slate merge run O A B P     the driver git invokes; not for humans
 
 # Phase 3
 slate fleet [PATH...] [--ci]  freshness roll-up across repos (a path is a repo,
@@ -715,8 +734,37 @@ Trade-off: One extra frontmatter key; stamping hashes the watched files
 Revisit trigger: Repos big enough that hashing watched files on sync is felt
           (>1s), or field demand for same-commit sync — the digest makes a
           content-primary anchor possible if commits keep proving too fragile.
+
+Date: 2026-07-24
+Decision: Quantified-value surface — every read/status/sync leaves a one-line
+          measured receipt, `slate value` shows the cumulative ledger, and
+          slate_read/slate_sync return an additive "value" field over MCP.
+          The ledger is clone-local (.git/slate/value.json), never committed,
+          and entirely outside trust math.
+Rationale: Users (and the agents working for them) should see the product's
+          value on every run, not take it on faith. Honesty is the design
+          constraint: the ledger stores only measured events — real file
+          sizes from the working tree, real command runs, real wall-clock —
+          and token/dollar conversions happen at display time under stated
+          assumptions (4 chars/token, published list prices), the same
+          methodology as benchmarks/benchmark.py. Stale catches dedupe per
+          (doc, sync anchor) so re-running status never inflates the count;
+          syncing already-fresh docs records nothing avoided (conservative
+          lower bound); on repos small enough that the layer exceeds the
+          exploration baseline, the receipt says exactly that instead of
+          claiming savings.
+Trade-off: `sync` and `read` now run a freshness/scan pass for measurement
+          (sub-second, local); one new state file inside .git — invisible to
+          the diff and the freshness engine, so the "no hidden state" rule
+          still holds for everything trust-related. A false or inflated
+          number would be worse than no number; measured-only storage is the
+          guard.
+Revisit trigger: Field evidence that receipts read as noise (add a quiet
+          config beyond SLATE_NO_VALUE), or that the exploration baseline
+          over/under-states real agent behavior — recalibrate the baseline
+          definition then.
 ```
 
 ---
 
-*Last updated: 2026-07-20 — freshness engine hardened against its two premortem failure modes: (1) content verification — `stale` now requires that a change actually alters the doc's claims (regenerated auto-block differs, or a human section references a changed path), killing the alarm-fatigue noise of broad watch globs; (2) `slate_synced_digest` content fallback — squash-merge/rebase no longer degrades the layer to `needs-verification` when the watched content provably matches the last sync (see §8 and the 2026-07-20 decisions in §14). Previously 2026-07-16 — added agent integration (MCP server, access ceiling, editor toggle); previously 2026-07-15 — (1) repositioned from hosted step-level agent debugger to repo-local context control plane: CLI + Markdown context layer + git-anchored freshness engine + deterministic verification score; entire hosted stack removed (see §14 pivot entries). (2) Phases 2 and 3 built: `slate diff`, pre-push hook + pre-commit-framework support, watch inference, opt-in LLM prose, PyPI release automation, GitHub PR bot action, VS Code extension, `slate fleet` (see §9, §11, and the 2026-07-15 build entries in §14). Update this document when architectural decisions change, new competitive intelligence arrives, or phase scope is adjusted.*
+*Last updated: 2026-07-24 — added the quantified-value surface: measured one-line receipts on read/status/sync, the `slate value` cumulative ledger (clone-local, measured events only, estimates labeled with assumptions), and additive `value` fields on the MCP read/sync tools (see §9 and the 2026-07-24 decision in §14). Previously 2026-07-20 — freshness engine hardened against its two premortem failure modes: (1) content verification — `stale` now requires that a change actually alters the doc's claims (regenerated auto-block differs, or a human section references a changed path), killing the alarm-fatigue noise of broad watch globs; (2) `slate_synced_digest` content fallback — squash-merge/rebase no longer degrades the layer to `needs-verification` when the watched content provably matches the last sync (see §8 and the 2026-07-20 decisions in §14). Previously 2026-07-16 — added agent integration (MCP server, access ceiling, editor toggle); previously 2026-07-15 — (1) repositioned from hosted step-level agent debugger to repo-local context control plane: CLI + Markdown context layer + git-anchored freshness engine + deterministic verification score; entire hosted stack removed (see §14 pivot entries). (2) Phases 2 and 3 built: `slate diff`, pre-push hook + pre-commit-framework support, watch inference, opt-in LLM prose, PyPI release automation, GitHub PR bot action, VS Code extension, `slate fleet` (see §9, §11, and the 2026-07-15 build entries in §14). Update this document when architectural decisions change, new competitive intelligence arrives, or phase scope is adjusted.*

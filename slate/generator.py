@@ -180,8 +180,8 @@ def _edge_lines(edges: dict[str, set[str]]) -> list[str]:
 
     Deterministic by construction: sources and targets are both sorted, so the
     same graph always renders byte-identical (a flaky fact would manufacture
-    false `stale`). Top-level-dir granularity only, matching the shallow,
-    resolver-free import graph — no false precision.
+    false `stale`). Package granularity, matching the shallow, resolver-free
+    import graph — no false precision.
     """
     out: list[str] = []
     for source in sorted(edges):

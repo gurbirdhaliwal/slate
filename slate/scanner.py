@@ -52,10 +52,25 @@ CODE_EXTENSIONS = {
 
 _SKIP_DIRS = {".slate", "docs", "doc", ".github", ".git"}
 
+# A sub-package earns its own row once it holds this many code files; below
+# that it is noise and stays folded into its parent.
+_MIN_MODULE_FILES = 2
+
+# Upper bound on rows in the module map. The map is an orientation aid, not an
+# inventory — a repo with 200 test directories must not bury its source tree.
+_MAX_MODULE_ROWS = 14
+
+# Trees that exist to exercise or illustrate the code rather than be it. They
+# still get rows, but they yield to real source when the cap bites.
+_SUPPORTING_ROOTS = {
+    "tests", "test", "testing", "examples", "example", "docs_src",
+    "benchmarks", "bench", "e2e", "fixtures", "integration", "spec",
+}
+
 
 @dataclass
 class Module:
-    name: str  # top-level directory, or "." for root-level files
+    name: str  # module path ("src/flask", "src/flask/json"), or "." for root
     file_count: int
     primary_language: str | None
     entry_hints: list[str] = field(default_factory=list)
@@ -70,37 +85,46 @@ class RepoScan:
     commands: dict[str, list[str]]  # tool -> invocations, e.g. "make" -> ["make test"]
     ci_workflows: list[str]
     readme_title: str | None
-    # Module-level dependency graph: top-level dir -> dirs it imports from.
-    # A tracked fact (rendered into the auto-block), not just a watch hint.
+    # Module-level dependency graph: module path -> module paths it imports
+    # from. A tracked fact (rendered into the auto-block), not just a watch hint.
     edges: dict[str, set[str]] = field(default_factory=dict)
 
     @property
     def source_dirs(self) -> list[str]:
+        """Top-level code directories — the unit watch globs are derived from.
+
+        Deliberately *coarser* than ``modules``: a watch glob that descended to
+        ``src/flask/**`` would stop watching anything else that later appears
+        under ``src/``, and an unwatched change is a false ``fresh`` — the one
+        failure mode §10 says must never happen. Narrow the map, never the net.
+        """
+        return sorted({m.name.split("/", 1)[0] for m in self.modules if m.name != "."})
+
+    @property
+    def module_paths(self) -> list[str]:
+        """Full module paths — the granularity of the map and the edge graph."""
         return [m.name for m in self.modules if m.name != "."]
 
 
 def scan(root: Path) -> RepoScan:
     files = gitutil.list_files(root)
     languages: Counter = Counter()
-    per_dir_files: dict[str, list[str]] = {}
 
     for path in files:
         suffix = Path(path).suffix.lower()
         if suffix in CODE_EXTENSIONS:
             languages[LANGUAGES.get(suffix, suffix)] += 1
-        top = path.split("/", 1)[0] if "/" in path else "."
-        per_dir_files.setdefault(top, []).append(path)
 
-    modules = _build_modules(per_dir_files)
+    modules = _build_modules(files)
     commands = _detect_commands(root, files)
     ci = sorted(
         Path(p).stem for p in files
         if p.startswith(".github/workflows/") and p.endswith((".yml", ".yaml"))
     )
-    source_dirs = [m.name for m in modules if m.name != "."]
+    module_paths = [m.name for m in modules if m.name != "."]
     # Lazy import breaks the scanner<->imports cycle (imports needs RepoScan).
     from . import imports
-    edges = imports.compute_edges(root, files, source_dirs)
+    edges = imports.compute_edges(root, files, module_paths)
     return RepoScan(
         root=root,
         files=files,
@@ -113,27 +137,105 @@ def scan(root: Path) -> RepoScan:
     )
 
 
-def _build_modules(per_dir_files: dict[str, list[str]]) -> list[Module]:
-    modules: list[Module] = []
-    for top, paths in sorted(per_dir_files.items()):
-        if top in _SKIP_DIRS or top.startswith("."):
+def _dirname(path: str) -> str:
+    return path.rsplit("/", 1)[0] if "/" in path else "."
+
+
+def _build_modules(files: list[str]) -> list[Module]:
+    """The module map, at package granularity rather than top-level directory.
+
+    Keying on the first path segment collapses the near-universal
+    ``src/<package>/`` layout into a single uninformative row — the map ends up
+    reporting the same 2-5 rows whether the repo has 40 files or 1,100, which
+    answers none of the "where does X live" questions the doc exists for. So:
+    descend through pass-through directories that merely wrap a package, then
+    give the package's substantial sub-packages their own rows.
+    """
+    direct_code: Counter = Counter()  # dir -> code files directly in it
+    for path in files:
+        if Path(path).suffix.lower() in CODE_EXTENSIONS:
+            direct_code[_dirname(path)] += 1
+
+    # Code files anywhere at or below each directory, so a wrapper dir with no
+    # code of its own still knows whether it leads anywhere.
+    subtree: Counter = Counter()
+    for directory, count in direct_code.items():
+        parts = [] if directory == "." else directory.split("/")
+        for depth in range(len(parts) + 1):
+            subtree["/".join(parts[:depth]) or "."] += count
+
+    def children(parent: str) -> list[str]:
+        depth = 0 if parent == "." else len(parent.split("/"))
+        prefix = "" if parent == "." else parent + "/"
+        return sorted({
+            "/".join(d.split("/")[: depth + 1])
+            for d in subtree
+            if d != "." and d.startswith(prefix) and d != parent and subtree[d] > 0
+        })
+
+    def descend(directory: str) -> str:
+        """`src/` -> `src/flask/`: follow a dir that holds no code and one child."""
+        while direct_code[directory] == 0:
+            kids = children(directory)
+            if len(kids) != 1:
+                return directory
+            directory = kids[0]
+        return directory
+
+    names: list[str] = []
+    tops = sorted({p.split("/", 1)[0] for p in files if "/" in p})
+    for top in tops:
+        if top in _SKIP_DIRS or top.startswith(".") or subtree[top] == 0:
             continue
-        code = [p for p in paths if Path(p).suffix.lower() in CODE_EXTENSIONS]
-        if top != "." and not code:
-            continue
-        lang_counts = Counter(
-            LANGUAGES.get(Path(p).suffix.lower(), "other") for p in code
+        base = descend(top)
+        rows = [base] if direct_code[base] else []
+        rows += [c for c in children(base) if subtree[c] >= _MIN_MODULE_FILES]
+        names.extend(rows or [base])
+    if direct_code["."]:
+        names.append(".")
+
+    # Every file belongs to exactly one row — its most specific enclosing
+    # module. So a row's count covers its whole subtree *except* the parts
+    # broken out into their own rows: no double counting, and a file added
+    # deep inside a package still moves the row it belongs to (which is what
+    # makes the map go `stale` when the layout really changed).
+    chosen = _cap(names, subtree)
+    owned: dict[str, list[str]] = {name: [] for name in chosen}
+    ranked = sorted(chosen, key=len, reverse=True)
+    for path in files:
+        parent = _dirname(path)
+        for name in ranked:
+            if parent == name or parent.startswith(name + "/"):
+                owned[name].append(path)
+                break
+    return [_module(name, owned[name]) for name in chosen]
+
+
+def _cap(names: list[str], subtree: Counter) -> list[str]:
+    """Trim to the row budget, dropping supporting trees before real source."""
+    def rank(name: str) -> tuple[int, int, str]:
+        top = name.split("/", 1)[0]
+        return (1 if top in _SUPPORTING_ROOTS else 0, -subtree[name], name)
+
+    return sorted(sorted(dict.fromkeys(names), key=rank)[:_MAX_MODULE_ROWS])
+
+
+def _module(name: str, paths: list[str]) -> Module:
+    code = [p for p in paths if Path(p).suffix.lower() in CODE_EXTENSIONS]
+    lang_counts = Counter(LANGUAGES.get(Path(p).suffix.lower(), "other") for p in code)
+    hints = sorted(
+        p for p in paths
+        if Path(p).name in (
+            "__main__.py", "main.py", "cli.py", "index.ts", "main.ts",
+            "App.tsx", "Application.java",
         )
-        primary = lang_counts.most_common(1)[0][0] if lang_counts else None
-        hints = [
-            p for p in paths
-            if Path(p).name in (
-                "__main__.py", "main.py", "cli.py", "index.ts", "main.ts",
-                "App.tsx", "Application.java",
-            )
-        ]
-        modules.append(Module(top, len(paths), primary, hints[:3]))
-    return modules
+    )
+    return Module(
+        name=name,
+        file_count=len(paths),
+        primary_language=lang_counts.most_common(1)[0][0] if lang_counts else None,
+        entry_hints=hints[:3],
+    )
 
 
 def _detect_commands(root: Path, files: list[str]) -> dict[str, list[str]]:

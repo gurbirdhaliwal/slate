@@ -1,8 +1,8 @@
 ---
 slate_doc: decisions
 slate_generated: false
-slate_synced_commit: c838ad6
-slate_synced_at: 2026-07-27T00:38:31+00:00
+slate_synced_commit: 5384232
+slate_synced_at: 2026-07-27T13:58:22+00:00
 slate_synced_digest: e3b0c44298fc1c14
 slate_watches:
 ---

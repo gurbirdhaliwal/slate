@@ -14,7 +14,25 @@ sits in the working tree:
 so E1-vs-E2 within an arm prices staleness, and arm-vs-arm within E2 prices
 the freshness signal.
 
-Two design constraints came out of a failed first attempt, and both matter:
+Three design constraints came out of failed attempts, and all three matter:
+
+0. **The prompt must state the contract the grader enforces.** Revised
+   2026-07-27, after 35 trials scored exactly 49 passed / 2 failed — a figure
+   an *untouched tree* also scores. Every agent's work moved the grader by
+   zero. The cause was not difficulty: agents wrote good fixes that collected
+   errors from every callback and re-raised them chained through
+   ``__context__``, which satisfies the old prompt exactly. The grader test
+   requires a nested ``ExceptionGroup`` with specific message strings, and the
+   prompt never said so. That grades "did you guess the maintainers' API
+   choice", which **no context layer can help with** — the answer is not in the
+   repo, it is in a PR that does not exist yet. Correctness was therefore
+   pinned at 0 for every arm including a hypothetical perfect one, so the
+   benchmark could not detect a context effect on correctness even if one
+   existed. The prompt now states the observable contract and still withholds
+   *where* to implement it, which is the part repo context is supposed to
+   supply. Results from before this revision are not comparable on
+   `correct`; their cost metrics are unaffected, since the prompt is identical
+   across arms within any one sweep.
 
 1. **The task must not be greppable.** The first task asked for a change to
    `template_filter`, which already existed — every arm's agent simply grepped
@@ -60,6 +78,17 @@ STALE_DOC_COMMIT = "c2705ffd^"
 MODEL = "claude-sonnet-5"
 TRIALS = 5
 
+# Bumped whenever the task, grader or arms change in a way that makes older
+# records incomparable. Stamped into every result so a report can refuse to
+# average two different experiments — the failure this exists to prevent is
+# quieter than a crash: `runs/` holds one file per arm+trial, a re-run
+# overwrites in place, and nothing else would notice that half the directory
+# answers a different question.
+#   1 — original prompt: behaviour only, no contract. Correctness floored at 0
+#       for every arm (see the module docstring); cost metrics still valid.
+#   2 — prompt states the ExceptionGroup contract the grader enforces.
+TASK_REVISION = 2
+
 # Identical for every arm. Describes the behaviour, never the file layout or
 # the shape of the fix — naming those would hand over the very thing the
 # context is supposed to supply. Taken from the real changelog entry.
@@ -68,10 +97,20 @@ In Flask, teardown callbacks (those registered with `teardown_appcontext` and
 `teardown_request`) are not all guaranteed to run: if one of them raises, the
 remaining callbacks are skipped.
 
-Fix this. Every teardown callback must be called, even when an earlier one
-raises. If any of them raised, the error must still surface to the caller
-after they have all run — and if more than one raised, none of those errors
-may be silently discarded.
+Fix this, to the following contract.
+
+- Every teardown callback must run, even when an earlier one raises. The same
+  applies to receivers of the `request_tearing_down` and
+  `appcontext_tearing_down` signals.
+- No error may be silently discarded. Once everything has run, the collected
+  errors surface to the caller.
+- On Python 3.11+ they surface as a *nested* `ExceptionGroup`:
+  - the outer group's message mentions "context teardown";
+  - it holds one sub-group per teardown phase, each an `ExceptionGroup`;
+  - the request phase's sub-group message mentions "request teardown", the
+    application phase's mentions "app teardown";
+  - each sub-group holds that phase's callback errors and signal errors.
+- On older Pythons, the first error propagates as it does today.
 
 Do not modify anything under tests/.
 """
@@ -293,6 +332,9 @@ class Metrics:
 
     arm: str = ""
     trial: int = 0
+    # Which task revision produced this record. Records written before the
+    # field existed are revision 1 by absence.
+    task_revision: int = TASK_REVISION
     ok: bool = False
 
     input_tokens: int = 0          # fresh + cache-creation + cache-read

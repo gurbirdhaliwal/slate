@@ -26,11 +26,22 @@ import spec  # noqa: E402
 
 RUNS = Path(__file__).resolve().parent / "runs"
 
+# Records excluded for belonging to an older task revision. Reported rather
+# than dropped silently: a reader is entitled to know the directory holds
+# results the report refused to use.
+SKIPPED: list[dict] = []
+
 
 def load() -> dict[str, list[dict]]:
     by_arm: dict[str, list[dict]] = {}
     for path in sorted(RUNS.glob("*.json")):
         record = json.loads(path.read_text())
+        # Never average two different experiments. A record from an older task
+        # revision answers a different question, and `runs/` mixes them freely
+        # because a re-run overwrites one arm's files and leaves the rest.
+        if record.get("task_revision", 1) != spec.TASK_REVISION:
+            SKIPPED.append(record)
+            continue
         # When an arm is re-run its records are overwritten in place, so arms
         # in this directory can come from different sweeps on different days.
         # Date the run by its *transcript*, not the sidecar: `--reparse`
@@ -151,6 +162,17 @@ def markdown(by_arm: dict[str, list[dict]]) -> str:
       "the transcript, correctness from pytest. Raw transcripts for every "
       "trial are in `runs/`.")
     w()
+
+    if SKIPPED:
+        stale_arms = sorted({r["arm"] for r in SKIPPED})
+        revs = sorted({r.get("task_revision", 1) for r in SKIPPED})
+        w(f"> **{len(SKIPPED)} records excluded.** `runs/` also holds results "
+          f"from task revision {', '.join(str(r) for r in revs)}; this report "
+          f"covers revision {spec.TASK_REVISION} only. Affected arms: "
+          f"{', '.join(f'`{a}`' for a in stale_arms)}. They are a different "
+          "experiment and averaging them in would be meaningless — re-run "
+          "those arms to include them.")
+        w()
 
     prov = provenance(by_arm)
     days = sorted({prov[a.name] for a in arms})
@@ -540,7 +562,18 @@ def main() -> int:
 
     by_arm = load()
     if not by_arm:
-        print(f"no results in {RUNS} — run run.py first", file=sys.stderr)
+        if SKIPPED:
+            revs = sorted({r.get("task_revision", 1) for r in SKIPPED})
+            print(
+                f"{len(SKIPPED)} result(s) in {RUNS}, but all are from task "
+                f"revision {', '.join(str(r) for r in revs)} and this is "
+                f"revision {spec.TASK_REVISION}.\n"
+                "The task changed, so those records answer a different "
+                "question and are not averaged in.\n"
+                "Re-run the sweep to produce comparable results.",
+                file=sys.stderr)
+        else:
+            print(f"no results in {RUNS} — run run.py first", file=sys.stderr)
         return 1
     if args.json:
         print(json.dumps({k: aggregate(v) for k, v in by_arm.items()}, indent=2))

@@ -1,8 +1,8 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: 8d4e03e
-slate_synced_at: 2026-07-24T18:59:11+00:00
+slate_synced_commit: c838ad6
+slate_synced_at: 2026-07-27T00:38:31+00:00
 slate_synced_digest: e3b0c44298fc1c14
 slate_watches:
 ---
@@ -62,6 +62,22 @@ cumulative report with assumptions disclosed, additive `value` fields on MCP
 display-time arithmetic at labeled list prices. Every record path is
 best-effort — a ledger failure can never break a command
 (`tests/test_value.py` pins this, dedupe, and the JSON contracts).
+
+**Merge driver — landed (2026-07-24).** The context layer now survives
+concurrent branches. New `slate/merge.py` + `slate merge install|uninstall|
+status|run`: git calls `slate merge run %O %A %B %P`, which 3-way-merges the
+hand-written text (`gitutil.merge_file` wrapping `git merge-file`), replaces
+both sides' auto-blocks with a placeholder so generated facts never enter the
+merge, restores the block from ours, and unions `slate_watches`. `DocSpec`
+gained `append_only` (decisions only), switching that doc to `--union` so
+concurrent decision entries never collide. Install has two halves with
+different lifetimes: committed `.gitattributes` + per-clone
+`merge.slate.driver`; a clone missing the driver degrades to git's built-in
+merge, never to something worse. Keeping ours' anchor cannot manufacture a
+false `fresh` because freshness diffs the anchor's *tree* against the merged
+worktree — pinned by `test_merged_layer_is_not_falsely_fresh`. Known limit:
+two branches appending prose at the same point still conflict honestly (git
+can't know the order); neither side's note is lost.
 
 **The precision-upgrade arc (A→B→C) is complete.** File→symbol→claim resolution
 plus dependency-edge facts. Remaining carry-overs, both optional refinements

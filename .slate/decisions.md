@@ -272,3 +272,57 @@ Revisit trigger: Claude Code adding native AGENTS.md support (then drop the
           the *prose* is fixed while the freshness signal itself still depends
           on an agent choosing to ask for it.
 ```
+
+```
+Date: 2026-07-27
+Decision: Freshness is delivered to Claude Code as hook-injected context, not as
+          an MCP tool the agent may call. `slate agent hooks install` (also run
+          by `slate agent enable claude`, opt out with --no-hooks) writes two
+          entries to `.claude/settings.json`: a SessionStart hook that states
+          the whole layer's trust state, and a PreToolUse hook on
+          Read|Edit|Write|NotebookEdit that warns only when the target file is
+          covered by the watches of a non-fresh doc. New `slate/claudehook.py`;
+          the handler is `slate agent hook`, reading the payload on stdin.
+Rationale: The MCP path was measured and it does not work. Across 25 real
+          headless sessions the agent made 0 calls to any slate_* tool in 320
+          tool calls, while the server reported connected and AGENTS.md told it
+          to check freshness first (benchmarks/agentbench/RESULTS.md). The
+          entire freshness engine — the product thesis — went unexercised by
+          every session that had it. A signal the model must opt into competes
+          with grep, and grep wins: cheaper, and it always returns something.
+          Hooks are not offered to the model, so there is no choice to decline.
+Evidence:  Verified end-to-end, not assumed. In a real repo with two
+          deliberately stale docs, a headless session answered which docs were
+          untrustworthy — naming both docs, their claim counts, the anchor
+          commit and the culprit file — in one turn with zero tool calls. The
+          PreToolUse warning was reproduced verbatim by the model at the moment
+          it read a covered file. Project `.claude/settings.json` hooks DO fire
+          under `claude -p`, unlike `.mcp.json`, which needs --mcp-config; that
+          asymmetry is why this delivery path works headless and the MCP one
+          did not.
+Trade-off: ~380ms per PreToolUse evaluation (a repo scan plus a git diff; only
+          ~57ms is interpreter start). Deliberately uncached: a cache in the
+          warning path is a mechanism for suppressing a warning that should
+          have fired, which is the one failure §10 forbids, and 380ms sits
+          inside the noise of a tool-call round trip. Revisit only with a
+          measurement showing it hurts. Second trade-off: this is a third
+          Claude-specific artifact after CLAUDE.md and .mcp.json, sharpening
+          the precedent the previous entry flagged.
+Safety:    The hook computes no trust math — it calls freshness.evaluate_all and
+          renders, exactly as cli and mcp do, so there is no second
+          implementation of "is this doc fresh" to disagree with the first.
+          Every entry point is wrapped: a malformed payload, a missing layer, a
+          path outside the repo, or an internal exception all resolve to silence
+          and exit 0. Nothing ever prints "fresh" for a doc it failed to
+          evaluate. Verified that with `slate` absent from PATH the hook fails
+          and the session still completes normally (is_error false) — the
+          PATH assumption degrades to no signal, never to a broken session.
+          PreToolUse stays silent on the context docs themselves, since editing
+          a stale doc is the agent healing it. Pinned by
+          tests/test_claude_hook.py (30 tests).
+Revisit trigger: Evidence that the SessionStart text is being ignored the way
+          the MCP tools were — delivery into the window is now proven, but
+          whether it changes task outcomes is NOT measured. The 0/25-correct
+          benchmark was not re-run against this delivery path; do not claim a
+          task-level improvement until it is.
+```

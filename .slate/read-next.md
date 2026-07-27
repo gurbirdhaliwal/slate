@@ -89,8 +89,47 @@ treats `module.symbol` as living in `module` — re-export aliases aren't follow
 (which *symbol* imports which), but only if top-level-dir granularity proves too
 coarse in practice.
 
+**Hook-based delivery — landed (2026-07-27). This is the current focus.**
+The consultation problem is closed on the delivery side. Slate no longer
+*offers* freshness to Claude Code; it injects it. New `slate/claudehook.py` +
+`slate agent hook` (the stdin handler) and `slate agent hooks install`, which
+writes two entries to `.claude/settings.json`: **SessionStart** (the layer's
+whole trust state, empty matcher so it also covers `compact`) and
+**PreToolUse** on `Read|Edit|Write|NotebookEdit` (warns only when the target
+file is covered by a non-fresh doc's watches). `slate agent enable claude`
+installs them; `--no-hooks` opts out; `slate agent status` reports them.
+
+Why this exists: the MCP path was measured and does not work — 0 `slate_*`
+calls in 320 tool calls across 25 sessions. Hooks are not offered to the model,
+so there is no choice to decline. The module computes **no trust math** (it
+calls `freshness.evaluate_all` and renders, like `cli` and `mcp`), and every
+entry point fails to *silence* — never to a false `fresh`, never to a broken
+session. Pinned by `tests/test_claude_hook.py` (30 tests; 225 total).
+
+**What is proven and what is not.** Delivery is verified end-to-end: in a repo
+with two deliberately stale docs, a headless session named both docs, their
+claim counts, the anchor commit and the culprit file in one turn with zero tool
+calls, and reproduced the PreToolUse warning verbatim on reading a covered
+file. **Task-level outcomes are NOT measured** — the 0/25-correct sweep has not
+been re-run against this path. Do not claim an accuracy win.
+
+**Next, in priority order.** (1) Re-run `benchmarks/agentbench` against
+hook-based delivery (~90 min, one sweep) — the harness is reusable and this is
+now the question worth answering; note the handoff's caution that n=5 did not
+survive its error bars, so consider more trials or a sharper task. (2) The old
+`benchmarks/RESULTS.md` + `benchmark.py` are still self-referential and
+estimate-based, and its numbers predate the package-granularity scanner —
+re-run or retire it; the repo currently ships two RESULTS.md files making
+different kinds of claim. (3) `InstructionsLoaded` (no decision control, side
+effects only) would turn "the layer loaded" from an assumption into a logged
+fact — the natural answer to the per-client verification the CLAUDE.md decision
+entry called for.
+
 ## Landmines
 
 - After changing code under `slate/` or `tests/`, run `slate sync` and commit the doc updates in the same PR — CI's `slate status --ci` gate fails otherwise.
 - The MCP server must never compute trust math or expose write tools in read mode; `tests/test_mcp.py` pins both.
+- Neither must the hook — `slate/claudehook.py` renders `freshness.evaluate_all` and nothing else. A second implementation of "is this doc fresh" is a second thing that can disagree, and it would disagree inside the model's context window.
+- A hook that raises degrades the session it was meant to inform. Every path in `claudehook` resolves to silence + exit 0; don't add one that can throw.
+- Claude Code reads `CLAUDE.md`, not `AGENTS.md`. Project `.claude/settings.json` hooks *do* load under `claude -p`; project `.mcp.json` does **not** without `--mcp-config`. Verify delivery with a canary before trusting any agent-behaviour measurement.
 - Don't reintroduce the old `apps/`/`packages/`/`infra/` trees from git history (decision log 2026-07-15).

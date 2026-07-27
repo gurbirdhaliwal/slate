@@ -36,6 +36,10 @@ class DocSpec:
     title: str
     generated: bool    # True → has an auto-block Slate rewrites on sync
     read_order: int    # position in the "first read" path (0 = skip)
+    # True → entries are only ever added, never rewritten. Lets the merge
+    # driver union two branches' entries instead of conflicting on the
+    # append point; see merge.py.
+    append_only: bool = False
 
     def path(self, root: Path) -> Path:
         return root / self.rel_path
@@ -47,7 +51,7 @@ DOC_SPECS: list[DocSpec] = [
     DocSpec("architecture", f"{SLATE_DIR}/architecture.md", "Architecture", True, 3),
     DocSpec("modules", f"{SLATE_DIR}/modules.md", "Module map", True, 4),
     DocSpec("workflows", f"{SLATE_DIR}/workflows.md", "Workflows", True, 5),
-    DocSpec("decisions", f"{SLATE_DIR}/decisions.md", "Decision log", False, 6),
+    DocSpec("decisions", f"{SLATE_DIR}/decisions.md", "Decision log", False, 6, append_only=True),
 ]
 
 

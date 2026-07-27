@@ -37,6 +37,7 @@ slate sync --prose      # opt-in: LLM-drafted orientation paragraph above the
                         # all trust math stay deterministic)
 slate watches --apply   # propose watch globs from import graphs + doc references
 slate hook install      # pre-push gate: refuses to push a stale context layer
+slate merge install     # git merge driver: concurrent PRs stop colliding (teams)
 slate fleet ~/code      # freshness roll-up across many repos
 slate value             # what slate has saved you in this repo — measured
 ```
@@ -144,6 +145,36 @@ tools aren't even exposed — and `slate agent access full` (or the
 `.slate/agent-access`, so committing it makes it team policy, and toggling
 it takes effect without restarting the agent.
 
+## Working in a team
+
+Because the layer is synced and committed alongside the code, two branches
+that both touch watched code otherwise conflict in every generated doc — and
+resolving that the obvious way (`git checkout --ours`, then `slate sync`)
+produces a correct auto-block while silently deleting the other branch's
+hand-written notes. `slate merge install` fixes both:
+
+```bash
+slate merge install     # writes .gitattributes (commit it) + a per-clone driver
+git add .gitattributes && git commit -m "slate merge driver"
+```
+
+The driver splits each doc the way sync does. Hand-written text gets a real
+3-way merge, so both sides' notes survive and a genuine overlap still raises
+markers. Generated facts aren't merged at all — the auto-block is a function
+of the merged tree, so `slate sync` regenerates it correctly afterwards.
+Watch globs are unioned, and the append-only decision log takes both branches'
+entries instead of colliding.
+
+Two things worth knowing:
+
+- **`.gitattributes` is committed; the driver is per-clone.** Each teammate
+  runs `slate merge install` once. A clone without it falls back to git's
+  built-in merge — the behavior you have today, never anything worse.
+- **The merge never invents freshness.** Freshness compares the anchor's tree
+  to the merged worktree, so a doc that came through a merge describing only
+  one branch's code is reported `stale` and healed by `slate sync` — exactly
+  as if that code had landed on one branch.
+
 ## Integrations
 
 - **GitHub PR bot** — [action.yml](action.yml) is a reusable composite action:
@@ -174,6 +205,7 @@ slate/                the CLI package (stdlib only, by design)
 ├── imports.py        watch inference from import graphs + doc references
 ├── llm.py            opt-in prose writer (urllib, injectable transport)
 ├── hooks.py          pre-push freshness gate installer
+├── merge.py          git merge driver: human text merged, facts left to sync
 ├── context.py        doc registry, frontmatter stamping, auto-block markers
 ├── frontmatter.py    tiny hand-rolled YAML-subset frontmatter (no deps)
 ├── globs.py          watch-pattern matching with ** semantics
@@ -190,7 +222,7 @@ docs/github-setup.md  one-time repo config (branch ruleset)
 
 ```bash
 make install    # venv + editable install with dev deps
-make test       # pytest (31 tests, real git repos in tmpdirs)
+make test       # pytest (171 tests, real git repos in tmpdirs)
 make demo       # throwaway repo walking the core loop end to end
 make dogfood    # slate status on this repo's own context layer
 ```

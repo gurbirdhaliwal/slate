@@ -15,6 +15,7 @@ Commands (product doc §9):
     slate diff      what changed vs. what each doc claims; preview of sync
     slate watches   show watch globs and propose additions (--apply writes them)
     slate hook      install/uninstall the pre-push freshness gate
+    slate merge     install/uninstall the git merge driver for the context layer
     slate mcp       run the MCP server so coding agents can call slate directly
     slate agent     wire slate into agents (enable) + access ceiling (access/status)
     slate fleet     freshness roll-up across multiple repos
@@ -42,6 +43,7 @@ from . import (
     gitutil,
     hooks,
     imports as imports_mod,
+    merge as merge_mod,
     scanner,
     value,
     verify,
@@ -178,6 +180,28 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("action", choices=["install", "uninstall"])
     p.add_argument("--force", action="store_true", help="overwrite a non-slate pre-push hook")
     p.set_defaults(func=cmd_hook)
+
+    p = sub.add_parser(
+        "merge",
+        help="manage the git merge driver for the context layer",
+        description="git merge driver: 3-way-merges hand-written text across branches "
+                    "and lets `slate sync` regenerate the facts, so concurrent PRs stop "
+                    "conflicting in the context layer (and stop losing each other's notes)",
+    )
+    merge_sub = p.add_subparsers(dest="merge_command", required=True)
+    q = merge_sub.add_parser("install", help="register the driver (git config) + .gitattributes", description="register the driver in this clone and add the .gitattributes lines (commit them to share)")
+    q.set_defaults(func=cmd_merge_install)
+    q = merge_sub.add_parser("uninstall", help="remove the driver and the .gitattributes lines", description="remove the driver and the .gitattributes lines")
+    q.set_defaults(func=cmd_merge_uninstall)
+    q = merge_sub.add_parser("status", help="show which half of the wiring is present", description="show which half of the wiring is present (.gitattributes is committed; the driver is per-clone)")
+    q.add_argument("--json", action="store_true", help="machine-readable output")
+    q.set_defaults(func=cmd_merge_status)
+    q = merge_sub.add_parser("run", help="the driver itself (git invokes this; not for humans)", description=f"the merge driver git invokes: {merge_mod.DRIVER_COMMAND}")
+    q.add_argument("base")
+    q.add_argument("ours")
+    q.add_argument("theirs")
+    q.add_argument("path")
+    q.set_defaults(func=cmd_merge_run, needs_repo=False)
 
     p = sub.add_parser("mcp", help="run the MCP server (stdio) so coding agents can call slate", description="run the MCP server (stdio) so coding agents can call slate")
     p.add_argument(
@@ -503,6 +527,65 @@ def cmd_hook(root: Path, args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     return 0
+
+
+def cmd_merge_install(root: Path, args: argparse.Namespace) -> int:
+    try:
+        merge_mod.install(root)
+    except (merge_mod.MergeError, gitutil.GitError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"registered the slate merge driver in this clone ({merge_mod.DRIVER_CONFIG})")
+    print(f"wrote {merge_mod.ATTRIBUTES_FILE} — commit it so the whole team gets it")
+    print(
+        "\nEach teammate also runs `slate merge install` once: .gitattributes is\n"
+        "committed, but the driver command is git config and stays per-clone.\n"
+        "Without it git falls back to its built-in merge — no worse than before."
+    )
+    return 0
+
+
+def cmd_merge_uninstall(root: Path, args: argparse.Namespace) -> int:
+    try:
+        removed = merge_mod.uninstall(root)
+    except (merge_mod.MergeError, gitutil.GitError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print("merge driver removed" if removed else "no slate merge driver installed")
+    return 0
+
+
+def cmd_merge_status(root: Path, args: argparse.Namespace) -> int:
+    info = {
+        "driver": merge_mod.driver_registered(root),
+        "attributes": merge_mod.attributes_registered(root),
+    }
+    if args.json:
+        print(json.dumps(info, indent=2))
+        return 0
+    driver = "registered" if info["driver"] else "not registered (this clone)"
+    attrs = "present" if info["attributes"] else "absent"
+    print(f"driver ({merge_mod.DRIVER_CONFIG}): {driver}")
+    print(f"{merge_mod.ATTRIBUTES_FILE}: {attrs}")
+    if not (info["driver"] and info["attributes"]):
+        print("\nrun `slate merge install` to complete the wiring")
+    return 0
+
+
+def cmd_merge_run(_root: Path | None, args: argparse.Namespace) -> int:
+    """The driver git calls per conflicted file. Never raises at git."""
+    try:
+        code, message = merge_mod.run(
+            Path(args.base), Path(args.ours), Path(args.theirs), args.path
+        )
+    except (merge_mod.MergeError, gitutil.GitError, OSError) as exc:
+        # Failing here would abort the merge; leave the file conflicted with
+        # ours' content and let the human resolve it by hand.
+        print(f"slate: {args.path}: merge driver failed ({exc})", file=sys.stderr)
+        return 1
+    if message:
+        print(message, file=sys.stderr)
+    return code
 
 
 def cmd_help(_root: Path | None, args: argparse.Namespace) -> int:

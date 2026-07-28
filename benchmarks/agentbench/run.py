@@ -607,6 +607,17 @@ def main() -> int:
             if not sidecar.exists():
                 continue
             old = json.loads(sidecar.read_text())
+            # Only reparse records from the *current* revision. Parsing uses
+            # revision-specific constants — DECOY_SYMBOLS, GROUND_TRUTH_FILES,
+            # ALLOWED_EDIT_FILES — so re-deriving an older record with today's
+            # spec silently rewrites it to answer today's question. Observed:
+            # revision 3 sets DECOY_SYMBOLS to (), and a reparse zeroed the
+            # decoy counts on every revision-1 record whose transcripts still
+            # contain 23 mentions of `RequestContext`. Preserving
+            # `task_revision` was not enough; the parse itself has to be
+            # refused.
+            if old.get("task_revision", 1) != spec.TASK_REVISION:
+                continue
             metrics = spec.Metrics(arm=old["arm"], trial=old["trial"])
             parse_transcript(transcript, metrics)
             # Refuse to rewrite a record from a transcript that did not

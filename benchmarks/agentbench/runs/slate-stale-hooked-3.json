@@ -1,8 +1,6 @@
 {
   "arm": "slate-stale-hooked",
   "trial": 3,
-  "task_revision": 1,
-  "transcript_sha": "90f23e48466787060d392a3b94a5505585a032b23870c711fadab0fb6a16c50f",
   "ok": true,
   "input_tokens": 1357118,
   "fresh_input": 60,
@@ -15,8 +13,6 @@
   "tool_calls": 29,
   "slate_tool_calls": 0,
   "hook_injections": 2,
-  "ground_truth_touched": 2,
-  "ground_truth_edited": 1,
   "files_read": 3,
   "decoy_hits": 0,
   "found_target_after": 2,

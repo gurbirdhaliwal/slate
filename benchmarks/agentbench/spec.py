@@ -46,19 +46,29 @@ Three design constraints came out of failed attempts, and all three matter:
    `run.py` now bridges the layer into `CLAUDE.md` and asserts delivery before
    any trial counts.
 
-Why this task: `fbb6f0bc` ("all teardown callbacks are called despite errors",
-Flask PR #5928) is a real merged commit that ships its own tests and spans
-three files in two concerns — `helpers.py` (a new `_CollectErrors` helper),
-`ctx.py` and `app.py` (the teardown loops that use it). Nothing in the tree
-names the feature beforehand.
+Why this task: `c17f3793` ("request context tracks session access") is a real
+merged commit shipping its own tests. It spans four files across three
+concerns — `sessions.py` (the session object learns `accessed`), `ctx.py`
+(the request context holds the real session behind `_session`), `app.py`
+(the `Vary: Cookie` decision) and `templating.py`. Nothing in the tree names
+the feature beforehand, so it cannot be reached by grepping a feature name.
 
-Why this staleness: `c2705ffd` ("merge app and request context") rewrote
-`ctx.py` — 467 lines — and deleted `RequestContext` and `_cv_request`
-outright, folding request handling into `AppContext`. A doc written before it
-describes two context objects with two teardown paths; at the task commit
-there is one. The old names still appear vestigially in the tree, so grepping
-them returns just enough to look plausible. That is 50 commits and five months
-of drift, not a contrived scenario.
+Why revision 3 exists: revision 2 was solved by every arm on every trial.
+`bare` scored 6/6 with no context at all and found a ground-truth file in
+exactly two tool calls every time, so correctness, wrong turns and
+orientation cost were all pinned. A benchmark that cannot separate "no
+context" from "perfect context" cannot answer the question it was built for,
+whichever direction it fails in.
+
+Why the grader is not the whole story here: `templating.py` is in the real PR
+and skipping it breaks no test — verified by applying the solution minus that
+file and running the full suite (489 passed; the one failure is the known
+baseline). Upstream test suites routinely fail to cover the secondary file,
+so completeness is measured directly from the transcript via
+`ground_truth_touched` rather than inferred from a pass/fail that cannot
+express it. That metric is the one a co-change fact should move: it is the
+difference between "I found where to start" and "I found everything this
+change touches".
 """
 
 from __future__ import annotations
@@ -68,12 +78,16 @@ from dataclasses import dataclass, field
 REPO_URL = "https://github.com/pallets/flask.git"
 
 # The commit the task is implemented against (the real PR's parent).
-BASE_COMMIT = "fbb6f0bc^"
+BASE_COMMIT = "c17f3793^"
 # The commit whose tests grade the result (the real PR).
-SOLUTION_COMMIT = "fbb6f0bc"
-# What the stale arms' context describes: the last tree before Flask merged
-# the request context into the application context.
-STALE_DOC_COMMIT = "c2705ffd^"
+SOLUTION_COMMIT = "c17f3793"
+# What the stale arms' context describes. Unset for revision 3: the previous
+# value (`c2705ffd^`) is three commits *after* this task, so it cannot
+# describe a past the task's base ever had. `0ec7f713` ("Split the App and
+# Blueprint into Sansio and IO parts", 2,975 lines churned) is the identified
+# candidate and does precede the base, but designing an honest stale arm from
+# it needs archaeology the E1 question does not.
+STALE_DOC_COMMIT: str | None = None
 
 MODEL = "claude-sonnet-5"
 TRIALS = 5
@@ -87,59 +101,80 @@ TRIALS = 5
 #   1 — original prompt: behaviour only, no contract. Correctness floored at 0
 #       for every arm (see the module docstring); cost metrics still valid.
 #   2 — prompt states the ExceptionGroup contract the grader enforces.
-TASK_REVISION = 2
+#       Overcorrected: `bare` scored 6/6 and every metric ceilinged, so a
+#       context effect was undetectable in the other direction.
+#   3 — new task (session access tracking) chosen for a difficulty band, plus
+#       `ground_truth_touched` to measure scope discovery directly rather
+#       than relying on upstream tests to cover the secondary file.
+TASK_REVISION = 3
 
 # Identical for every arm. Describes the behaviour, never the file layout or
 # the shape of the fix — naming those would hand over the very thing the
 # context is supposed to supply. Taken from the real changelog entry.
 TASK_PROMPT = """\
-In Flask, teardown callbacks (those registered with `teardown_appcontext` and
-`teardown_request`) are not all guaranteed to run: if one of them raises, the
-remaining callbacks are skipped.
+Flask sends `Vary: Cookie` on every response that has a session, whether or
+not the view actually looked at the session. That makes responses less
+cacheable than they need to be.
 
-Fix this, to the following contract.
+Make it conditional, to the following contract.
 
-- Every teardown callback must run, even when an earlier one raises. The same
-  applies to receivers of the `request_tearing_down` and
-  `appcontext_tearing_down` signals.
-- No error may be silently discarded. Once everything has run, the collected
-  errors surface to the caller.
-- On Python 3.11+ they surface as a *nested* `ExceptionGroup`:
-  - the outer group's message mentions "context teardown";
-  - it holds one sub-group per teardown phase, each an `ExceptionGroup`;
-  - the request phase's sub-group message mentions "request teardown", the
-    application phase's mentions "app teardown";
-  - each sub-group holds that phase's callback errors and signal errors.
-- On older Pythons, the first error propagates as it does today.
+- A session object reports whether it has been read and whether it has been
+  changed, via `accessed` and `modified` attributes.
+- Merely handling a request does not count as reading the session. Reading a
+  key, or writing one, does.
+- A response gets `Vary: Cookie` only when the session was read or changed
+  during that request. A request that never touches the session must not get
+  it.
+- Writing to the session still saves the cookie, exactly as before.
+- The request context exposes the underlying session object as `_session`, so
+  it can be inspected without that inspection itself counting as a read.
 
 Do not modify anything under tests/.
 """
 
 # The source files the real PR changed — the ones a correct solution touches.
 GROUND_TRUTH_FILES = frozenset({
-    "src/flask/app.py",
     "src/flask/ctx.py",
-    "src/flask/helpers.py",
+    "src/flask/sessions.py",
+    "src/flask/app.py",
+    "src/flask/templating.py",
+})
+
+# The subset the grader's tests actually exercise. `templating.py` is in the
+# real PR and is *not* here, because skipping it fails nothing: verified by
+# applying the full solution minus that file and running the whole suite —
+# 489 passed, and the single failure was the known-baseline one. Upstream
+# tests routinely miss the secondary file (the `open_resource` candidate had
+# the same hole in `blueprints.py`), which is why scope discovery is measured
+# from the transcript by `ground_truth_touched` rather than inferred from a
+# pass/fail the tests cannot produce.
+GRADED_FILES = frozenset({
+    "src/flask/ctx.py",
+    "src/flask/sessions.py",
+    "src/flask/app.py",
 })
 
 # Everything the real PR touched. Editing the changelog or the docs is
 # legitimate, so only writes outside this set count as off-target.
 ALLOWED_EDIT_FILES = GROUND_TRUTH_FILES | {
     "CHANGES.rst",
-    "docs/appcontext.rst",
+    "docs/api.rst",
 }
 
 # Names the pre-refactor doc uses that no longer describe how Flask works.
 # `_cv_request` is gone entirely; `RequestContext` survives only as a few
 # vestigial mentions, so searching for it returns just enough to mislead.
 # Reaching for either is the measurable wrong turn.
-DECOY_SYMBOLS = ("RequestContext", "_cv_request")
+# Revision 3 runs E1 only, so there is no stale doc and nothing to be misled
+# by. Kept empty rather than deleted: the metric still records, and a
+# non-empty value here would silently count names this experiment never
+# planted.
+DECOY_SYMBOLS: tuple[str, ...] = ()
 
 # The PR's own tests, restored from SOLUTION_COMMIT after the agent stops so
 # they cannot be read during the run or edited to pass.
 GRADER_TESTS = (
-    "tests/test_appctx.py",
-    "tests/test_helpers.py",
+    "tests/test_basic.py",
 )
 
 # Runtime deps pinned once so every trial grades in an identical environment.
@@ -196,52 +231,19 @@ ARMS: tuple[Arm, ...] = (
         blurb="`slate init` at the task commit; every doc reports fresh.",
     ),
     Arm(
-        name="handwritten-stale",
-        experiment="E2",
-        context="handwritten",
-        doc_commit=STALE_DOC_COMMIT,
-        blurb="The same doc, written before the context refactor and never "
-              "updated. Nothing in the repo says it is out of date.",
-    ),
-    Arm(
-        name="slate-stale",
-        experiment="E2",
-        context="slate",
-        doc_commit=STALE_DOC_COMMIT,
-        blurb="A Slate layer generated before the context refactor; the code "
-              "then advanced. `slate status` reports the docs stale.",
-    ),
-    # --- hook delivery (added 2026-07-27) ----------------------------------
-    # The first sweep's load-bearing finding was that the agent made 0 calls to
-    # any slate_* tool in 320 tool calls, so the freshness signal was never
-    # consulted and E2-vs-E1 measured nothing about freshness. These arms are
-    # identical to the two above except that freshness is *injected* by a
-    # SessionStart/PreToolUse hook instead of being offered as a tool call.
-    #
-    # The decisive comparison is slate-stale vs slate-stale-hooked, and the
-    # metric that should move is `decoy_hits` — reaching for RequestContext or
-    # _cv_request is what being misled by the stale doc looks like. `correct`
-    # was 0/25 across every arm last time and is unlikely to be the metric that
-    # discriminates; treat it as a control, not the hypothesis.
-    Arm(
         name="slate-fresh-hooked",
         experiment="E1",
         context="slate",
         hooks=True,
-        blurb="`slate init` at the task commit plus hook delivery. Control for "
-              "the cost of injecting a signal when nothing is wrong.",
-    ),
-    Arm(
-        name="slate-stale-hooked",
-        experiment="E2",
-        context="slate",
-        doc_commit=STALE_DOC_COMMIT,
-        hooks=True,
-        blurb="The stale Slate layer, with freshness injected by hooks rather "
-              "than offered as a tool. The agent is told the docs are stale "
-              "whether or not it asks.",
+        blurb="`slate init` plus hook delivery, so freshness is injected "
+              "rather than offered as a tool the agent may decline to call.",
     ),
 )
+
+# Revision 3 is E1 only. The E2 arms are omitted rather than carried forward
+# with a broken commit: `STALE_DOC_COMMIT` has no valid value for this base
+# (see above), and an arm whose "stale" doc is actually fresh would look like
+# a null result for staleness rather than a missing experiment.
 
 # Text only Slate's hooks emit. Used to measure delivery from the transcript
 # itself rather than assuming the hook fired — the same discipline that caught
@@ -303,22 +305,20 @@ The suite is fast (a couple of seconds). Run it before finishing.
   defined inline in `app.py` or `ctx.py`.
 """
 
-# Accurate at BASE_COMMIT: one context object, one teardown path.
+# Accurate at BASE_COMMIT (`c17f3793^`): two execution contexts, and the
+# session living on the request context. Written as a good-faith orientation
+# doc — it describes structure, never the change being asked for.
 CTX_CURRENT = """
-    `AppContext` is the single execution context — it carries the application,
-    `g`, and (when handling a request) the request and session. `push()` and
-    `pop()` manage it, and `pop()` is where teardown callbacks are invoked.
-    It is tracked by the `_cv_app` context var in `globals.py`."""
+    Two execution contexts. `AppContext` carries the application and `g`,
+    tracked by the `_cv_app` context var. `RequestContext` carries the request
+    and the session, tracked by `_cv_request`. Each has its own `push()`/
+    `pop()` pair, and the session is set up when the request context is
+    pushed."""
 
-# Accurate at STALE_DOC_COMMIT, wrong at BASE_COMMIT: `RequestContext` and
-# `_cv_request` no longer exist.
-CTX_STALE = """
-    Two separate contexts. `AppContext` carries the application and `g`, and
-    is tracked by the `_cv_app` context var. `RequestContext` carries the
-    request and session, and is tracked by `_cv_request`. Each has its own
-    `push()`/`pop()` pair, and each one's `pop()` invokes its own teardown
-    callbacks — application teardown in `AppContext.pop()`, request teardown
-    in `RequestContext.pop()`."""
+# Unused in revision 3 (E1 only — there is no valid STALE_DOC_COMMIT for this
+# base). Kept so the template still formats and so the E2 arms can be
+# restored without rewriting it.
+CTX_STALE = CTX_CURRENT
 
 
 @dataclass
@@ -364,6 +364,19 @@ class Metrics:
     # a hooked arm reading 0 here means the delivery mechanism failed and the
     # trial says nothing about hooks.
     hook_injections: int = 0
+    # How many of GROUND_TRUTH_FILES the agent actually opened or edited.
+    # Scope discovery, measured directly. The grader cannot express this —
+    # `templating.py` is in the real PR and skipping it fails no test — so a
+    # pass/fail says only "the part that is covered works". This is the
+    # metric a co-change fact should move, since co-change answers "what else
+    # does this change touch?" and nothing else in the layer does.
+    ground_truth_touched: int = 0
+    # How many of GROUND_TRUTH_FILES the agent actually *edited*. `touched`
+    # counts any mention in a tool call, so it saturates at 4/4 the moment the
+    # agent reads around — the revision-3 pilot scored 4/4 on trials that
+    # never edited `sessions.py` at all, which is precisely the omission that
+    # failed them. Edits are the scope signal; reads are curiosity.
+    ground_truth_edited: int = 0
     files_read: int = 0            # unique paths opened
     decoy_hits: int = 0            # reaches for a name the refactor removed
     found_target_after: int = 0    # tool calls before first ground-truth touch

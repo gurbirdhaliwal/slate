@@ -348,6 +348,8 @@ def parse_transcript(path: Path, m: spec.Metrics) -> None:
 
     pending: dict[str, dict] = {}
     seen_files: set[str] = set()
+    touched_truth: set[str] = set()
+    edited_truth: set[str] = set()
     found_target_at: int | None = None
     last_failed_verify = False
 
@@ -372,7 +374,9 @@ def parse_transcript(path: Path, m: spec.Metrics) -> None:
                 blob = json.dumps(args)
                 if any(d in blob for d in spec.DECOY_SYMBOLS):
                     m.decoy_hits += 1
-                if any(g in blob for g in spec.GROUND_TRUTH_FILES) and found_target_at is None:
+                hit = {g for g in spec.GROUND_TRUTH_FILES if g in blob}
+                touched_truth |= hit
+                if hit and found_target_at is None:
                     found_target_at = m.tool_calls
 
                 path_arg = _path_of(args)
@@ -383,6 +387,8 @@ def parse_transcript(path: Path, m: spec.Metrics) -> None:
 
                 if name in EDIT_TOOLS and path_arg:
                     rel = _relative(path_arg)
+                    if rel in spec.GROUND_TRUTH_FILES:
+                        edited_truth.add(rel)
                     if rel and _is_off_target(rel):
                         m.off_target_edits += 1
                     if rel and rel.startswith("tests/"):
@@ -425,6 +431,8 @@ def parse_transcript(path: Path, m: spec.Metrics) -> None:
             m.ok = not event.get("is_error", False)
 
     m.files_read = len(seen_files)
+    m.ground_truth_touched = len(touched_truth)
+    m.ground_truth_edited = len(edited_truth)
     m.found_target_after = found_target_at or 0
 
 

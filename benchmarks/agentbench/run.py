@@ -279,6 +279,24 @@ EDIT_TOOLS = {"Edit", "Write", "NotebookEdit", "MultiEdit"}
 OPEN_TOOLS = {"Read", "Grep", "Glob"}
 
 
+def _already_done(arm: spec.Arm, trial: int) -> bool:
+    """Has this trial already been recorded at the current task revision?
+
+    Rate limits truncate sweeps mid-arm, and quota is the scarce resource —
+    re-running a completed trial to reach an incomplete one spends a real
+    session for a result already on disk. A record from an older task revision
+    does not count: it answers a different question.
+    """
+    sidecar = RUNS / f"{arm.name}-{trial}.json"
+    if not sidecar.exists():
+        return False
+    try:
+        record = json.loads(sidecar.read_text())
+    except (json.JSONDecodeError, OSError):
+        return False
+    return record.get("task_revision", 1) == spec.TASK_REVISION
+
+
 def _current_transcripts() -> list[Path]:
     """The newest transcript for each trial, one per stem.
 
@@ -525,6 +543,9 @@ def main() -> int:
     ap.add_argument("--pilot", action="store_true", help="one trial per arm")
     ap.add_argument("--trials", type=int, default=spec.TRIALS)
     ap.add_argument("--arm", action="append", help="restrict to named arm(s)")
+    ap.add_argument("--resume", action="store_true",
+                    help="skip trials already recorded at this task revision "
+                         "(for picking a sweep back up after a rate limit)")
     ap.add_argument("--keep", action="store_true", help="keep trial worktrees")
     args = ap.parse_args()
 
@@ -597,6 +618,9 @@ def main() -> int:
     for arm in arms:
         print(f"{arm.name}: {arm.blurb}")
         for trial in range(1, trials + 1):
+            if args.resume and _already_done(arm, trial):
+                print(f"  {arm.name} trial {trial} ... skipped (already recorded)")
+                continue
             try:
                 run_trial(arm, trial, args.keep)
             except RateLimited as exc:

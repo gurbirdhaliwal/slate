@@ -15,7 +15,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import gitutil
+from . import cochange, gitutil
 
 LANGUAGES: dict[str, str] = {
     ".py": "Python",
@@ -88,6 +88,10 @@ class RepoScan:
     # Module-level dependency graph: module path -> module paths it imports
     # from. A tracked fact (rendered into the auto-block), not just a watch hint.
     edges: dict[str, set[str]] = field(default_factory=dict)
+    # Files that repeatedly change in the same commit, from `git log`. The one
+    # generated fact an agent cannot rederive by reading the current checkout —
+    # it is in the history, not the tree.
+    cochange: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def source_dirs(self) -> list[str]:
@@ -134,6 +138,7 @@ def scan(root: Path) -> RepoScan:
         ci_workflows=ci,
         readme_title=_readme_title(root),
         edges=edges,
+        cochange=cochange.compute(root, files),
     )
 
 

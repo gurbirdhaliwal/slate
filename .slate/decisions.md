@@ -390,3 +390,59 @@ Revisit trigger: Claude Code recording PreToolUse additionalContext in the
           transcript, which would make the count exact and let the two hooks be
           told apart without separate arms.
 ```
+
+```
+Date: 2026-07-27
+Decision: Generate co-change coupling from `git log` as a tracked fact — which
+          files repeatedly change in the same commit — rendered into the
+          architecture auto-block. New `slate/cochange.py`, a `cochange` field
+          on `RepoScan`. Code files only, ranked by count x Jaccard, counts
+          computed but never rendered.
+Rationale: Every other generated fact describes the tree as it stands, and an
+          agent rederives all of it in two or three tool calls. That is the
+          benchmark's result, not a suspicion: a fresh Slate layer changed
+          nothing an agent did (`slate-fresh` 59 turns vs `bare` 63, p=0.85;
+          83.4K context vs 70.7K, p=0.09 — if anything worse), and so did a
+          hand-written doc. Nothing in the layer was worth its own tokens
+          because nothing in it was hard to look up. History is the exception:
+          "what else moves when this moves" is in the log, not the tree, and
+          across 15 measured sessions no agent ran `git log`, `git blame` or
+          `git show` even once. It answers the question grep cannot — not
+          "where is X" but "is my change complete".
+Evidence:  On Flask, two of the three files the benchmark's task must touch
+          surface as pairs in the top twelve, with `app.py`<->`helpers.py`
+          first. On this repo it surfaces `cli.py`<->`mcp.py` — every
+          capability is exposed twice, which is the fact a new contributor
+          most needs and least expects. ~70ms on a 235-file repo.
+Trade-off: Ranking is the whole feature and both obvious measures fail, in
+          opposite directions, as measured on Flask rather than reasoned
+          about. Raw count ranks hub files first: six of twelve slots went to
+          `CHANGES.rst` paired with whatever a commit happened to touch, and
+          the useful pair was pushed out. Jaccard alone ranks rare files
+          first: two docs edited three times, always together, outranked a
+          pair that co-changed twelve times, evicting the ground truth
+          entirely. `count x jaccard` requires both frequency and specificity.
+          Restricting to code files is the other half — changelog and CI
+          coupling is real but is release hygiene, and 13 of 15 sessions found
+          `CHANGES.rst` unaided anyway.
+Safety:    Counts are computed and deliberately not rendered. A count changes
+          on nearly every commit touching two watched files, which would leave
+          architecture.md permanently stale and teach the reader to ignore the
+          staleness signal — losing the product's core claim to display a
+          number. Pairs are selected by strength and rendered alphabetically,
+          so the block moves only when set membership moves. Bulk commits
+          (>25 files) are excluded or a reformat would assert coupling between
+          every pair it swept up; the context layer is excluded or `slate
+          sync` — which rewrites every generated doc in one commit — wins
+          every slot in every Slate repo. Output is fully sorted and pinned
+          byte-identical across PYTHONHASHSEED, since a fact that renders
+          differently run to run manufactures a false `stale`. Every failure
+          path (no history, shallow clone, missing git) yields no facts rather
+          than breaking the scan. tests/test_cochange.py (16 tests) pins the
+          two ranking failures above as regressions.
+Revisit trigger: A measurement showing whether this changes agent behaviour.
+          It is motivated by a measured blind spot, but is itself unmeasured —
+          the benchmark cannot currently test it, since `bare` already scores
+          6/6 on the revised task. `found_target_after` is the metric to watch
+          once a task with headroom exists.
+```

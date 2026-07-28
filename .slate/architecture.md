@@ -1,8 +1,8 @@
 ---
 slate_doc: architecture
 slate_generated: true
-slate_synced_commit: fa642e4
-slate_synced_at: 2026-07-28T17:29:27+00:00
+slate_synced_commit: 26b8c3f
+slate_synced_at: 2026-07-28T17:30:29+00:00
 slate_synced_digest: ff16eabe8ca5efdd
 slate_watches:
   - slate/**
@@ -40,9 +40,9 @@ Repeatedly changed in the same commit. If you edit one, check whether the other 
 - `slate/cli.py` ↔ `slate/context.py`
 - `slate/cli.py` ↔ `slate/gitutil.py`
 - `slate/cli.py` ↔ `slate/mcp.py`
-- `slate/freshness.py` ↔ `slate/verify.py`
 - `slate/freshness.py` ↔ `tests/test_freshness.py`
 - `slate/generator.py` ↔ `slate/imports.py`
+- `slate/generator.py` ↔ `slate/scanner.py`
 - `slate/verify.py` ↔ `tests/test_freshness.py`
 - `slate/verify.py` ↔ `tests/test_verify.py`
 - `tests/test_freshness.py` ↔ `tests/test_verify.py`

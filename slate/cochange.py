@@ -48,11 +48,40 @@ manufacture false `stale`, the failure §10 forbids.
 from __future__ import annotations
 
 import itertools
+import os
 from collections import Counter
 from pathlib import Path
 from typing import Callable
 
 from . import gitutil
+
+# OFF BY DEFAULT, on the evidence. Set SLATE_COCHANGE=1 to re-enable.
+#
+# The idea survived every check except the one that counts. The facts are
+# correct, deterministic, cheap to compute, and name exactly the file the
+# benchmark's agents miss. Both deliveries were then measured against `bare`
+# on the same task, 6 trials each:
+#
+#   as a rendered doc section   the layer named app.py <-> sessions.py and
+#                               every trial missed sessions.py anyway; the
+#                               two trials that opened architecture.md
+#                               scored *worse* on scope than those that
+#                               did not.
+#   injected at the edit        hook fired 6/6, named sessions.py in 3/6,
+#                               and 0 of those 3 edited it. Context cost
+#                               rose 46% over bare (p=0.0411) — the only
+#                               significant result in the sweep, against us.
+#
+# Keeping it on would mean charging every session for a fact that was
+# measured twice and moved nothing. The code and its tests stay because the
+# experiment is worth repeating on a different task shape — a repo where
+# coupling is less discoverable, or an agent with weaker search — but it
+# does not ship on by default until something moves.
+ENABLED_ENV = "SLATE_COCHANGE"
+
+
+def enabled() -> bool:
+    return os.environ.get(ENABLED_ENV, "").strip().lower() in {"1", "true", "yes"}
 
 # How far back to look. Deep enough to see real coupling in a mature repo,
 # shallow enough that the scan stays sub-second on a large history.

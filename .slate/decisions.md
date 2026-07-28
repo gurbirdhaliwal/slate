@@ -446,3 +446,48 @@ Revisit trigger: A measurement showing whether this changes agent behaviour.
           6/6 on the revised task. `found_target_after` is the metric to watch
           once a task with headroom exists.
 ```
+
+```
+Date: 2026-07-28
+Decision: Co-change facts default OFF (`SLATE_COCHANGE=1` opts in). The code,
+          the hook injection and all 25 tests stay; nothing ships enabled.
+Rationale: The idea passed every check except the one that counts. Facts are
+          correct, deterministic, ~70ms, and name exactly the file the
+          benchmark's agents miss. Both deliveries were then measured against
+          `bare` on revision 3, 6 trials each, and both failed:
+            rendered in the doc  — the layer named app.py <-> sessions.py and
+                                   every trial missed sessions.py anyway; the
+                                   two trials that opened architecture.md
+                                   scored *worse* on scope than those that did
+                                   not. correct 0/6 vs 0/6, all p > 0.13.
+            injected at the edit — hook fired 6/6 (proved by the cochange-seen
+                                   artifact), named sessions.py in 3/6, and 0
+                                   of those 3 edited it. correct 0/6 vs 0/6,
+                                   ground_truth_edited 3.0 -> 2.0 (worse),
+                                   context 41,068 -> 59,816 (p=0.0411).
+Evidence:  The cross-tab is the finding. Told about sessions.py and edited it:
+          0. Told and did not: 3. Never told: 3. Not a delivery failure — the
+          artifact proves the hook ran. Not a wrong fact — it named the file
+          with a co-change count. Not Slate-blindness — the same sessions
+          obeyed Slate's instruction to update decisions.md and read-next.md.
+          The other 3 expose a limit no tuning fixes: the hook is reactive to
+          the agent's entry point, and those trials entered via ctx.py, whose
+          partners do not include sessions.py.
+Trade-off: Shipping it on would charge every session 46% more context
+          (p=0.0411 — the only significant result in the sweep, and against
+          us) for a fact measured twice and moved nothing. Off by default is
+          the honest position; deleting it would throw away a clean negative
+          and a reusable instrument.
+Safety:    Gated at all three call sites (scanner computes nothing, generator
+          omits the section rather than rendering it empty, hook returns
+          early). `test_scan_omits_cochange_by_default` and
+          `test_cochange_is_off_without_the_opt_in` pin the default so it
+          cannot drift back on unnoticed; the feature tests opt in explicitly
+          rather than passing for the wrong reason.
+Revisit trigger: A task shape where coupling is genuinely undiscoverable —
+          a larger repo, a weaker agent, or a change whose second file shares
+          no vocabulary with the first. This task is not that: the agents
+          reached 3 of 4 ground-truth files unaided. Do not re-enable without
+          a measurement; the prior is now that agents do not act on
+          completeness advice regardless of how it is delivered.
+```

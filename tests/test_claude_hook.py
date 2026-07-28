@@ -333,8 +333,14 @@ def edit(repo: Path, rel: str, session: str = "s1", tool: str = "Edit") -> dict:
 
 
 @pytest.fixture
-def coupled(layered: Path) -> Path:
-    """A repo where engine.py and cli.py demonstrably move together."""
+def coupled(layered: Path, monkeypatch) -> Path:
+    """A repo where engine.py and cli.py demonstrably move together.
+
+    Opts in explicitly: co-change is off by default on the evidence, so a
+    test that did not set this would pass for the wrong reason.
+    """
+    from slate import cochange
+    monkeypatch.setenv(cochange.ENABLED_ENV, "1")
     for i in range(5):
         (layered / "demo" / "engine.py").write_text(f"def run():\n    return {i}\n")
         (layered / "demo" / "cli.py").write_text(f"def main():\n    return {i}\n")
@@ -345,6 +351,18 @@ def coupled(layered: Path) -> Path:
 def test_editing_a_coupled_file_names_its_partner(coupled: Path) -> None:
     text = context_text(claudehook.build_output(coupled, edit(coupled, "demo/engine.py")))
     assert "demo/cli.py" in text
+
+
+def test_cochange_is_off_without_the_opt_in(layered: Path, monkeypatch) -> None:
+    from slate import cochange
+    monkeypatch.delenv(cochange.ENABLED_ENV, raising=False)
+    for i in range(5):
+        (layered / "demo" / "engine.py").write_text(f"def run():\n    return {i}\n")
+        (layered / "demo" / "cli.py").write_text(f"def main():\n    return {i}\n")
+        commit_all(layered, f"paired-{i}")
+    out = claudehook.build_output(layered, edit(layered, "demo/engine.py"))
+    text = "" if out is None else context_text(out)
+    assert "changed together" not in text
 
 
 def test_reading_does_not_trigger_cochange(coupled: Path) -> None:

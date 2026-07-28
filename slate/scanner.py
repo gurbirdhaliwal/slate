@@ -138,7 +138,7 @@ def scan(root: Path) -> RepoScan:
         ci_workflows=ci,
         readme_title=_readme_title(root),
         edges=edges,
-        cochange=cochange.compute(root, files),
+        cochange=cochange.compute(root, files) if cochange.enabled() else [],
     )
 
 

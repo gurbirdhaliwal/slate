@@ -215,9 +215,19 @@ def test_git_failure_is_survivable(repo: Path, monkeypatch) -> None:
     assert cochange.compute(repo, ["demo/a.py"]) == []
 
 
-def test_scan_exposes_cochange(repo: Path) -> None:
+def test_scan_exposes_cochange_when_enabled(repo: Path, monkeypatch) -> None:
+    monkeypatch.setenv(cochange.ENABLED_ENV, "1")
     couple(repo, ["demo/a.py", "demo/b.py"], times=4)
     assert ("demo/a.py", "demo/b.py") in scanner.scan(repo).cochange
+
+
+def test_scan_omits_cochange_by_default(repo: Path, monkeypatch) -> None:
+    """Off by default on the evidence: measured twice against `bare` and it
+    moved nothing, while costing 46% more context (p=0.0411). The code stays
+    for a future re-measurement; it does not ship on."""
+    monkeypatch.delenv(cochange.ENABLED_ENV, raising=False)
+    couple(repo, ["demo/a.py", "demo/b.py"], times=4)
+    assert scanner.scan(repo).cochange == []
 
 
 def test_top_k_is_respected(repo: Path) -> None:

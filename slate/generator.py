@@ -172,8 +172,11 @@ def _architecture_auto(scan: RepoScan) -> str:
         )
     lines += ["", "## Module boundaries (scanned)", ""]
     lines += _edge_lines(scan.edges)
-    lines += ["", "## Files that change together (history)", ""]
-    lines += _cochange_lines(scan.cochange)
+    # Omitted entirely when disabled, not rendered empty: an "unavailable"
+    # heading costs the same tokens as the facts and carries none of them.
+    if scan.cochange:
+        lines += ["", "## Files that change together (history)", ""]
+        lines += _cochange_lines(scan.cochange)
     return "\n".join(lines)
 
 

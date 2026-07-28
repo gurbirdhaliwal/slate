@@ -244,6 +244,8 @@ def cochange_text(root: Path, rel_path: str, session_id: str) -> str | None:
     """Warn that history couples this file to others, once per pair."""
     from . import cochange, gitutil
 
+    if not cochange.enabled():
+        return None
     partners = cochange.partners(root, gitutil.list_files(root), rel_path,
                                  limit=_MAX_PARTNERS)
     if not partners:

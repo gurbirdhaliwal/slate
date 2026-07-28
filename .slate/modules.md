@@ -1,9 +1,9 @@
 ---
 slate_doc: modules
 slate_generated: true
-slate_synced_commit: 8d4a82d
-slate_synced_at: 2026-07-28T20:20:52+00:00
-slate_synced_digest: 81add238a3f27f09
+slate_synced_commit: e9d3239
+slate_synced_at: 2026-07-28T22:56:22+00:00
+slate_synced_digest: b600e8417334e621
 slate_watches:
   - slate/**
   - tests/**
@@ -15,7 +15,7 @@ slate_watches:
 | Module | Files | Primary language | Entry hints |
 |--------|-------|------------------|-------------|
 | `benchmarks/` | 2 | Python | — |
-| `benchmarks/agentbench/` | 65 | Python | — |
+| `benchmarks/agentbench/` | 66 | Python | — |
 | `integrations/` | 4 | Python | — |
 | `slate/` | 25 | Python | `slate/cli.py` |
 | `tests/` | 26 | Python | — |

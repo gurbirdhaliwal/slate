@@ -50,6 +50,7 @@ from __future__ import annotations
 import itertools
 from collections import Counter
 from pathlib import Path
+from typing import Callable
 
 from . import gitutil
 
@@ -69,6 +70,106 @@ MIN_COUNT = 3
 TOP_K = 12
 
 
+def _tracked(files: list[str]) -> set[str]:
+    """The files coupling is computed over.
+
+    The context layer is excluded, and it is not an optional refinement.
+    `slate sync` rewrites and commits every generated doc in one commit, so
+    the layer is the most tightly coupled group of files in any repo that
+    uses Slate — left in, it wins every slot and the output reduces to "your
+    Slate docs change with your Slate docs".
+
+    Code files only, and that is what makes the output useful rather than
+    merely true. Measured on Flask: with docs and config included, the top of
+    the table is `CHANGES.rst` paired with everything and CI workflows paired
+    with each other — real coupling, but release hygiene rather than "what
+    else does this change touch?", and 13 of 15 benchmark sessions found
+    CHANGES.rst unaided anyway.
+    """
+    # Lazy imports break the cochange<->context<->scanner cycle, the same way
+    # `scanner` defers `imports`.
+    from .context import CONTEXT_DOC_PATHS
+    from .scanner import CODE_EXTENSIONS
+
+    return {
+        f for f in files
+        if f not in CONTEXT_DOC_PATHS and Path(f).suffix.lower() in CODE_EXTENSIONS
+    }
+
+
+def _strength(
+    counts: Counter[tuple[str, str]], solo: Counter[str]
+) -> Callable[[tuple[str, str]], float]:
+    """Co-occurrence weighted by how *specific* that co-occurrence is.
+
+    Both obvious measures fail, in opposite directions, and both failures were
+    observed on real repos rather than reasoned about:
+
+    - **Raw count** ranks *hub* files first. A changelog or lockfile touched
+      by nearly every commit racks up a high count with every partner. On
+      Flask this filled six of twelve slots with `CHANGES.rst` pairs and
+      pushed out `app.py`<->`ctx.py`.
+    - **Jaccard alone** ranks *rare* files first. Two docs edited three times,
+      always together, score a perfect 1.0 and outrank a pair that co-changed
+      twelve times. On Flask this evicted the ground-truth pair entirely in
+      favour of `docs/*.rst`.
+
+    `count x jaccard` (equivalently count^2/union) needs a pair to be both
+    frequent and specific, which is exactly the pair worth telling someone
+    about. A hub scores low because its union is huge; a rarity scores low
+    because its count is small.
+    """
+    def score(pair: tuple[str, str]) -> float:
+        a, b = pair
+        union = solo[a] + solo[b] - counts[pair]
+        return counts[pair] ** 2 / union if union else 0.0
+
+    return score
+
+
+def partners(
+    root: Path,
+    files: list[str],
+    path: str,
+    *,
+    commits: int = COMMITS,
+    max_files_per_commit: int = MAX_FILES_PER_COMMIT,
+    min_count: int = MIN_COUNT,
+    limit: int = 3,
+) -> list[tuple[str, int]]:
+    """Files that historically change alongside ``path``, strongest first.
+
+    The per-file view `compute` cannot give: the rendered table is a repo-wide
+    top-twelve, so a file whose coupling is real but ranks thirteenth appears
+    nowhere. Asked about one file directly, the same evidence answers "what
+    else moves when *this* moves" without competing against every other pair
+    in the repo.
+
+    Returns ``(partner_path, co_change_count)``. Counts are safe to surface
+    here — unlike the rendered auto-block, hook output is not a tracked doc,
+    so a number that moves every commit cannot manufacture a false `stale`.
+
+    Never raises; an unreadable history yields no partners.
+    """
+    tracked = _tracked(files)
+    if path not in tracked:
+        return []
+    counts, solo = _pair_counts(root, tracked, commits, max_files_per_commit)
+    if not counts:
+        return []
+    score = _strength(counts, solo)
+    mine = [
+        (pair, counts[pair]) for pair in counts
+        if path in pair and counts[pair] >= min_count
+    ]
+    mine.sort(key=lambda item: (-score(item[0]), item[0]))
+    out = []
+    for pair, count in mine[:limit]:
+        other = pair[1] if pair[0] == path else pair[0]
+        out.append((other, count))
+    return out
+
+
 def compute(
     root: Path,
     files: list[str],
@@ -81,66 +182,22 @@ def compute(
     """Files that repeatedly change in the same commit.
 
     Returns at most ``top_k`` pairs, each ``(a, b)`` with ``a < b``, sorted
-    alphabetically. Selection is by co-change count; the ordering is
-    alphabetical so that a shift in counts does not rewrite the block.
+    alphabetically. Selection is by strength; the ordering is alphabetical so
+    that a shift in counts does not rewrite the rendered block.
 
     Never raises: a repo with no history, a shallow clone, or a git failure
     yields no facts rather than breaking the scan.
     """
-    # The context layer is excluded, and it is not an optional refinement.
-    # `slate sync` rewrites and commits every generated doc in one commit, so
-    # the layer is the most tightly coupled group of files in any repo that
-    # uses Slate — left in, it wins every slot in the table and the output
-    # reduces to "your Slate docs change with your Slate docs".
-    # Lazy import breaks the cochange<->context<->scanner cycle, the same way
-    # `scanner` defers `imports`.
-    from .context import CONTEXT_DOC_PATHS
-    from .scanner import CODE_EXTENSIONS
-
-    # Code files only, and this is what makes the output useful rather than
-    # merely true. Measured on Flask: with docs and config included, the top
-    # of the table is `CHANGES.rst` paired with everything and CI workflows
-    # paired with each other — real coupling, but release hygiene rather than
-    # "what else does this change touch?", and 13 of 15 benchmark sessions
-    # found CHANGES.rst unaided anyway. Restricted to code, the same repo
-    # ranks `app.py`<->`helpers.py` first and surfaces the `sansio` split.
-    tracked = {
-        f for f in files
-        if f not in CONTEXT_DOC_PATHS and Path(f).suffix.lower() in CODE_EXTENSIONS
-    }
-    counts, solo = _pair_counts(root, tracked, commits, max_files_per_commit)
+    counts, solo = _pair_counts(
+        root, _tracked(files), commits, max_files_per_commit)
     if not counts:
         return []
-
-    def strength(pair: tuple[str, str]) -> float:
-        """Co-occurrence weighted by how *specific* that co-occurrence is.
-
-        Both obvious measures fail, in opposite directions, and both failures
-        were observed on real repos rather than reasoned about:
-
-        - **Raw count** ranks *hub* files first. A changelog or lockfile
-          touched by nearly every commit racks up a high count with every
-          partner. On Flask this filled six of twelve slots with
-          `CHANGES.rst` pairs and pushed out `app.py`↔`ctx.py`.
-        - **Jaccard alone** ranks *rare* files first. Two docs edited four
-          times, always together, score a perfect 1.0 and outrank a pair that
-          co-changed 43 times. On Flask this evicted the ground-truth pair
-          entirely in favour of `docs/*.rst`.
-
-        `count x jaccard` (equivalently count^2/union) needs a pair to be both
-        frequent and specific, which is exactly the pair worth telling someone
-        about. A hub scores low because its union is huge; a rarity scores low
-        because its count is small.
-        """
-        a, b = pair
-        union = solo[a] + solo[b] - counts[pair]
-        return counts[pair] ** 2 / union if union else 0.0
-
+    score = _strength(counts, solo)
     ranked = sorted(
         (p for p, n in counts.items() if n >= min_count),
         # Strength first; the pair's names break ties so selection stays
         # deterministic when several score identically.
-        key=lambda p: (-strength(p), p),
+        key=lambda p: (-score(p), p),
     )
     return sorted(ranked[:top_k])
 

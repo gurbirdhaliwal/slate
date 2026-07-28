@@ -315,3 +315,90 @@ def test_output_shape_matches_the_hook_contract(layered: Path) -> None:
     assert specific["hookEventName"] == claudehook.SESSION_START
     assert isinstance(specific["additionalContext"], str)
     assert specific["additionalContext"].strip()
+
+
+# --- co-change injection ----------------------------------------------------
+# The revision-3 sweep put `src/flask/app.py <-> src/flask/sessions.py` in the
+# rendered layer — the exact coupling every trial missed — and every trial
+# missed it anyway, whether or not it opened the doc. These tests pin the
+# active form: the same fact, delivered when the agent edits the file.
+
+def edit(repo: Path, rel: str, session: str = "s1", tool: str = "Edit") -> dict:
+    return payload(
+        hook_event_name="PreToolUse",
+        tool_name=tool,
+        session_id=session,
+        tool_input={"file_path": str(repo / rel)},
+    )
+
+
+@pytest.fixture
+def coupled(layered: Path) -> Path:
+    """A repo where engine.py and cli.py demonstrably move together."""
+    for i in range(5):
+        (layered / "demo" / "engine.py").write_text(f"def run():\n    return {i}\n")
+        (layered / "demo" / "cli.py").write_text(f"def main():\n    return {i}\n")
+        commit_all(layered, f"paired-{i}")
+    return layered
+
+
+def test_editing_a_coupled_file_names_its_partner(coupled: Path) -> None:
+    text = context_text(claudehook.build_output(coupled, edit(coupled, "demo/engine.py")))
+    assert "demo/cli.py" in text
+
+
+def test_reading_does_not_trigger_cochange(coupled: Path) -> None:
+    out = claudehook.build_output(coupled, edit(coupled, "demo/engine.py", tool="Read"))
+    text = "" if out is None else context_text(out)
+    assert "changed together" not in text
+
+
+def test_a_pair_is_announced_once_per_session(coupled: Path) -> None:
+    """A warning that repeats on every edit is a banner, and banners are the
+    failure mode this exists to escape."""
+    first = claudehook.build_output(coupled, edit(coupled, "demo/engine.py", "sess-a"))
+    assert "demo/cli.py" in context_text(first)
+
+    second = claudehook.build_output(coupled, edit(coupled, "demo/engine.py", "sess-a"))
+    text = "" if second is None else context_text(second)
+    assert "demo/cli.py" not in text
+
+
+def test_a_new_session_hears_it_again(coupled: Path) -> None:
+    claudehook.build_output(coupled, edit(coupled, "demo/engine.py", "sess-a"))
+    again = claudehook.build_output(coupled, edit(coupled, "demo/engine.py", "sess-b"))
+    assert "demo/cli.py" in context_text(again)
+
+
+def test_uncoupled_file_stays_silent(coupled: Path) -> None:
+    (coupled / "demo" / "lonely.py").write_text("x = 1\n")
+    commit_all(coupled, "lonely")
+    out = claudehook.build_output(coupled, edit(coupled, "demo/lonely.py"))
+    text = "" if out is None else context_text(out)
+    assert "changed together" not in text
+
+
+def test_editing_the_context_layer_stays_silent(coupled: Path) -> None:
+    for rel in sorted(context.CONTEXT_DOC_PATHS):
+        out = claudehook.build_output(coupled, edit(coupled, rel))
+        text = "" if out is None else context_text(out)
+        assert "changed together" not in text
+
+
+def test_a_missing_session_id_does_not_break_the_hook(coupled: Path) -> None:
+    out = claudehook.build_output(coupled, payload(
+        hook_event_name="PreToolUse", tool_name="Edit",
+        tool_input={"file_path": str(coupled / "demo" / "engine.py")},
+    ))
+    assert "demo/cli.py" in context_text(out)
+
+
+def test_cochange_failure_does_not_break_the_hook(coupled: Path, monkeypatch) -> None:
+    from slate import cochange
+
+    def boom(*_a, **_k):
+        raise RuntimeError("history exploded")
+
+    monkeypatch.setattr(cochange, "partners", boom)
+    raw = claudehook.run(coupled, json.dumps(edit(coupled, "demo/engine.py")))
+    assert raw is None or "changed together" not in raw

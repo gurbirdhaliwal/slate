@@ -67,6 +67,12 @@ PRE_TOOL_USE = "PreToolUse"
 WATCHED_TOOLS = ("Read", "Edit", "Write", "NotebookEdit")
 TOOL_MATCHER = "|".join(WATCHED_TOOLS)
 
+# Co-change is announced on *edits* only. Reading a file asks "what is here";
+# changing it is the moment "what else moves with this" becomes actionable,
+# and it is the moment the benchmark showed agents getting wrong — every
+# revision-3 trial edited `app.py` and none opened `sessions.py`.
+EDIT_TOOLS = ("Edit", "Write", "NotebookEdit")
+
 HOOK_COMMAND = "slate agent hook"
 
 # Keep injected text bounded. This lands in every session (SessionStart) or
@@ -185,6 +191,85 @@ def pre_tool_use_text(
     return "\n".join(lines)
 
 
+# --- co-change: the same fact, delivered at the moment it applies -----------
+# Measured: rendering this into `architecture.md` does nothing. In the
+# revision-3 sweep the layer named `src/flask/app.py` <-> `src/flask/
+# sessions.py` — the exact coupling every trial missed — and every trial
+# still missed it, whether or not it opened the doc. A fact filed in a
+# document the agent may read is a fact the agent may not read. The same
+# sentence, injected at the instant the agent edits `app.py`, is not
+# something it can skip.
+#
+# Announced once per pair per session. A warning that repeats on every edit
+# to the same file is a banner, and banners are the failure mode this exists
+# to escape — so the fired pairs are recorded per session in the clone-local
+# state dir, best-effort, and a bookkeeping failure costs a duplicate warning
+# rather than the hook.
+
+_MAX_PARTNERS = 3
+
+
+def _seen_path(root: Path, session_id: str) -> Path | None:
+    from . import gitutil
+
+    safe = "".join(c for c in session_id if c.isalnum() or c in "-_")[:64]
+    if not safe:
+        return None
+    try:
+        return gitutil.state_dir(root) / "cochange-seen" / f"{safe}.json"
+    except Exception:
+        return None
+
+
+def _already_announced(path: Path | None, pair: tuple[str, str]) -> bool:
+    """Has this pair been announced in this session? Records it if not."""
+    if path is None:
+        return False
+    key = "|".join(pair)
+    try:
+        seen = set(json.loads(path.read_text())) if path.exists() else set()
+    except (OSError, json.JSONDecodeError, TypeError):
+        seen = set()
+    if key in seen:
+        return True
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(sorted(seen | {key})))
+    except OSError:
+        pass  # a lost note costs a repeat warning, never the hook
+    return False
+
+
+def cochange_text(root: Path, rel_path: str, session_id: str) -> str | None:
+    """Warn that history couples this file to others, once per pair."""
+    from . import cochange, gitutil
+
+    partners = cochange.partners(root, gitutil.list_files(root), rel_path,
+                                 limit=_MAX_PARTNERS)
+    if not partners:
+        return None
+
+    seen = _seen_path(root, session_id)
+    fresh = [
+        (other, n) for other, n in partners
+        if not _already_announced(seen, tuple(sorted((rel_path, other))))
+    ]
+    if not fresh:
+        return None
+
+    lines = [
+        f"Slate: {rel_path} has historically changed together with "
+        f"{'this file' if len(fresh) == 1 else 'these files'}:"
+    ]
+    lines += [f"  {other} — same commit {n}x" for other, n in fresh]
+    lines.append(
+        "  That is history, not a rule: it is often the difference between a "
+        "change that works and one that is complete. Check whether your edit "
+        "needs a counterpart there before moving on."
+    )
+    return "\n".join(lines)
+
+
 # --- payload handling -------------------------------------------------------
 
 def _rel_target(root: Path, payload: dict) -> str | None:
@@ -231,9 +316,20 @@ def build_output(root: Path, payload: dict) -> dict | None:
         rel_path = _rel_target(root, payload)
         if rel_path is None:
             return None
-        reports = freshness.evaluate_all(root)
-        text = pre_tool_use_text(reports, rel_path)
-        return _output(PRE_TOOL_USE, text) if text else None
+
+        parts = []
+        stale = pre_tool_use_text(freshness.evaluate_all(root), rel_path)
+        if stale:
+            parts.append(stale)
+        # Only on edits, and only outside the layer itself. Ordered after the
+        # staleness warning: "this doc may be lying to you" outranks "you may
+        # not be finished".
+        if payload.get("tool_name") in EDIT_TOOLS and rel_path not in CONTEXT_DOC_PATHS:
+            coupled = cochange_text(root, rel_path,
+                                    str(payload.get("session_id", "")))
+            if coupled:
+                parts.append(coupled)
+        return _output(PRE_TOOL_USE, "\n\n".join(parts)) if parts else None
 
     text = session_start_text(freshness.evaluate_all(root))
     return _output(SESSION_START, text) if text else None

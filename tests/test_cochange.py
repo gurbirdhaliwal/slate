@@ -37,9 +37,13 @@ def couple(repo: Path, files: list[str], times: int, tag: str = "c") -> None:
         commit_all(repo, f"{tag}-{i}")
 
 
-def pairs(repo: Path, **kw) -> list[tuple[str, str]]:
+def _files(repo: Path) -> list[str]:
     from slate import gitutil
-    return cochange.compute(repo, gitutil.list_files(repo), **kw)
+    return gitutil.list_files(repo)
+
+
+def pairs(repo: Path, **kw) -> list[tuple[str, str]]:
+    return cochange.compute(repo, _files(repo), **kw)
 
 
 # --- the basic fact ---------------------------------------------------------
@@ -220,3 +224,55 @@ def test_top_k_is_respected(repo: Path) -> None:
     for i in range(8):
         couple(repo, [f"demo/x{i}.py", f"demo/y{i}.py"], times=4, tag=f"g{i}")
     assert len(pairs(repo, top_k=3)) == 3
+
+
+# --- per-file partners (what the PreToolUse hook asks for) ------------------
+
+def test_partners_names_the_coupled_file(repo: Path) -> None:
+    couple(repo, ["demo/a.py", "demo/b.py"], times=5)
+    names = [p for p, _ in cochange.partners(repo, _files(repo), "demo/a.py")]
+    assert "demo/b.py" in names
+
+
+def test_partners_reports_the_count(repo: Path) -> None:
+    couple(repo, ["demo/a.py", "demo/b.py"], times=5)
+    got = dict(cochange.partners(repo, _files(repo), "demo/a.py"))
+    assert got["demo/b.py"] >= 3
+
+
+def test_partners_is_symmetric(repo: Path) -> None:
+    couple(repo, ["demo/a.py", "demo/b.py"], times=5)
+    assert "demo/a.py" in [p for p, _ in cochange.partners(repo, _files(repo), "demo/b.py")]
+
+
+def test_partners_never_includes_the_file_itself(repo: Path) -> None:
+    couple(repo, ["demo/a.py", "demo/b.py"], times=5)
+    assert all(p != "demo/a.py" for p, _ in cochange.partners(repo, _files(repo), "demo/a.py"))
+
+
+def test_partners_surfaces_coupling_below_the_rendered_top_k(repo: Path) -> None:
+    """The per-file view exists because the rendered table is a repo-wide
+    top-twelve: a real coupling ranked thirteenth appears nowhere in the doc,
+    but is exactly what someone editing that file needs."""
+    for i in range(14):
+        couple(repo, [f"demo/hot{i}.py", f"demo/hot{i}b.py"], times=9, tag=f"h{i}")
+    couple(repo, ["demo/quiet.py", "demo/partner.py"], times=4, tag="q")
+
+    assert ("demo/partner.py", "demo/quiet.py") not in cochange.compute(repo, _files(repo))
+    assert "demo/partner.py" in [
+        p for p, _ in cochange.partners(repo, _files(repo), "demo/quiet.py")]
+
+
+def test_partners_is_silent_for_an_uncoupled_file(repo: Path) -> None:
+    couple(repo, ["demo/a.py", "demo/b.py"], times=5)
+    assert cochange.partners(repo, _files(repo), "demo/cli.py") == []
+
+
+def test_partners_survives_unreadable_history(repo: Path, monkeypatch) -> None:
+    from slate import gitutil
+
+    def boom(*_a, **_k):
+        raise gitutil.GitError("nope")
+
+    monkeypatch.setattr(gitutil, "_git", boom)
+    assert cochange.partners(repo, ["demo/a.py"], "demo/a.py") == []

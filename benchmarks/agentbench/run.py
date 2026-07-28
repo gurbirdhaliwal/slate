@@ -19,6 +19,7 @@ traced back to the session that produced it. `report.py` reads that directory.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -325,6 +326,7 @@ def _read_transcript(path: Path) -> str:
 
 def parse_transcript(path: Path, m: spec.Metrics) -> None:
     raw = _read_transcript(path)
+    m.transcript_sha = hashlib.sha256(raw.encode("utf-8", "ignore")).hexdigest()
 
     # Hook-injected freshness is counted off the raw transcript rather than a
     # specific event shape: the injection is context, not a tool call, and the
@@ -381,7 +383,7 @@ def parse_transcript(path: Path, m: spec.Metrics) -> None:
 
                 if name in EDIT_TOOLS and path_arg:
                     rel = _relative(path_arg)
-                    if rel and rel not in spec.ALLOWED_EDIT_FILES:
+                    if rel and _is_off_target(rel):
                         m.off_target_edits += 1
                     if rel and rel.startswith("tests/"):
                         m.touched_tests = True
@@ -433,6 +435,34 @@ def _path_of(args: dict) -> str:
         if isinstance(value, str) and "/" in value:
             return value
     return ""
+
+
+# Paths that are not the agent editing the project. Counting these as
+# "off-target" was biased against the Slate arms specifically, which is the
+# worst direction for a benchmark run by the tool's author to be wrong in:
+#
+#  - the agent's own scratchpad lives outside the trial tree entirely, and
+#    writing a throwaway verification script there is good practice, not a
+#    stray edit into the repo;
+#  - the context layer is only present in the Slate arms, and Slate's own
+#    AGENTS.md instructs the agent to update `.slate/decisions.md`. Penalising
+#    an arm for obeying the instructions that arm ships is circular.
+#
+# What remains is the real signal: source files outside the set the upstream
+# PR touched — e.g. inventing `src/flask/_teardown.py` when the helper
+# belonged in `helpers.py`.
+_LAYER_PREFIXES = (".slate/", ".claude/")
+_LAYER_FILES = {"AGENTS.md", "CLAUDE.md", ".mcp.json", ".cursor/mcp.json"}
+
+
+def _is_off_target(rel: str) -> bool:
+    if rel in spec.ALLOWED_EDIT_FILES:
+        return False
+    if rel.startswith("private/tmp/") or rel.startswith("tmp/"):
+        return False  # the agent's scratchpad, not the repo
+    if rel in _LAYER_FILES or rel.startswith(_LAYER_PREFIXES):
+        return False  # maintaining the context layer is the intended workflow
+    return True
 
 
 def _relative(path: str) -> str:
@@ -571,9 +601,25 @@ def main() -> int:
             old = json.loads(sidecar.read_text())
             metrics = spec.Metrics(arm=old["arm"], trial=old["trial"])
             parse_transcript(transcript, metrics)
+            # Refuse to rewrite a record from a transcript that did not
+            # produce it. Without this the reparse is not a re-derivation, it
+            # is a substitution: today's `correct` and today's revision label
+            # kept, every behavioural metric replaced by an older session's.
+            recorded = old.get("transcript_sha", "")
+            if recorded and recorded != metrics.transcript_sha:
+                print(f"SKIP {sidecar.name}: transcript does not match the one "
+                      f"these metrics came from")
+                continue
             for key in ("grader_passed", "grader_failed", "new_suite_failures",
                         "correct", "touched_tests"):
                 setattr(metrics, key, old[key])
+            # Preserve the revision the trial was actually run under. A fresh
+            # Metrics() defaults to the *current* revision, so without this a
+            # reparse silently relabels every older record as belonging to
+            # today's experiment — which is precisely the mixing the field
+            # exists to prevent, done by the tool that is supposed to protect
+            # it. Absent means revision 1, from before the field existed.
+            metrics.task_revision = old.get("task_revision", 1)
             sidecar.write_text(json.dumps(asdict(metrics), indent=2))
             print(f"reparsed {sidecar.name}")
         return 0

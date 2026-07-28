@@ -2,6 +2,7 @@
   "arm": "bare",
   "trial": 6,
   "task_revision": 2,
+  "transcript_sha": "f5e4c82a2af3d1c94acc12dc2f2e062337709b4d1bdc72ab3b99ec7ffec2e208",
   "ok": true,
   "input_tokens": 3970228,
   "fresh_input": 130,

@@ -2,6 +2,7 @@
   "arm": "handwritten-fresh",
   "trial": 6,
   "task_revision": 2,
+  "transcript_sha": "d34758b9fc6338e6f086ee93efc8c2ad1164934fd1dafcc57cfc9e572c0d83da",
   "ok": true,
   "input_tokens": 2976019,
   "fresh_input": 84,

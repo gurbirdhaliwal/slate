@@ -1,6 +1,8 @@
 {
   "arm": "handwritten-stale",
   "trial": 4,
+  "task_revision": 1,
+  "transcript_sha": "82841ef2bec06dacb75fb41c18131603627d1860785ac2b3be617f423a5b27cd",
   "ok": true,
   "input_tokens": 1918546,
   "fresh_input": 80,

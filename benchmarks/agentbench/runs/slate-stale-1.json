@@ -1,6 +1,8 @@
 {
   "arm": "slate-stale",
   "trial": 1,
+  "task_revision": 1,
+  "transcript_sha": "249296b88ca8c8796992cde4859cc2d6b9716a1f3cd524dcbce17f8acae6dc32",
   "ok": true,
   "input_tokens": 2652601,
   "fresh_input": 100,

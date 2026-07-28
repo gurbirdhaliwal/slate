@@ -1,6 +1,8 @@
 {
   "arm": "slate-fresh-hooked",
   "trial": 5,
+  "task_revision": 1,
+  "transcript_sha": "8b55015c7307ab78c2feaed51ea910f33eff55e51cb05aeb4b20e9ebee8478ef",
   "ok": true,
   "input_tokens": 1727393,
   "fresh_input": 76,
@@ -16,7 +18,7 @@
   "files_read": 3,
   "decoy_hits": 0,
   "found_target_after": 2,
-  "off_target_edits": 2,
+  "off_target_edits": 0,
   "failed_commands": 2,
   "correction_cycles": 1,
   "grader_passed": 49,

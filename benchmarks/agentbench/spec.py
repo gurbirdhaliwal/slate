@@ -335,6 +335,13 @@ class Metrics:
     # Which task revision produced this record. Records written before the
     # field existed are revision 1 by absence.
     task_revision: int = TASK_REVISION
+    # SHA-256 of the transcript these metrics were derived from. `--reparse`
+    # refuses to rewrite a record from a transcript that does not match,
+    # because the failure is silent and total: `runs/` keys on arm+trial, a
+    # re-run replaces a sidecar but can leave an older sweep's transcript
+    # beside it, and reparsing then rewrites today's metrics from last week's
+    # session while keeping today's label. Observed, not hypothesised.
+    transcript_sha: str = ""
     ok: bool = False
 
     input_tokens: int = 0          # fresh + cache-creation + cache-read

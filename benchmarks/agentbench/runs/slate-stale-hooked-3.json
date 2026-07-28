@@ -1,6 +1,8 @@
 {
   "arm": "slate-stale-hooked",
   "trial": 3,
+  "task_revision": 1,
+  "transcript_sha": "90f23e48466787060d392a3b94a5505585a032b23870c711fadab0fb6a16c50f",
   "ok": true,
   "input_tokens": 1357118,
   "fresh_input": 60,

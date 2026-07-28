@@ -1,6 +1,8 @@
 {
   "arm": "slate-stale",
   "trial": 4,
+  "task_revision": 1,
+  "transcript_sha": "2d6d6ad7b9eb29e2c4bea51d471a4e31467c7f94cc134926b9716884e54625e8",
   "ok": true,
   "input_tokens": 2332676,
   "fresh_input": 82,
@@ -16,7 +18,7 @@
   "files_read": 5,
   "decoy_hits": 0,
   "found_target_after": 1,
-  "off_target_edits": 2,
+  "off_target_edits": 0,
   "failed_commands": 1,
   "correction_cycles": 1,
   "grader_passed": 49,

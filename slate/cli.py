@@ -13,6 +13,7 @@ Commands (product doc §9):
     slate read      print the first-read path (what an AI should read, in order)
     slate value     measured savings from slate in this repo (tokens, catches, cost)
     slate diff      what changed vs. what each doc claims; preview of sync
+    slate repair    hand-written claims a doc no longer vouches for
     slate watches   show watch globs and propose additions (--apply writes them)
     slate hook      install/uninstall the pre-push freshness gate
     slate merge     install/uninstall the git merge driver for the context layer
@@ -45,6 +46,7 @@ from . import (
     hooks,
     imports as imports_mod,
     merge as merge_mod,
+    repair,
     scanner,
     value,
     verify,
@@ -171,6 +173,18 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("diff", help="what changed vs. what each doc claims (+ sync preview)", description="what changed vs. what each doc claims (+ sync preview)")
     p.add_argument("docs", nargs="*", help="doc names (default: every doc that isn't fresh)")
     p.set_defaults(func=cmd_diff)
+
+    p = sub.add_parser(
+        "repair",
+        help="hand-written claims a doc no longer vouches for",
+        description="the suspect hand-written claims, strongest evidence first, each "
+                    "with the refs that put it at risk and the commits behind them. "
+                    "Lists only — generated facts are omitted because `slate sync` "
+                    "already rewrites them deterministically.",
+    )
+    p.add_argument("docs", nargs="*", help="doc names (default: all)")
+    p.add_argument("--json", action="store_true", help="machine-readable output")
+    p.set_defaults(func=cmd_repair)
 
     p = sub.add_parser("watches", help="show watch globs and propose additions", description="show watch globs and propose additions")
     p.add_argument("docs", nargs="*", help="doc names (default: all)")
@@ -530,6 +544,45 @@ def cmd_diff(root: Path, args: argparse.Namespace) -> int:
     caught = value.record_catches(root, [d.report for d in results])
     if footer := value.catches_footer(caught):
         print(f"\n{footer}")
+    return 0
+
+
+def cmd_repair(root: Path, args: argparse.Namespace) -> int:
+    reports = freshness.evaluate_all(root)
+    if not reports:
+        print("no context layer found — run `slate init`", file=sys.stderr)
+        return 2
+    if args.docs:
+        wanted = set(args.docs)
+        reports = [r for r in reports if r.doc.spec.name in wanted or r.rel_path in wanted]
+        if not reports:
+            print(f"no such doc: {', '.join(sorted(wanted))}", file=sys.stderr)
+            return 2
+    tasks = repair.repair_tasks(root, reports)
+
+    if args.json:
+        print(json.dumps([t.as_dict() for t in tasks], indent=2))
+        return 0
+    if not tasks:
+        print("no hand-written claim is suspect — nothing to repair")
+        return 0
+
+    for task in tasks:
+        strength = "symbol moved" if task.evidence_is_strong else "file changed"
+        print(f"{task.doc_path}:{task.line}  [{task.status} · {strength}]  {task.section}")
+        text = task.text if len(task.text) <= 88 else task.text[:87] + "…"
+        print(f"  {text}")
+        for ref in task.risk:
+            sha = task.commits.get(ref)
+            where = f"  ({sha[:7]})" if sha else (
+                "  (working tree)" if ref in task.uncommitted else "")
+            print(f"  ↳ {ref}{where}")
+        if task.anchor:
+            print(f"  since {task.anchor}")
+        print()
+    weak = sum(1 for t in tasks if not t.evidence_is_strong)
+    print(f"{len(tasks)} claim(s) to check, {weak} on file-level evidence only "
+          "— those may already be correct.")
     return 0
 
 

@@ -1,9 +1,9 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: 2e84462
-slate_synced_at: 2026-07-31T18:05:28+00:00
-slate_synced_digest: 5785fa77141350ea
+slate_synced_commit: 61b49bd
+slate_synced_at: 2026-07-31T19:10:37+00:00
+slate_synced_digest: f2078e654cb6bfce
 slate_watches:
   - benchmarks/**
   - slate/**
@@ -187,13 +187,40 @@ not an engine change. Known bound: a claim spanning both new and old prose
 blames to the oldest line, so an old paragraph gaining a new ref stays flagged.
 Conservative on purpose — the safe direction.
 
-**Next, in priority order.** (0) The repair-and-resume arc — see
-`docs/repair-and-resume-plan.md`. Phase 0 and 0.5 are done; Phase 1 (make a
-suspect claim addressable: `ClaimVerdict` needs `line` and `doc_path`, which
-`Claim` already carries) is the next build step, and Phase 2's verification
-gate must ship before any write path. Note the trap: `claims._emit` only emits
-a claim that *has* refs, so an agent can "repair" a claim by deleting its
-backticks and the doc goes green. (1) Replicate the cost effect with cost
+**Repair tasks — landed (2026-07-31). This is the current focus.** New
+`slate/repair.py` + `slate repair [--json]`: the suspect *hand-written* claims,
+strongest evidence first, each with the refs that put it at risk, the commits
+behind them, and a file line someone can open. `ClaimVerdict` gained
+`doc_path`/`line`/`end_line`/`scope` (additive, as Part B was);
+`freshness.symbol_files` went public because repair resolves a symbol ref to
+its candidate files the same way the engine does. Reads only — no writes, no
+model, no second opinion about freshness.
+
+Two scoping calls worth keeping. **Generated facts are not repair tasks**:
+`slate sync` already rewrites the auto-block deterministically for zero tokens,
+and over this repo's whole history generated drift was the *only* staleness
+that ever occurred, so routing it to a model would be strictly worse. And
+`scope` distinguishes `symbol` (the named symbol provably moved) from `path`
+(a file changed somewhere) — on the corpus most path-scoped flags were prose
+that was still accurate, so **anything consuming these tasks must let "this
+claim is still correct" be an answer**, or its default action on the common
+case is rewriting correct prose. That constraint also lands on Phase 2: the
+verification gate has to accept "no change needed" as a verifiable outcome,
+not only "the claim now checks out".
+
+**Phase 0's question is still open.** Its pre-registered exit criterion —
+hand an agent a stale claim plus the diff, does the rewrite make *Slate's own
+verifier* turn it fresh, ≥60% — has never been run. Phase 0 was diverted into
+discovering that the corpus did not exist, and 0.5 into fixing the precision
+that discovery exposed. `slate repair --json` exists so that experiment is now
+runnable: a task is exactly what you hand an agent. Do not build Phase 2 (the
+verification gate) before scoring it. Note the trap it must close:
+`claims._emit` only emits a claim that *has* refs, so an agent can "repair" a
+claim by deleting its backticks and the doc goes green.
+
+**Next, in priority order.** (0) Score Phase 0 with `slate repair --json` as
+the instrument; the corpus is thin (3 verified genuinely-falsified claims
+against a 10–15 target), so widen it first. (1) Replicate the cost effect with cost
 *pre-registered* and higher n, and run SessionStart and PreToolUse as separate
 arms — right now the sweep cannot say which hook did the work. (2) The old
 `benchmarks/RESULTS.md` + `benchmark.py` are still self-referential and

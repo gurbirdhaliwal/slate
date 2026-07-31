@@ -80,10 +80,20 @@ project can make about the pivot.
 
 *Before any product code.*
 
-**The question.** Given a stale claim plus the diff that staled it, can an
-agent rewrite it such that *Slate's own verifier* turns it fresh? If agents
-mostly produce fluent-but-unverifiable prose, the pivot needs a different
-design and everything below is wasted effort.
+**The question.** Given a stale claim plus the diff that staled it, does an
+agent produce prose that is *better*, not merely different?
+
+> **Retired criterion — do not revive.** This originally read "such that
+> Slate's own verifier turns it fresh, ≥60%". That is circular and was
+> measured to be so. Authorship narrowing clears a claim whose prose is newer
+> than the code it names, and a repair is newer prose by definition — so
+> freshness reads a timestamp the repair just updated. Replacing a stale
+> sentence with "`engine.run` returns 9999 purple" turns the doc **fresh**.
+> The criterion would have scored ~100% for an agent writing garbage.
+>
+> The same circularity condemns Phase 2's gate as drafted below; see the note
+> there. The live criteria are pre-registered in
+> `benchmarks/repairbench/spec.py`.
 
 **Method.** Harvest 10–15 real stale claims from this repo's own history —
 `git log` over `.slate/` supplies the ground truth for free, since the layer
@@ -95,8 +105,20 @@ each rewrite three ways:
 - **unverifiable** — fluent prose carrying no checkable refs
 - **wrong** — verifies, but does not describe the code correctly
 
-**Exit criterion.** ≥60% verify fresh, and approximately 0% wrong-but-verifying.
-Below that, stop and redesign the repair prompt or the unit size.
+**Exit criteria.** Fixed in `benchmarks/repairbench/spec.py` before any agent
+runs. Two balanced arms of 18: sentences a maintainer later rewrote because
+the code moved, and sentences flagged for the same reason that the maintainer
+deliberately left alone.
+
+| | threshold | catches |
+|---|---|---|
+| every named symbol exists | ≥90% | confident hallucination |
+| rewrite still names code | ≥95% | stripping the backticks so it can never be checked again |
+| declines on accurate claims | ≥50% | an agent that rewrites whatever it is shown |
+
+Failing any one means Phases 2 and 3 do not get built and `slate repair` stays
+a list for a human. Truth is not on that list — no deterministic check reaches
+it — so correctness is adjudicated by hand afterwards.
 
 **Cost.** An afternoon, no code. This is the disconfirming experiment the last
 two measurement cycles did not have. Do not skip it.
@@ -137,10 +159,19 @@ Independently valuable to a human, with no agent involved.
 
 *The false-fresh invariant lives or dies here.*
 
-`repair.verify_repair(root, doc, before, after) -> Verdict` re-runs claim
-evaluation against the edited text and requires **both**: the target claim
-becomes fresh, **and** no other claim regresses. Re-anchoring remains a
-function of `freshness.evaluate` — never of "the agent reported success."
+> **This gate as originally drafted does not work.** It required "the target
+> claim becomes fresh", which every edit satisfies — see the retired criterion
+> in Phase 0. A gate built on freshness would accept nonsense from every
+> trial. What survives is the *shape*: the agent proposes, a deterministic
+> check decides. What has to change is the check.
+
+`repair.verify_repair(root, doc, before, after) -> Verdict` must rest on
+signals the repair cannot move by existing. The candidate, carried over from
+the Phase 0 metrics: every symbol the new sentence names resolves to something
+real in the tree, the sentence still names code at all, and no other claim
+regresses. Re-anchoring remains a function of `freshness.evaluate` — never of
+"the agent reported success" — but freshness is no longer what licenses the
+repair.
 
 Generation is cheap and untrusted; verification is deterministic and trusted.
 The same asymmetry a proof checker uses. A useful second-order effect: the loop

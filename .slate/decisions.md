@@ -1,8 +1,8 @@
 ---
 slate_doc: decisions
 slate_generated: false
-slate_synced_commit: 61b49bd
-slate_synced_at: 2026-07-31T19:10:37+00:00
+slate_synced_commit: 573d1ec
+slate_synced_at: 2026-07-31T19:34:59+00:00
 slate_synced_digest: e3b0c44298fc1c14
 slate_watches:
 ---
@@ -594,4 +594,43 @@ Revisit trigger: Phase 0's exit criterion — hand an agent a task, does the
           wrong-but-verifying. It has never been run. If it fails, the write
           path in Phase 2 and 3 should not be built at all, and this module
           stays what it is today: a list for a human.
+```
+
+```
+Date: 2026-07-31
+Decision: The repair experiment's original exit criterion — "an agent's rewrite
+          makes Slate's own verifier turn the claim fresh" — is retired as
+          circular and must not be revived. Replaced by three pre-registered
+          thresholds in `benchmarks/repairbench/spec.py`, over two balanced
+          arms of 18 claims frozen beside it.
+Rationale: Authorship narrowing (`freshness._prose_supersedes`) clears a claim
+          whose prose is newer than the code it names, and a repair is newer
+          prose by definition — committed or not. Freshness therefore reads a
+          timestamp the repair itself just updated. Measured directly:
+          replacing a stale sentence with "`engine.run` returns 9999 purple"
+          turns the doc fresh. The criterion would have scored ~100% for an
+          agent writing garbage.
+Trade-off: None of the replacements measure truth, because no deterministic
+          check reaches it. They measure the two ways a repair is actively
+          worse than the staleness it replaces: naming code that does not
+          exist (>=90% of rewrites must fully resolve), and naming no code at
+          all (>=95% must keep refs — `claims._emit` drops a claim with no
+          refs, so stripping backticks makes a sentence permanently
+          uncheckable). Correctness is adjudicated by hand afterwards.
+Safety:    The control arm is the load-bearing one. Phase 0.5 measured that
+          most claims Slate flags are prose that is still accurate, so the
+          experiment includes 18 claims the maintainer saw and deliberately
+          left alone; the agent must decline on >=50% of them. An agent that
+          rewrites whatever it is shown damages docs rather than repairing
+          them, and skill on the treatment arm does not compensate. The prompt
+          is identical across arms and never asserts that a sentence is stale.
+Note:      This also condemns the plan's Phase 2 gate as drafted, which
+          required "the target claim becomes fresh". That gate would accept
+          nonsense from every trial. The shape survives — the agent proposes,
+          a deterministic check decides — but the check has to rest on signals
+          the repair cannot move by existing.
+Revisit trigger: Failing any one threshold means Phases 2 and 3 are not built
+          and `slate repair` stays a read-only list for a human. Passing all
+          three is a floor, not a licence: it says the agent does not make
+          things worse, not that it makes them right.
 ```

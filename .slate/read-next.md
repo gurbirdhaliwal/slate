@@ -1,9 +1,9 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: 61b49bd
-slate_synced_at: 2026-07-31T19:10:37+00:00
-slate_synced_digest: f2078e654cb6bfce
+slate_synced_commit: 573d1ec
+slate_synced_at: 2026-07-31T19:34:59+00:00
+slate_synced_digest: 703e2a7f31f7fddc
 slate_watches:
   - benchmarks/**
   - slate/**
@@ -208,15 +208,37 @@ case is rewriting correct prose. That constraint also lands on Phase 2: the
 verification gate has to accept "no change needed" as a verifiable outcome,
 not only "the claim now checks out".
 
-**Phase 0's question is still open.** Its pre-registered exit criterion —
-hand an agent a stale claim plus the diff, does the rewrite make *Slate's own
-verifier* turn it fresh, ≥60% — has never been run. Phase 0 was diverted into
-discovering that the corpus did not exist, and 0.5 into fixing the precision
-that discovery exposed. `slate repair --json` exists so that experiment is now
-runnable: a task is exactly what you hand an agent. Do not build Phase 2 (the
-verification gate) before scoring it. Note the trap it must close:
-`claims._emit` only emits a claim that *has* refs, so an agent can "repair" a
-claim by deleting its backticks and the doc goes green.
+**Freshness cannot score a repair — measured (2026-07-31). Read this before
+touching Phase 2.** The plan's original criterion was "an agent's rewrite makes
+Slate's own verifier turn the claim fresh". It is circular. Authorship
+narrowing clears a claim whose prose is newer than the code it names, and a
+repair is newer prose by definition, so freshness reads a timestamp the repair
+just updated. Demonstrated: replacing a stale sentence with `` `engine.run`
+returns 9999 purple`` turns the doc **fresh**. The criterion would have scored
+~100% for an agent writing garbage, and the plan's Phase 2 gate — "require the
+target claim becomes fresh" — would accept nonsense from every trial. The gate
+must rest on signals a repair cannot move by existing.
+
+**The repair experiment is pre-registered and not yet run.**
+`benchmarks/repairbench/spec.py` fixes the corpus, arms, metrics and
+thresholds; both corpora are frozen beside it. Two balanced arms of 18:
+`corpus_repairs.json` (sentences a maintainer later rewrote because the code
+moved — mined from history, so the maintainer's edit is a gold answer; median
+48 commits stale, worst 558) and `corpus_controls.json` (sentences flagged for
+the same reason that the maintainer deliberately left alone). Thresholds:
+≥90% of rewrites name only symbols that exist, ≥95% keep their refs, and ≥50%
+of *accurate* claims are declined. Failing any one means Phases 2 and 3 are not
+built and `slate repair` stays a read-only list. The control arm is the
+load-bearing one — Phase 0.5 measured that most flagged claims are still
+accurate, so an agent that rewrites whatever it is shown damages docs.
+
+**Two resolution limits found while building the corpus, both real for users.**
+Mining Flask showed `refs` assumes every backticked dotted name is code in
+*this* repo: `logging.Formatter` and `werkzeug.wsgi.DispatcherMiddleware`
+matched same-named local files, and `flask.request` resolved to a **test
+fixture** named `flask.py` while `flask.views.View` hit an `examples/` file.
+Slate's own flat layout hides both; any repo with `tests/` or `examples/`, or
+any doc that references stdlib, gets false staleness. Neither is fixed.
 
 **Next, in priority order.** (0) Score Phase 0 with `slate repair --json` as
 the instrument; the corpus is thin (3 verified genuinely-falsified claims

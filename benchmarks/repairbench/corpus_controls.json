@@ -1,0 +1,316 @@
+[
+ {
+  "repo": "flask",
+  "doc": "docs/api.rst",
+  "line": 534,
+  "text": "1.  You can use the :meth:`flask.Flask.route` decorator.",
+  "refs": [
+   "flask.Flask.route"
+  ],
+  "moved": {
+   "flask.Flask.route": {
+    "path": "tests/test_apps/cliapp/inner1/inner2/flask.py",
+    "commit": "fb845b9",
+    "subject": "allow local packages in FLASK_APP don't require .py extension in FLASK_APP add tests for nested package loading parametrize cli loading tests"
+   }
+  },
+  "expect": "no change needed"
+ },
+ {
+  "repo": "flask",
+  "doc": "docs/api.rst",
+  "line": 535,
+  "text": "2.  You can use the :meth:`flask.Flask.add_url_rule` function.",
+  "refs": [
+   "flask.Flask.add_url_rule"
+  ],
+  "moved": {
+   "flask.Flask.add_url_rule": {
+    "path": "tests/test_apps/cliapp/inner1/inner2/flask.py",
+    "commit": "fb845b9",
+    "subject": "allow local packages in FLASK_APP don't require .py extension in FLASK_APP add tests for nested package loading parametrize cli loading tests"
+   }
+  },
+  "expect": "no change needed"
+ },
+ {
+  "repo": "flask",
+  "doc": "docs/api.rst",
+  "line": 557,
+  "text": "Custom converters can be defined using :attr:`flask.Flask.url_map`.",
+  "refs": [
+   "flask.Flask.url_map"
+  ],
+  "moved": {
+   "flask.Flask.url_map": {
+    "path": "tests/test_apps/cliapp/inner1/inner2/flask.py",
+    "commit": "fb845b9",
+    "subject": "allow local packages in FLASK_APP don't require .py extension in FLASK_APP add tests for nested package loading parametrize cli loading tests"
+   }
+  },
+  "expect": "no change needed"
+ },
+ {
+  "repo": "flask",
+  "doc": "docs/async-await.rst",
+  "line": 20,
+  "text": "Pluggable class-based views also support handlers that are implemented as coroutines. This applies to the :meth:`~flask.views.View.dispatch_request` method in views that inherit from the :class:`flask.views.View` class, as well as all the HTTP method handlers in views that inherit from the :class:`flask.views.MethodView` class.",
+  "refs": [
+   "flask.views.MethodView",
+   "flask.views.View"
+  ],
+  "moved": {
+   "flask.views.MethodView": {
+    "path": "src/flask/views.py",
+    "commit": "9e831e9",
+    "subject": "fix pyright type errors"
+   },
+   "flask.views.View": {
+    "path": "src/flask/views.py",
+    "commit": "9e831e9",
+    "subject": "fix pyright type errors"
+   }
+  },
+  "expect": "no change needed"
+ },
+ {
+  "repo": "flask",
+  "doc": "docs/cli.rst",
+  "line": 447,
+  "text": "Flask will automatically load commands specified in the ``flask.commands`` `entry point`_. This is useful for extensions that want to add commands when they are installed. Entry points are specified in :file:`pyproject.toml`:",
+  "refs": [
+   "pyproject.toml",
+   "flask.commands"
+  ],
+  "moved": {
+   "pyproject.toml": {
+    "path": "pyproject.toml",
+    "commit": "6a2f545",
+    "subject": "Merge branch 'stable'"
+   }
+  },
+  "expect": "no change needed"
+ },
+ {
+  "repo": "flask",
+  "doc": "docs/cli.rst",
+  "line": 496,
+  "text": "Define the entry point in :file:`pyproject.toml`:",
+  "refs": [
+   "pyproject.toml"
+  ],
+  "moved": {
+   "pyproject.toml": {
+    "path": "pyproject.toml",
+    "commit": "6a2f545",
+    "subject": "Merge branch 'stable'"
+   }
+  },
+  "expect": "no change needed"
+ },
+ {
+  "repo": "flask",
+  "doc": "docs/debugging.rst",
+  "line": 90,
+  "text": "-   The development server will still catch unhandled exceptions if the built-in debugger is disabled, otherwise it would crash on any error. If you want that (and usually you don't) pass ``passthrough_errors=True`` to ``app.run``.",
+  "refs": [
+   "app.run"
+  ],
+  "moved": {
+   "app.run": {
+    "path": "src/flask/app.py",
+    "commit": "fbb6f0b",
+    "subject": "all teardown callbacks are called despite errors"
+   }
+  },
+  "expect": "no change needed"
+ },
+ {
+  "repo": "flask",
+  "doc": "docs/extensiondev.rst",
+  "line": 199,
+  "text": "The ``Post`` model needs to subclass the Flask-SQLAlchemy ``db.Model`` object, but that's only available once you've created an instance of that extension, not when your extension is defining its views. So how can the view code, defined before the model exists, access the model?",
+  "refs": [
+   "db.Model"
+  ],
+  "moved": {
+   "db.Model": {
+    "path": "examples/tutorial/flaskr/db.py",
+    "commit": "8aa161a",
+    "subject": "add sqlite datetime converter"
+   }
+  },
+  "expect": "no change needed"
+ },
+ {
+  "repo": "flask",
+  "doc": "docs/extensiondev.rst",
+  "line": 234,
+  "text": "Another technique could be to use an attribute on the extension, such as ``self.post_model`` from above. Add the extension to ``app.extensions`` in ``init_app``, then access ``current_app.extensions[\"simple_blog\"].post_model`` from views.",
+  "refs": [
+   "app.extensions",
+   "self.post_model"
+  ],
+  "moved": {
+   "app.extensions": {
+    "path": "src/flask/app.py",
+    "commit": "fbb6f0b",
+    "subject": "all teardown callbacks are called despite errors"
+   }
+  },
+  "expect": "no change needed"
+ },
+ {
+  "repo": "flask",
+  "doc": "docs/lifecycle.rst",
+  "line": 57,
+  "text": "-   Loading configuration with ``app.config``.",
+  "refs": [
+   "app.config"
+  ],
+  "moved": {
+   "app.config": {
+    "path": "src/flask/app.py",
+    "commit": "fbb6f0b",
+    "subject": "all teardown callbacks are called despite errors"
+   }
+  },
+  "expect": "no change needed"
+ },
+ {
+  "repo": "flask",
+  "doc": "docs/lifecycle.rst",
+  "line": 58,
+  "text": "-   Setting up the Jinja template environment with ``app.jinja_env``.",
+  "refs": [
+   "app.jinja_env"
+  ],
+  "moved": {
+   "app.jinja_env": {
+    "path": "src/flask/app.py",
+    "commit": "fbb6f0b",
+    "subject": "all teardown callbacks are called despite errors"
+   }
+  },
+  "expect": "no change needed"
+ },
+ {
+  "repo": "flask",
+  "doc": "docs/logging.rst",
+  "line": 89,
+  "text": "To be proactive about discovering and fixing bugs, you can configure a :class:`logging.handlers.SMTPHandler` to send an email when errors and higher are logged. ::",
+  "refs": [
+   "logging.handlers.SMTPHandler"
+  ],
+  "moved": {
+   "logging.handlers.SMTPHandler": {
+    "path": "src/flask/logging.py",
+    "commit": "6000e80",
+    "subject": "address mypy strict findings"
+   }
+  },
+  "expect": "no change needed"
+ },
+ {
+  "repo": "flask",
+  "doc": "docs/logging.rst",
+  "line": 117,
+  "text": "Seeing more information about the request, such as the IP address, may help debugging some errors. You can subclass :class:`logging.Formatter` to inject your own fields that can be used in messages. You can change the formatter for Flask's default handler, the mail handler defined above, or any other handler. ::",
+  "refs": [
+   "logging.Formatter"
+  ],
+  "moved": {
+   "logging.Formatter": {
+    "path": "src/flask/logging.py",
+    "commit": "6000e80",
+    "subject": "address mypy strict findings"
+   }
+  },
+  "expect": "no change needed"
+ },
+ {
+  "repo": "flask",
+  "doc": "docs/patterns/appdispatch.rst",
+  "line": 39,
+  "text": "If you have entirely separated applications and you want them to work next to each other in the same Python interpreter process you can take advantage of the :class:`werkzeug.wsgi.DispatcherMiddleware`.  The idea here is that each Flask application is a valid WSGI application and they are combined by the dispatcher middleware into a larger one that is dispatched based on prefix.",
+  "refs": [
+   "werkzeug.wsgi.DispatcherMiddleware"
+  ],
+  "moved": {
+   "werkzeug.wsgi.DispatcherMiddleware": {
+    "path": "tests/test_apps/helloworld/wsgi.py",
+    "commit": "b46f594",
+    "subject": "address flake8 issues"
+   }
+  },
+  "expect": "no change needed"
+ },
+ {
+  "repo": "flask",
+  "doc": "docs/templating.rst",
+  "line": 50,
+  "text": "The current request object (:class:`flask.request`).  This variable is unavailable if the template was rendered without an active request context.",
+  "refs": [
+   "flask.request"
+  ],
+  "moved": {
+   "flask.request": {
+    "path": "tests/test_apps/cliapp/inner1/inner2/flask.py",
+    "commit": "fb845b9",
+    "subject": "allow local packages in FLASK_APP don't require .py extension in FLASK_APP add tests for nested package loading parametrize cli loading tests"
+   }
+  },
+  "expect": "no change needed"
+ },
+ {
+  "repo": "flask",
+  "doc": "docs/templating.rst",
+  "line": 64,
+  "text": "The request-bound object for global variables (:data:`flask.g`).  This variable is unavailable if the template was rendered without an active request context.",
+  "refs": [
+   "flask.g"
+  ],
+  "moved": {
+   "flask.g": {
+    "path": "tests/test_apps/cliapp/inner1/inner2/flask.py",
+    "commit": "fb845b9",
+    "subject": "allow local packages in FLASK_APP don't require .py extension in FLASK_APP add tests for nested package loading parametrize cli loading tests"
+   }
+  },
+  "expect": "no change needed"
+ },
+ {
+  "repo": "flask",
+  "doc": "docs/templating.rst",
+  "line": 71,
+  "text": "The :func:`flask.url_for` function.",
+  "refs": [
+   "flask.url_for"
+  ],
+  "moved": {
+   "flask.url_for": {
+    "path": "tests/test_apps/cliapp/inner1/inner2/flask.py",
+    "commit": "fb845b9",
+    "subject": "allow local packages in FLASK_APP don't require .py extension in FLASK_APP add tests for nested package loading parametrize cli loading tests"
+   }
+  },
+  "expect": "no change needed"
+ },
+ {
+  "repo": "flask",
+  "doc": "docs/templating.rst",
+  "line": 76,
+  "text": "The :func:`flask.get_flashed_messages` function.",
+  "refs": [
+   "flask.get_flashed_messages"
+  ],
+  "moved": {
+   "flask.get_flashed_messages": {
+    "path": "tests/test_apps/cliapp/inner1/inner2/flask.py",
+    "commit": "fb845b9",
+    "subject": "allow local packages in FLASK_APP don't require .py extension in FLASK_APP add tests for nested package loading parametrize cli loading tests"
+   }
+  },
+  "expect": "no change needed"
+ }
+]

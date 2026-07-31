@@ -266,7 +266,21 @@ def test_partners_surfaces_coupling_below_the_rendered_top_k(repo: Path) -> None
     but is exactly what someone editing that file needs."""
     for i in range(14):
         couple(repo, [f"demo/hot{i}.py", f"demo/hot{i}b.py"], times=9, tag=f"h{i}")
-    couple(repo, ["demo/quiet.py", "demo/partner.py"], times=4, tag="q")
+    # Six rather than the bare minimum. For a pair that always moves together
+    # `count x jaccard` reduces to the raw count, so six still ranks below the
+    # hot pairs' nine while leaving three commits of slack above MIN_COUNT.
+    # At four there was no slack: this test failed once on CI and passed on
+    # re-run at the same commit, and two miscounted commits are the whole
+    # margin between "ranked fifteenth" and "invisible".
+    couple(repo, ["demo/quiet.py", "demo/partner.py"], times=6, tag="q")
+
+    # Guard the fixture before the behaviour. With min_count=1 selection
+    # cannot be what hides the pair, so a failure here says the commits did
+    # not land as intended — a flake in the harness, not in the selector.
+    built = dict(cochange.partners(repo, _files(repo), "demo/quiet.py", min_count=1))
+    assert built.get("demo/partner.py", 0) >= cochange.MIN_COUNT, (
+        f"fixture produced {built.get('demo/partner.py', 0)} co-changes for the "
+        f"quiet pair, under the {cochange.MIN_COUNT} selection requires: {built}")
 
     assert ("demo/partner.py", "demo/quiet.py") not in cochange.compute(repo, _files(repo))
     assert "demo/partner.py" in [

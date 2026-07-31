@@ -255,6 +255,63 @@ def commits_since(root: Path, since: str) -> int:
         return 0
 
 
+# git blames working-tree lines to the all-zero SHA; callers read it as
+# "newer than any commit", which is what an uncommitted edit is.
+UNCOMMITTED = "0" * 40
+
+
+def last_change_commit(root: Path, path: str, since: str) -> str | None:
+    """Full SHA of the newest commit in ``(since, HEAD]`` that touched `path`.
+
+    None when nothing in that range touched it, or when git cannot say.
+    """
+    try:
+        out = _git(root, "log", "-1", "--format=%H", f"{since}..HEAD", "--", path)
+    except GitError:
+        return None
+    return out.strip() or None
+
+
+def blame_lines(root: Path, path: str) -> dict[int, str] | None:
+    """Map every 1-based line of `path` to the commit that last wrote it.
+
+    Blames the whole file in one call — callers ask about many different line
+    ranges in the same document, and per-range blame costs a git process each.
+    Returns None when blame cannot answer (no file, no history) so callers can
+    decline to act rather than guess.
+    """
+    try:
+        out = _git(root, "blame", "--porcelain", "--", path)
+    except GitError:
+        return None
+    blamed: dict[int, str] = {}
+    for line in out.splitlines():
+        head = line.split(" ")
+        if len(head) >= 3 and len(head[0]) == 40 and _is_sha(head[0]):
+            try:
+                blamed[int(head[2])] = head[0]
+            except ValueError:
+                continue
+    return blamed or None
+
+
+def _is_sha(token: str) -> bool:
+    return all(c in "0123456789abcdef" for c in token)
+
+
+def is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
+    """True when `ancestor` *is* `descendant` or one of its ancestors.
+
+    Any error answers False, so an unresolvable pair never licenses a caller
+    to treat one commit as reaching the other.
+    """
+    try:
+        _git(root, "merge-base", "--is-ancestor", ancestor, descendant)
+        return True
+    except GitError:
+        return False
+
+
 def _unquote(path: str) -> str:
     # git quotes paths with special characters: "a b.txt"
     if path.startswith('"') and path.endswith('"'):

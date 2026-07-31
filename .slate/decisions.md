@@ -1,8 +1,8 @@
 ---
 slate_doc: decisions
 slate_generated: false
-slate_synced_commit: c838ad6
-slate_synced_at: 2026-07-27T00:38:31+00:00
+slate_synced_commit: 2e84462
+slate_synced_at: 2026-07-31T18:05:28+00:00
 slate_synced_digest: e3b0c44298fc1c14
 slate_watches:
 ---
@@ -271,4 +271,290 @@ Revisit trigger: Claude Code adding native AGENTS.md support (then drop the
           benchmark the agent never once called a slate_* tool, so delivery of
           the *prose* is fixed while the freshness signal itself still depends
           on an agent choosing to ask for it.
+```
+
+```
+Date: 2026-07-27
+Decision: Freshness is delivered to Claude Code as hook-injected context, not as
+          an MCP tool the agent may call. `slate agent hooks install` (also run
+          by `slate agent enable claude`, opt out with --no-hooks) writes two
+          entries to `.claude/settings.json`: a SessionStart hook that states
+          the whole layer's trust state, and a PreToolUse hook on
+          Read|Edit|Write|NotebookEdit that warns only when the target file is
+          covered by the watches of a non-fresh doc. New `slate/claudehook.py`;
+          the handler is `slate agent hook`, reading the payload on stdin.
+Rationale: The MCP path was measured and it does not work. Across 25 real
+          headless sessions the agent made 0 calls to any slate_* tool in 320
+          tool calls, while the server reported connected and AGENTS.md told it
+          to check freshness first (benchmarks/agentbench/RESULTS.md). The
+          entire freshness engine — the product thesis — went unexercised by
+          every session that had it. A signal the model must opt into competes
+          with grep, and grep wins: cheaper, and it always returns something.
+          Hooks are not offered to the model, so there is no choice to decline.
+Evidence:  Verified end-to-end, not assumed. In a real repo with two
+          deliberately stale docs, a headless session answered which docs were
+          untrustworthy — naming both docs, their claim counts, the anchor
+          commit and the culprit file — in one turn with zero tool calls. The
+          PreToolUse warning was reproduced verbatim by the model at the moment
+          it read a covered file. Project `.claude/settings.json` hooks DO fire
+          under `claude -p`, unlike `.mcp.json`, which needs --mcp-config; that
+          asymmetry is why this delivery path works headless and the MCP one
+          did not.
+Trade-off: ~380ms per PreToolUse evaluation (a repo scan plus a git diff; only
+          ~57ms is interpreter start). Deliberately uncached: a cache in the
+          warning path is a mechanism for suppressing a warning that should
+          have fired, which is the one failure §10 forbids, and 380ms sits
+          inside the noise of a tool-call round trip. Revisit only with a
+          measurement showing it hurts. Second trade-off: this is a third
+          Claude-specific artifact after CLAUDE.md and .mcp.json, sharpening
+          the precedent the previous entry flagged.
+Safety:    The hook computes no trust math — it calls freshness.evaluate_all and
+          renders, exactly as cli and mcp do, so there is no second
+          implementation of "is this doc fresh" to disagree with the first.
+          Every entry point is wrapped: a malformed payload, a missing layer, a
+          path outside the repo, or an internal exception all resolve to silence
+          and exit 0. Nothing ever prints "fresh" for a doc it failed to
+          evaluate. Verified that with `slate` absent from PATH the hook fails
+          and the session still completes normally (is_error false) — the
+          PATH assumption degrades to no signal, never to a broken session.
+          PreToolUse stays silent on the context docs themselves, since editing
+          a stale doc is the agent healing it. Pinned by
+          tests/test_claude_hook.py (30 tests).
+Revisit trigger: Evidence that the SessionStart text is being ignored the way
+          the MCP tools were — delivery into the window is now proven, but
+          whether it changes task outcomes is NOT measured. The 0/25-correct
+          benchmark was not re-run against this delivery path; do not claim a
+          task-level improvement until it is.
+```
+
+```
+Date: 2026-07-27
+Decision: Hook delivery ships, but the benchmark's claim about it is limited to
+          "the signal now arrives". The cost effect measured alongside it is
+          recorded as exploratory and must not be quoted as a demonstrated win.
+Rationale: The sweep did what it was built to do — it falsified the hypothesis
+          it was given. `decoy_hits` was pre-registered in spec.py as the metric
+          hook delivery should move; it did not move (exact p=1.0) and went the
+          wrong way (1/5 -> 2/5 trials). Reporting the cost effect that *did*
+          appear as if it had been the hypothesis is precisely the move this
+          repo has caught itself making before (the "28% token saving" that was
+          two doc types on a turn-scaled metric).
+Evidence:  slate-stale -> slate-stale-hooked: tool calls 41->31 (p=0.0159),
+          turns 42->32 (p=0.0159), context 56.5K->41.5K (p=0.0079, the floor
+          for n=5). slate-fresh -> slate-fresh-hooked: nothing (p=0.44-0.69).
+          Effect present only where the layer is stale is the interaction the
+          mechanism predicts and is not what a time-of-day or model-drift
+          confound looks like — those move both arms. Exact two-sided
+          Mann-Whitney by enumeration, written into report.py rather than
+          imported, since the package has no runtime dependencies.
+Trade-off: The three cost metrics are one behavioural change measured three
+          ways, not three findings: cache-creation per turn is 1,344 vs 1,294,
+          so tokens track turns track tool calls. Eight tests were run; strict
+          Bonferroni puts the best result at the edge of significance. n=5.
+Safety:    Correctness stayed 0/5 in every arm (0/35 cumulative), so nothing
+          here supports a claim about accuracy. The report says so in its
+          headline rather than in a footnote.
+Revisit trigger: A replication that pre-registers cost at higher n, with
+          SessionStart and PreToolUse as separate arms — the current sweep
+          installed both together and cannot attribute the effect to either.
+```
+
+```
+Date: 2026-07-27
+Decision: `hook_injections` is documented as a floor on delivery, not a count
+          of it, and the PreToolUse marker is recorded in spec.py as
+          unobservable rather than dropped.
+Rationale: The raw metric read "PreToolUse fired 0 times in 10 trials", which
+          would have been published as half the feature being dead. It is
+          false. Claude Code writes SessionStart's injected context into the
+          stream-json transcript but not PreToolUse's, so a warning that fired
+          and reached the model leaves no trace to count.
+Evidence:  Established by instrumenting the hook command itself to append every
+          invocation to a log: a session that read a covered file logged both
+          `SessionStart` and `PreToolUse Read`, each returning
+          additionalContext, while the transcript for that same session
+          contained only the SessionStart marker. The agent had read
+          src/flask/ctx.py — the exact file the stale doc misdescribes and the
+          one a manual probe warns on.
+Trade-off: The sweep therefore cannot attribute its effect to SessionStart or
+          PreToolUse. That is a real limit on the result and is stated in the
+          report's threats-to-validity rather than left implicit.
+Safety:    The general rule this is an instance of: a benchmark metric that can
+          only observe part of the mechanism must say so at the point it is
+          read, or the next person to read it will draw the confident wrong
+          conclusion. Two other instruments were wrong in the same sweep —
+          `--reparse` let an older sweep's transcript overwrite a newer one's
+          metrics, and run provenance was dated by a mtime that `--reparse`
+          resets and a UTC conversion that merged two evenings into one day.
+Revisit trigger: Claude Code recording PreToolUse additionalContext in the
+          transcript, which would make the count exact and let the two hooks be
+          told apart without separate arms.
+```
+
+```
+Date: 2026-07-27
+Decision: Generate co-change coupling from `git log` as a tracked fact — which
+          files repeatedly change in the same commit — rendered into the
+          architecture auto-block. New `slate/cochange.py`, a `cochange` field
+          on `RepoScan`. Code files only, ranked by count x Jaccard, counts
+          computed but never rendered.
+Rationale: Every other generated fact describes the tree as it stands, and an
+          agent rederives all of it in two or three tool calls. That is the
+          benchmark's result, not a suspicion: a fresh Slate layer changed
+          nothing an agent did (`slate-fresh` 59 turns vs `bare` 63, p=0.85;
+          83.4K context vs 70.7K, p=0.09 — if anything worse), and so did a
+          hand-written doc. Nothing in the layer was worth its own tokens
+          because nothing in it was hard to look up. History is the exception:
+          "what else moves when this moves" is in the log, not the tree, and
+          across 15 measured sessions no agent ran `git log`, `git blame` or
+          `git show` even once. It answers the question grep cannot — not
+          "where is X" but "is my change complete".
+Evidence:  On Flask, two of the three files the benchmark's task must touch
+          surface as pairs in the top twelve, with `app.py`<->`helpers.py`
+          first. On this repo it surfaces `cli.py`<->`mcp.py` — every
+          capability is exposed twice, which is the fact a new contributor
+          most needs and least expects. ~70ms on a 235-file repo.
+Trade-off: Ranking is the whole feature and both obvious measures fail, in
+          opposite directions, as measured on Flask rather than reasoned
+          about. Raw count ranks hub files first: six of twelve slots went to
+          `CHANGES.rst` paired with whatever a commit happened to touch, and
+          the useful pair was pushed out. Jaccard alone ranks rare files
+          first: two docs edited three times, always together, outranked a
+          pair that co-changed twelve times, evicting the ground truth
+          entirely. `count x jaccard` requires both frequency and specificity.
+          Restricting to code files is the other half — changelog and CI
+          coupling is real but is release hygiene, and 13 of 15 sessions found
+          `CHANGES.rst` unaided anyway.
+Safety:    Counts are computed and deliberately not rendered. A count changes
+          on nearly every commit touching two watched files, which would leave
+          architecture.md permanently stale and teach the reader to ignore the
+          staleness signal — losing the product's core claim to display a
+          number. Pairs are selected by strength and rendered alphabetically,
+          so the block moves only when set membership moves. Bulk commits
+          (>25 files) are excluded or a reformat would assert coupling between
+          every pair it swept up; the context layer is excluded or `slate
+          sync` — which rewrites every generated doc in one commit — wins
+          every slot in every Slate repo. Output is fully sorted and pinned
+          byte-identical across PYTHONHASHSEED, since a fact that renders
+          differently run to run manufactures a false `stale`. Every failure
+          path (no history, shallow clone, missing git) yields no facts rather
+          than breaking the scan. tests/test_cochange.py (16 tests) pins the
+          two ranking failures above as regressions.
+Revisit trigger: A measurement showing whether this changes agent behaviour.
+          It is motivated by a measured blind spot, but is itself unmeasured —
+          the benchmark cannot currently test it, since `bare` already scores
+          6/6 on the revised task. `found_target_after` is the metric to watch
+          once a task with headroom exists.
+```
+
+```
+Date: 2026-07-28
+Decision: Co-change facts default OFF (`SLATE_COCHANGE=1` opts in). The code,
+          the hook injection and all 25 tests stay; nothing ships enabled.
+Rationale: The idea passed every check except the one that counts. Facts are
+          correct, deterministic, ~70ms, and name exactly the file the
+          benchmark's agents miss. Both deliveries were then measured against
+          `bare` on revision 3, 6 trials each, and both failed:
+            rendered in the doc  — the layer named app.py <-> sessions.py and
+                                   every trial missed sessions.py anyway; the
+                                   two trials that opened architecture.md
+                                   scored *worse* on scope than those that did
+                                   not. correct 0/6 vs 0/6, all p > 0.13.
+            injected at the edit — hook fired 6/6 (proved by the cochange-seen
+                                   artifact), named sessions.py in 3/6, and 0
+                                   of those 3 edited it. correct 0/6 vs 0/6,
+                                   ground_truth_edited 3.0 -> 2.0 (worse),
+                                   context 41,068 -> 59,816 (p=0.0411).
+Evidence:  The cross-tab is the finding. Told about sessions.py and edited it:
+          0. Told and did not: 3. Never told: 3. Not a delivery failure — the
+          artifact proves the hook ran. Not a wrong fact — it named the file
+          with a co-change count. Not Slate-blindness — the same sessions
+          obeyed Slate's instruction to update decisions.md and read-next.md.
+          The other 3 expose a limit no tuning fixes: the hook is reactive to
+          the agent's entry point, and those trials entered via ctx.py, whose
+          partners do not include sessions.py.
+Trade-off: Shipping it on would charge every session 46% more context
+          (p=0.0411 — the only significant result in the sweep, and against
+          us) for a fact measured twice and moved nothing. Off by default is
+          the honest position; deleting it would throw away a clean negative
+          and a reusable instrument.
+Safety:    Gated at all three call sites (scanner computes nothing, generator
+          omits the section rather than rendering it empty, hook returns
+          early). `test_scan_omits_cochange_by_default` and
+          `test_cochange_is_off_without_the_opt_in` pin the default so it
+          cannot drift back on unnoticed; the feature tests opt in explicitly
+          rather than passing for the wrong reason.
+Revisit trigger: A task shape where coupling is genuinely undiscoverable —
+          a larger repo, a weaker agent, or a change whose second file shares
+          no vocabulary with the first. This task is not that: the agents
+          reached 3 of 4 ground-truth files unaided. Do not re-enable without
+          a measurement; the prior is now that agents do not act on
+          completeness advice regardless of how it is delivered.
+```
+
+```
+Date: 2026-07-30
+Decision: `read-next.md` is watch-based like the generated docs; `decisions.md`
+          stays attestation-based. `context.default_watches` no longer returns
+          [] for both.
+Rationale: Measured over all 54 commits of this repo's history, *zero* human
+          claims were ever evaluated — not "none were stale", none were
+          checked. The claim-bearing docs (read-next: 11 claims, decisions: 7)
+          carried no watches, and `_evaluate` returns FRESH before reading the
+          body when the watch list is empty; the watched docs carry no prose
+          refs at all. The two sets were disjoint, so Part B's human half had
+          never executed. Re-walking history with watches injected surfaced
+          real rot: read-next claimed "top-level-dir granularity only — no
+          resolver" for 4 commits after `da71aae` made the map package-level
+          and added a resolver.
+Trade-off: read-next now goes stale on most code commits, and `slate sync`
+          cannot clear it — it has no auto-block, so only `slate mark` (after
+          a human or agent actually updates the focus text) re-anchors it.
+          That is the intended workflow, but it does put the CI gate in the
+          path of every PR that touches slate/ without updating the focus.
+Safety:    `decisions.md` is deliberately left attested: it is append-only and
+          a past decision stays true as a statement about the past.
+Revisit trigger: Alarm fatigue — if read-next is marked without being read.
+
+Date: 2026-07-30
+Decision: Freshness narrows on authorship: a claim whose prose was written at
+          or after the change to the code it names is fresh
+          (`freshness._prose_supersedes`, `gitutil.blame_lines` /
+          `is_ancestor` / `last_change_commit`). Both ref kinds: a symbol ref
+          resolves through `_symbol_files` to the changed code files that
+          could host it, widening to *every* changed code file when the
+          qualifier is unresolvable, so prose must outdate all of them.
+Rationale: Prose and code that land in the same commit are not doc rot — the
+          author wrote the sentence against the change — but the doc's anchor
+          predates that commit, so the claim was flagged the moment it was
+          written. On the corpus above this was 6 of 31 flags (19%), and it
+          was the single largest false-positive class. Both arms measured
+          through identical code paths with only the narrowing toggled:
+          31 -> 25 hit-instances. Symbol coverage changes nothing historically
+          (those flags are genuinely older than their code) but took this
+          repo's live working tree from 8 suspect claims to 4.
+Trade-off: ~500ms vs ~406ms unnarrowed on this repo (23%). Naive per-claim
+          blame cost 78%; the fixes are whole-doc blame (`blame_lines`) and a
+          per-evaluation answer cache (`_GIT_ANSWERS`), cleared at the top of
+          `evaluate_all`/`evaluate_doc` so a long-lived MCP process cannot
+          serve an answer from a previous repo state.
+Safety:    Narrowing only, exactly like symbol resolution: every unanswerable
+          question (no blame, unresolvable anchor, missing file) returns False
+          and leaves the verdict alone, so it can never manufacture a `fresh`.
+          Pinned by `test_narrowing_declines_when_blame_cannot_answer` and
+          `test_prose_older_than_the_code_change_stays_stale`.
+Note:      `_claims_still_check_out` returned False outright for any doc with
+          `generated: false`. Dead while such docs were unwatched; once
+          read-next was watched it made the doc permanently stale regardless
+          of its claims. Non-generated docs now skip only the auto-block
+          conditions and are judged on their prose refs.
+Revisit trigger: Path refs remain the residual over-flag — a file changing
+          after a sentence was written puts it at risk without falsifying it.
+          The fix is a prose convention (name `module.symbol`, not
+          `path/to/file.py`), which Part A already narrows for free, not more
+          trust math. Known bound: a claim is blamed as a unit, so an old
+          paragraph that gains a new ref blames to its oldest line and stays
+          flagged. Blaming only the ref's own line would be more precise;
+          it is also the less conservative direction, so it waits for a
+          measured need.
 ```

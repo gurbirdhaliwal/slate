@@ -172,7 +172,33 @@ def _architecture_auto(scan: RepoScan) -> str:
         )
     lines += ["", "## Module boundaries (scanned)", ""]
     lines += _edge_lines(scan.edges)
+    # Omitted entirely when disabled, not rendered empty: an "unavailable"
+    # heading costs the same tokens as the facts and carries none of them.
+    if scan.cochange:
+        lines += ["", "## Files that change together (history)", ""]
+        lines += _cochange_lines(scan.cochange)
     return "\n".join(lines)
+
+
+def _cochange_lines(pairs: list[tuple[str, str]]) -> list[str]:
+    """Co-change coupling — the answer to "what else moves when this moves?".
+
+    Rendered without counts on purpose. A count changes on nearly every commit
+    that touches two watched files, which would leave this doc permanently
+    stale and teach the reader to ignore the staleness signal — losing the
+    thing the product sells to display a number. Pairs are selected by
+    strength in `cochange.compute` and rendered alphabetically here, so the
+    block only moves when the membership of the set moves.
+    """
+    if not pairs:
+        return ["- _not enough history to infer coupling_"]
+    out = [
+        "Repeatedly changed in the same commit. If you edit one, check whether "
+        "the other needs the same change.",
+        "",
+    ]
+    out += [f"- `{a}` ↔ `{b}`" for a, b in pairs]
+    return out
 
 
 def _edge_lines(edges: dict[str, set[str]]) -> list[str]:

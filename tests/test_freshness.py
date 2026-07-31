@@ -358,3 +358,99 @@ def test_untracked_directory_files_reported_individually(repo: Path) -> None:
     r = report_for(repo, "modules")
     assert r.status == STALE
     assert r.changed_watched == ["demo/sub/widget.py"]
+
+
+# --- authorship narrowing: prose written against a change isn't rot ---------
+
+
+def _claim(repo: Path, text: str) -> None:
+    read_next = repo / ".slate" / "read-next.md"
+    read_next.write_text(read_next.read_text() + f"\n{text}\n")
+
+
+def test_prose_landing_with_the_code_is_not_stale(repo: Path) -> None:
+    # The dominant false positive before this narrowing: a sentence written in
+    # the same commit as the file it describes, flagged only because the doc's
+    # anchor predates that commit.
+    init_layer(repo)
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    _claim(repo, "The engine lives in `demo/engine.py` and returns 43.")
+    commit_all(repo, "change engine and say so in the same commit")
+    r = report_for(repo, "read-next")
+    assert r.status == FRESH, r.reason
+
+
+def test_prose_older_than_the_code_change_stays_stale(repo: Path) -> None:
+    # The narrowing must not fire when the code moved *after* the prose.
+    init_layer(repo)
+    _claim(repo, "The engine lives in `demo/engine.py` and returns 42.")
+    commit_all(repo, "describe the engine")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    commit_all(repo, "change the engine, leaving the prose behind")
+    r = report_for(repo, "read-next")
+    assert r.status == STALE, r.reason
+    suspect = [c for c in r.suspect_claims if c.kind == "human"]
+    assert any("demo/engine.py" in c.risk for c in suspect)
+
+
+def test_uncommitted_prose_supersedes_committed_code(repo: Path) -> None:
+    # Working-tree prose is newer than any commit; blame reports the all-zero
+    # SHA and the claim must narrow to fresh rather than fail closed.
+    init_layer(repo)
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    commit_all(repo, "change the engine")
+    _claim(repo, "The engine lives in `demo/engine.py` and returns 43.")
+    r = report_for(repo, "read-next")
+    assert r.status == FRESH, r.reason
+
+
+def test_narrowing_declines_when_blame_cannot_answer(repo: Path) -> None:
+    # Every unanswerable question must leave the verdict alone. A false
+    # `fresh` is the one failure the engine may never produce.
+    init_layer(repo)
+    _claim(repo, "The engine lives in `demo/engine.py` and returns 42.")
+    commit_all(repo, "describe the engine")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    commit_all(repo, "change the engine")
+
+    doc = context.load(repo, context.spec_by_name("read-next"))
+    assert not freshness._prose_supersedes(repo, doc, [], ["demo/engine.py"], "HEAD~2")
+    assert not freshness._prose_supersedes(repo, doc, [1], [], "HEAD~2")
+    assert not freshness._prose_supersedes(
+        repo, doc, [1], ["demo/engine.py"], "nonexistent-anchor"
+    )
+
+
+def test_symbol_prose_landing_with_the_code_is_not_stale(repo: Path) -> None:
+    # The same narrowing reached through symbol resolution rather than a path
+    # ref: `engine.run` moved, but the sentence describing it moved with it.
+    init_layer(repo)
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    _claim(repo, "`engine.run` now returns 43.")
+    commit_all(repo, "change run and describe it in the same commit")
+    r = report_for(repo, "read-next")
+    assert r.status == FRESH, r.reason
+
+
+def test_symbol_prose_older_than_the_code_stays_stale(repo: Path) -> None:
+    init_layer(repo)
+    _claim(repo, "`engine.run` returns 42.")
+    commit_all(repo, "describe run")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    commit_all(repo, "change run, leaving the prose behind")
+    r = report_for(repo, "read-next")
+    assert r.status == STALE, r.reason
+    assert any("engine.run" in c.risk for c in r.suspect_claims if c.kind == "human")
+
+
+def test_unresolvable_symbol_needs_prose_newer_than_every_change(repo: Path) -> None:
+    # An unnameable qualifier widens the candidate set to every changed code
+    # file (`_symbol_files`), so old prose cannot be narrowed by one unrelated
+    # edit that happens to post-date it.
+    init_layer(repo)
+    _claim(repo, "`Mystery.method` is the entry point.")
+    commit_all(repo, "describe something unresolvable")
+    (repo / "demo" / "engine.py").write_text("def method():\n    return 1\n")
+    commit_all(repo, "move a same-named symbol elsewhere")
+    r = report_for(repo, "read-next")
+    assert r.status == STALE, r.reason

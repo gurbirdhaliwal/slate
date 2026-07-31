@@ -11,14 +11,29 @@ GIT_ENV_ARGS = [
     "-c", "user.email=test@slate.local",
     "-c", "user.name=Slate Tests",
     "-c", "commit.gpgsign=false",
+    # Housekeeping off. The co-change fixtures build ~130 commits in a couple
+    # of seconds, which is enough loose objects to trip auto-gc; git may then
+    # detach it, and a background repack holding the lock fails the *next*
+    # commit with exit 128. Nothing here is a long-lived repo, so there is
+    # nothing to maintain.
+    "-c", "gc.auto=0",
+    "-c", "gc.autoDetach=false",
+    "-c", "maintenance.auto=false",
 ]
 
 
 def git(root: Path, *args: str) -> str:
     proc = subprocess.run(
         ["git", "-C", str(root), *GIT_ENV_ARGS, *args],
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True,
     )
+    if proc.returncode != 0:
+        # `check=True` raises with the command but not the reason, which cost
+        # a CI round-trip: the failure read "exit status 128" and nothing else.
+        raise AssertionError(
+            f"git {' '.join(args)} failed ({proc.returncode})\n"
+            f"stdout: {proc.stdout.strip()}\nstderr: {proc.stderr.strip()}"
+        )
     return proc.stdout
 
 

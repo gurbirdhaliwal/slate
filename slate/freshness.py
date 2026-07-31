@@ -91,12 +91,27 @@ class DocReport:
 
 def evaluate_doc(root: Path, doc: ContextDoc, scan: RepoScan | None = None) -> DocReport:
     get_scan = (lambda: scan) if scan is not None else _scan_once(root)
+    _GIT_ANSWERS.clear()
     return _evaluate(root, doc, get_scan)
 
 
 def evaluate_all(root: Path) -> list[DocReport]:
     get_scan = _scan_once(root)  # at most one scan for the whole layer
+    _GIT_ANSWERS.clear()
     return [_evaluate(root, doc, get_scan) for doc in load_all(root)]
+
+
+# Authorship narrowing asks the same few questions many times over — the same
+# file's last change, the same doc's blame, the same ancestry pair — once per
+# ref per claim. Answers are pinned to one evaluation and dropped at the next,
+# so a long-lived process (the MCP server) never reads a stale commit.
+_GIT_ANSWERS: dict[tuple, object] = {}
+
+
+def _once(key: tuple, compute: Callable[[], object]) -> object:
+    if key not in _GIT_ANSWERS:
+        _GIT_ANSWERS[key] = compute()
+    return _GIT_ANSWERS[key]
 
 
 def _scan_once(root: Path) -> Callable[[], RepoScan]:
@@ -128,9 +143,9 @@ def _evaluate(root: Path, doc: ContextDoc, get_scan: Callable[[], RepoScan]) -> 
     scan = get_scan()
     changed_syms = _changed_symbols(root, anchor, hits)
     all_stems = {_stem(f) for f in scan.files if _is_code(f)}
-    claims = _build_claims(doc, hits, scan, changed_syms, all_stems)
+    claims = _build_claims(root, anchor, doc, hits, scan, changed_syms, all_stems)
 
-    if _claims_still_check_out(doc, hits, scan, changed_syms, all_stems):
+    if _claims_still_check_out(root, anchor, doc, hits, scan, changed_syms, all_stems):
         return DocReport(
             doc, FRESH, changed_watched=hits, content_verified=True, claims=claims,
             reason=(
@@ -150,7 +165,7 @@ def _evaluate(root: Path, doc: ContextDoc, get_scan: Callable[[], RepoScan]) -> 
 
 
 def _claims_still_check_out(
-    doc: ContextDoc, hits: list[str], scan: RepoScan,
+    root: Path, anchor: str, doc: ContextDoc, hits: list[str], scan: RepoScan,
     changed_syms: list[tuple[str, set[str] | None]], all_stems: set[str],
 ) -> bool:
     """True when the watched changes provably did not invalidate the doc.
@@ -177,25 +192,36 @@ def _claims_still_check_out(
     catastrophic bug (product doc §10); symbol resolution may only ever *narrow*
     stale→fresh, never the reverse.
     """
-    if not doc.spec.generated:
-        return False
-    current = context.get_auto_block(doc.body)
-    if current is None:
-        return False
-    regenerated = generator.auto_content(doc.spec, scan)
-    if current != regenerated and not current.endswith("\n\n" + regenerated):
-        return False
+    # A doc with no auto-block has no generated facts to match; the prose
+    # conditions below are then the whole test. (Before read-next became
+    # watch-based nothing ungenerated ever reached here, so this returned
+    # False outright — which made such a doc permanently stale.)
+    if doc.spec.generated:
+        current = context.get_auto_block(doc.body)
+        if current is None:
+            return False
+        regenerated = generator.auto_content(doc.spec, scan)
+        if current != regenerated and not current.endswith("\n\n" + regenerated):
+            return False
     human_text = _human_text(doc.body)
 
-    # A claim about a whole file (a path reference) can't be narrowed — any
-    # edit inside it might touch what the claim depends on. Unchanged behavior.
+    # A claim about a whole file (a path reference) can't be narrowed by symbol
+    # resolution — any edit inside it might touch what the claim depends on.
+    # It *can* be narrowed by authorship: prose written at or after the change
+    # was written against it.
     for ref in extract_path_refs(human_text):
         for hit in hits:
             if hit == ref or hit.startswith(ref + "/"):
+                if _prose_supersedes(root, doc, _ref_lines(doc.body, ref), [ref], anchor):
+                    continue
                 return False
 
     for ref in extract_symbol_refs(human_text):
         if _symbol_verdict(ref, changed_syms, all_stems) != CLAIM_FRESH:
+            if _prose_supersedes(
+                root, doc, _ref_lines(doc.body, ref), _symbol_files(ref, hits), anchor
+            ):
+                continue
             return False
     return True
 
@@ -206,6 +232,75 @@ def _human_text(body: str) -> str:
         return body
     end = body.find(context.AUTO_END) + len(context.AUTO_END)
     return body[:begin] + body[end:]
+
+
+def _ref_lines(body: str, ref: str) -> list[int]:
+    """1-based body lines that mention `ref`."""
+    return [n for n, line in enumerate(body.splitlines(), 1) if ref in line]
+
+
+def _symbol_files(ref: str, hits: list[str]) -> list[str]:
+    """Changed code files that could host a ``module.symbol`` reference.
+
+    A resolvable qualifier names one file. Anything else (an unknown module, a
+    ``Class.method`` whose file we can't name) yields *every* changed code
+    file, mirroring `_symbol_verdict`'s own conservatism: the prose must then
+    be newer than all of them before it can narrow.
+    """
+    parts = ref.split(".")
+    if len(parts) < 2:
+        return []
+    code = [hit for hit in hits if _is_code(hit)]
+    return [hit for hit in code if _stem(hit) == parts[-2]] or code
+
+
+def _prose_supersedes(
+    root: Path, doc: ContextDoc, body_lines: list[int], refs: list[str], anchor: str
+) -> bool:
+    """True when this prose was written at or after every change in `refs`.
+
+    Prose and code that land in the same commit are not doc rot: the author
+    wrote the sentence against the change. Without this, a claim is flagged the
+    moment the doc's anchor predates the commit that introduced *both* — which
+    was the largest false-positive class this repo has ever produced.
+
+    Narrowing only, in the same sense as symbol resolution: every question we
+    cannot answer returns False, so the claim keeps whatever verdict it had.
+    """
+    if not body_lines or not refs:
+        return False
+    blamed = _once(
+        ("blame", doc.spec.rel_path),
+        lambda: gitutil.blame_lines(root, doc.spec.rel_path),
+    )
+    if not isinstance(blamed, dict):
+        return False
+    file_lines = [doc.body_line + n - 1 for n in body_lines]
+    if any(n not in blamed for n in file_lines):
+        return False  # a line blame can't place — decline rather than guess
+    written = {blamed[n] for n in file_lines}
+    for ref in refs:
+        code_commit = _once(
+            ("last-change", ref, anchor),
+            lambda ref=ref: gitutil.last_change_commit(root, ref, anchor),
+        )
+        if code_commit is None:
+            # Nothing committed since the anchor touched it, yet it is among
+            # the hits — so the change is working-tree-only, and only
+            # working-tree prose can have been written against it.
+            if any(sha != gitutil.UNCOMMITTED for sha in written):
+                return False
+            continue
+        if any(
+            sha != gitutil.UNCOMMITTED
+            and not _once(
+                ("ancestor", code_commit, sha),
+                lambda c=code_commit, s=sha: gitutil.is_ancestor(root, c, s),
+            )
+            for sha in written
+        ):
+            return False
+    return True
 
 
 def _is_code(path: str) -> bool:
@@ -283,7 +378,7 @@ def _worse(a: str, b: str) -> str:
 
 
 def _build_claims(
-    doc: ContextDoc, hits: list[str], scan: RepoScan,
+    root: Path, anchor: str, doc: ContextDoc, hits: list[str], scan: RepoScan,
     changed_syms: list[tuple[str, set[str] | None]], all_stems: set[str],
 ) -> list[ClaimVerdict]:
     """The per-claim breakdown behind the doc-level status (presentation/score).
@@ -292,7 +387,9 @@ def _build_claims(
     get the same symbol/path resolution the roll-up uses, so the two can't
     disagree on any reference they both see.
     """
-    return _generated_claims(doc, scan) + _human_claim_verdicts(doc, hits, changed_syms, all_stems)
+    return _generated_claims(doc, scan) + _human_claim_verdicts(
+        root, anchor, doc, hits, changed_syms, all_stems
+    )
 
 
 def _generated_claims(doc: ContextDoc, scan: RepoScan) -> list[ClaimVerdict]:
@@ -343,7 +440,7 @@ def _is_fact_line(line: str) -> bool:
 
 
 def _human_claim_verdicts(
-    doc: ContextDoc, hits: list[str],
+    root: Path, anchor: str, doc: ContextDoc, hits: list[str],
     changed_syms: list[tuple[str, set[str] | None]], all_stems: set[str],
 ) -> list[ClaimVerdict]:
     out: list[ClaimVerdict] = []
@@ -352,11 +449,17 @@ def _human_claim_verdicts(
         risk: list[str] = []
         for ref in claim.path_refs:
             if any(hit == ref or hit.startswith(ref + "/") for hit in hits):
+                if _prose_supersedes(root, doc, claim.lines, [ref], anchor):
+                    continue
                 status = CLAIM_STALE
                 risk.append(ref)
         for ref in claim.symbol_refs:
             verdict = _symbol_verdict(ref, changed_syms, all_stems)
             if verdict != CLAIM_FRESH:
+                if _prose_supersedes(
+                    root, doc, claim.lines, _symbol_files(ref, hits), anchor
+                ):
+                    continue
                 status = _worse(status, verdict)
                 risk.append(ref)
         out.append(ClaimVerdict(

@@ -1,10 +1,13 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: c838ad6
-slate_synced_at: 2026-07-27T00:38:31+00:00
-slate_synced_digest: e3b0c44298fc1c14
+slate_synced_commit: 2e84462
+slate_synced_at: 2026-07-31T18:05:28+00:00
+slate_synced_digest: 5785fa77141350ea
 slate_watches:
+  - benchmarks/**
+  - slate/**
+  - tests/**
 ---
 
 # Read next — current focus
@@ -89,8 +92,129 @@ treats `module.symbol` as living in `module` — re-export aliases aren't follow
 (which *symbol* imports which), but only if top-level-dir granularity proves too
 coarse in practice.
 
+**Hook-based delivery — landed (2026-07-27).**
+The consultation problem is closed on the delivery side. Slate no longer
+*offers* freshness to Claude Code; it injects it. New `slate/claudehook.py` +
+`slate agent hook` (the stdin handler) and `slate agent hooks install`, which
+writes two entries to `.claude/settings.json`: **SessionStart** (the layer's
+whole trust state, empty matcher so it also covers `compact`) and
+**PreToolUse** on `Read|Edit|Write|NotebookEdit` (warns only when the target
+file is covered by a non-fresh doc's watches). `slate agent enable claude`
+installs them; `--no-hooks` opts out; `slate agent status` reports them.
+
+Why this exists: the MCP path was measured and does not work — 0 `slate_*`
+calls in 320 tool calls across 25 sessions. Hooks are not offered to the model,
+so there is no choice to decline. The module computes **no trust math** (it
+calls `freshness.evaluate_all` and renders, like `cli` and `mcp`), and every
+entry point fails to *silence* — never to a false `fresh`, never to a broken
+session. Pinned by `tests/test_claude_hook.py` (30 tests; 225 total).
+
+**Measured (2026-07-27 sweep, 4 arms × 5 trials, all same-day).** Delivery
+works and is verified end-to-end. What it buys is less settled:
+
+- **The pre-registered metric failed.** `decoy_hits` was named in `spec.py` in
+  advance as the thing hook delivery should move. It did not move (exact
+  p=1.0) and went the wrong way directionally (1/5 → 2/5 trials).
+- **An unplanned cost effect appeared, on the stale arm only.** tool calls
+  41→31 (p=0.0159), turns 42→32 (p=0.0159), context 56.5K→41.5K (p=0.0079,
+  the floor for n=5). The fresh arm showed nothing (p=0.44–0.69). Effect
+  present where the layer is stale and absent where it is fresh is the
+  interaction the mechanism predicts, and a confound like model drift would
+  have moved both arms.
+- **It is exploratory, not a win.** The three cost numbers are one behavioural
+  change measured three ways (cache-creation per turn is 1,344 vs 1,294, so
+  tokens track turns track tool calls). Eight tests, Bonferroni puts the best
+  at the edge, n=5.
+- **Correctness is still 0/5 in every arm** (0/35 cumulative). Nothing claims
+  context makes an agent likelier to get a hard change right.
+- **Offering still fails:** 3 `slate_*` MCP calls in 687 tool calls. Injecting
+  reached every trial.
+
+**Do not repeat this measurement mistake.** `hook_injections` cannot see
+PreToolUse — Claude Code writes SessionStart's injected context into the
+stream-json transcript and not PreToolUse's, so the raw count reads as
+"PreToolUse never fired" when it fires every time. Confirmed by instrumenting
+the hook command to log its own invocations. The metric is a *floor* on
+delivery and cannot attribute the effect to either hook.
+
+**The claim-bearing docs were never checked — fixed (2026-07-30). This is the
+current focus.** Across all 54 commits of this repo's history, zero human
+claims were ever evaluated. Not "none were stale" — none were *checked*.
+`read-next` (11 claims) and `decisions` (7) carried no watches, and
+`freshness._evaluate` returns `fresh` before reading the body when the watch
+list is empty; the three watched docs carry no prose refs at all. The two sets
+were disjoint, so Part B's human half had never executed in either direction.
+`context.default_watches` now makes `read-next` watch-based; `decisions` stays
+attested (append-only — a past decision stays true about the past).
+
+Re-walking history with watches injected found real rot: read-next claimed
+"top-level-dir granularity only — no resolver" for 4 commits after `da71aae`
+made the map package-level *and* added a resolver. That is the failure Slate
+exists to prevent, in Slate's own layer, undetected for its whole life.
+
+**Authorship narrowing — landed (2026-07-30).** A claim whose prose was written
+at or after the change to the code it names is fresh: `_prose_supersedes` in
+`freshness`, over `gitutil.blame_lines` / `is_ancestor` / `last_change_commit`.
+Prose and code landing in one commit is not rot, but the doc's anchor predates
+that commit, so the claim was flagged the moment it was written — 6 of 31 flags
+(19%), the largest false-positive class. Measured both arms through identical
+code paths with only the narrowing toggled: 31 → 25 hit-instances. Narrowing
+only, like symbol resolution: every unanswerable question returns False and
+leaves the verdict alone. `Claim` gained `end_line` so the whole span is blamed,
+and `ContextDoc.body_line` maps a body line to a file line. Also fixed:
+`_claims_still_check_out` returned False outright for `generated: false` docs,
+which made a watched `read-next` permanently stale regardless of its claims.
+
+It covers **both** ref kinds. A symbol ref resolves through `_symbol_files` to
+the changed code files that could host it — the named module, or *every*
+changed code file when the qualifier is unresolvable, so prose must be newer
+than all of them before it narrows. On this repo's live working tree that took
+suspect claims from 8 to 4; on the historical corpus it changes nothing, since
+those flags are genuinely older than their code.
+
+Cost: whole-doc blame (one `git blame` per doc, not per claim) plus a
+per-evaluation answer cache `_GIT_ANSWERS`, cleared at the top of
+`evaluate_all`/`evaluate_doc` so a long-lived MCP process never reads a stale
+commit. ~500ms vs ~406ms unnarrowed on this repo — 23%, against 78% before
+those two fixes.
+
+**Residual over-flagging is a prose problem, not a math problem.** The
+remaining flags are all "the file changed after the sentence was written" —
+legitimate, but a path ref puts a claim at risk without falsifying it. Prose
+that names `` `module.symbol` `` instead of `` `path/to/file.py` `` is narrowed
+by Part A *and* dated precisely by authorship. That is a writing convention,
+not an engine change. Known bound: a claim spanning both new and old prose
+blames to the oldest line, so an old paragraph gaining a new ref stays flagged.
+Conservative on purpose — the safe direction.
+
+**Next, in priority order.** (0) The repair-and-resume arc — see
+`docs/repair-and-resume-plan.md`. Phase 0 and 0.5 are done; Phase 1 (make a
+suspect claim addressable: `ClaimVerdict` needs `line` and `doc_path`, which
+`Claim` already carries) is the next build step, and Phase 2's verification
+gate must ship before any write path. Note the trap: `claims._emit` only emits
+a claim that *has* refs, so an agent can "repair" a claim by deleting its
+backticks and the doc goes green. (1) Replicate the cost effect with cost
+*pre-registered* and higher n, and run SessionStart and PreToolUse as separate
+arms — right now the sweep cannot say which hook did the work. (2) The old
+`benchmarks/RESULTS.md` + `benchmark.py` are still self-referential and
+estimate-based, and its numbers predate the package-granularity scanner —
+re-run or retire it; the repo ships two RESULTS.md files making different
+kinds of claim. (3) Portability: `claudehook.py` splits cleanly into
+agent-neutral rendering (`session_start_text`, `pre_tool_use_text`,
+`_covering`) and a Claude-specific surface (`_rel_target`, `_output`, the
+settings writer). Codex uses the same event names via `hooks.json` /
+`[hooks]` in `config.toml`; Cursor uses `.cursor/hooks.json` with different
+names (`beforeReadFile`, `afterFileEdit`) and is still beta. Only worth
+porting once the effect replicates. (4) `InstructionsLoaded` (no decision
+control, side effects only) would turn "the layer loaded" into a logged fact.
+
 ## Landmines
 
 - After changing code under `slate/` or `tests/`, run `slate sync` and commit the doc updates in the same PR — CI's `slate status --ci` gate fails otherwise.
 - The MCP server must never compute trust math or expose write tools in read mode; `tests/test_mcp.py` pins both.
+- Neither must the hook — `slate/claudehook.py` renders what `freshness.evaluate_all` and `cochange` already computed, and derives no trust of its own. A second implementation of "is this doc fresh" is a second thing that can disagree, and it would disagree inside the model's context window.
+- A hook that raises degrades the session it was meant to inform. Every path in `claudehook` resolves to silence + exit 0; don't add one that can throw.
+- Claude Code reads `CLAUDE.md`, not `AGENTS.md`. Project `.claude/settings.json` hooks *do* load under `claude -p`; project `.mcp.json` does **not** without `--mcp-config`. Verify delivery with a canary before trusting any agent-behaviour measurement.
+- `slate sync` cannot clear `read-next`. It has `generated: false`, so there is no auto-block to regenerate — only `slate mark read-next` re-anchors it, and only after someone has actually rewritten the focus text. Marking a doc you have not read is the one way to turn this whole layer back into a rumor.
+- Authorship narrowing may only ever narrow. `freshness._prose_supersedes` must return False for every question it cannot answer — no blame, no anchor, no file. A `git` call that starts *assuming* recency is a false `fresh` with extra steps.
 - Don't reintroduce the old `apps/`/`packages/`/`infra/` trees from git history (decision log 2026-07-15).

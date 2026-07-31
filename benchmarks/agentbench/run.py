@@ -19,6 +19,7 @@ traced back to the session that produced it. `report.py` reads that directory.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -69,10 +70,33 @@ def _grader_python() -> str:
     return sys.executable
 
 
+def _is_git_repo(path: Path) -> bool:
+    """Is `path` itself a git repo?
+
+    `rev-parse --git-dir` alone is not enough: it walks *up* the tree, so a
+    broken clone nested inside this checkout resolves to Slate's own .git and
+    reports success. Compare the resolved dir against the path to be sure.
+    """
+    if not path.exists():
+        return False
+    proc = subprocess.run(["git", "-C", str(path), "rev-parse", "--absolute-git-dir"],
+                          capture_output=True, text=True)
+    if proc.returncode != 0:
+        return False
+    return Path(proc.stdout.strip()).resolve() == path.resolve()
+
+
 def setup() -> None:
     WORK.mkdir(parents=True, exist_ok=True)
     RUNS.mkdir(parents=True, exist_ok=True)
-    if not MIRROR.exists():
+    # `.exists()` is not a validity check: an interrupted clone leaves a
+    # directory with HEAD and config but no objects, and setup then reports
+    # "ready" while every trial fails with "repository does not exist".
+    # Ask git whether it is actually a repo.
+    if not _is_git_repo(MIRROR):
+        if MIRROR.exists():
+            print(f"{MIRROR.name} is not a valid git repo — re-cloning")
+            shutil.rmtree(MIRROR, ignore_errors=True)
         print(f"cloning {spec.REPO_URL} ...")
         subprocess.run(["git", "clone", "--quiet", "--bare", spec.REPO_URL,
                         str(MIRROR)], check=True)
@@ -120,8 +144,14 @@ def build_trial(arm: spec.Arm, trial: int) -> Path:
     elif arm.context == "slate":
         subprocess.run([str(SLATE_BIN), "init"], cwd=root,
                        capture_output=True, check=True)
-        subprocess.run([str(SLATE_BIN), "agent", "enable", "claude"], cwd=root,
-                       capture_output=True, check=True)
+        # --no-hooks keeps the un-hooked arms as they were in the first sweep,
+        # so `slate agent enable claude` gaining hook installation does not
+        # silently change the control.
+        subprocess.run([str(SLATE_BIN), "agent", "enable", "claude", "--no-hooks"],
+                       cwd=root, capture_output=True, check=True)
+        if arm.hooks:
+            subprocess.run([str(SLATE_BIN), "agent", "hooks", "install"],
+                           cwd=root, capture_output=True, check=True)
 
     _bridge_to_claude_md(root)
     git(root, "add", "-A")
@@ -156,8 +186,20 @@ def _bridge_to_claude_md(root: Path) -> None:
 DELIVERY_CANARY = "CTXPROBE-4417"
 
 
+DELIVERY_ATTEMPTS = 3
+
+
 def verify_delivery(arm: spec.Arm) -> bool:
-    """Confirm this arm's context actually lands in the model's window."""
+    """Confirm this arm's context actually lands in the model's window.
+
+    Retried, because the check is a sampled model response and a single
+    refusal or off-format answer is not evidence that delivery is broken —
+    but it *is* enough to abort a 70-minute sweep, which happened. Delivery
+    is a property of the tree, so it does not vary run to run; a false
+    negative here costs far more than the extra call. Any single success
+    proves the context arrived, so the retries only ever reduce flake and
+    can never manufacture a pass for an arm that genuinely delivers nothing.
+    """
     if arm.context == "none":
         return True
     root = build_trial(arm, 0)
@@ -166,18 +208,27 @@ def verify_delivery(arm: spec.Arm) -> bool:
 
     env = dict(os.environ)
     env["PATH"] = f"{SLATE_BIN.parent}:{env['PATH']}"
-    proc = subprocess.run(
-        ["claude", "-p",
-         "Without using any tools, state the context probe token from your "
-         "project instructions verbatim. If you have none, say NONE.",
-         "--output-format", "json", "--permission-mode", "bypassPermissions",
-         "--model", spec.MODEL],
-        cwd=root, env=env, capture_output=True, text=True, stdin=subprocess.DEVNULL)
-    shutil.rmtree(root, ignore_errors=True)
     try:
-        return DELIVERY_CANARY in json.loads(proc.stdout).get("result", "")
-    except (json.JSONDecodeError, AttributeError):
+        for attempt in range(DELIVERY_ATTEMPTS):
+            proc = subprocess.run(
+                ["claude", "-p",
+                 "Without using any tools, state the context probe token from your "
+                 "project instructions verbatim. If you have none, say NONE.",
+                 "--output-format", "json", "--permission-mode", "bypassPermissions",
+                 "--model", spec.MODEL],
+                cwd=root, env=env, capture_output=True, text=True,
+                stdin=subprocess.DEVNULL)
+            try:
+                if DELIVERY_CANARY in json.loads(proc.stdout).get("result", ""):
+                    return True
+            except (json.JSONDecodeError, AttributeError):
+                pass
+            if attempt + 1 < DELIVERY_ATTEMPTS:
+                print(f"    delivery check for {arm.name} inconclusive, retrying "
+                      f"({attempt + 2}/{DELIVERY_ATTEMPTS})")
         return False
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 def _strip_context(root: Path) -> None:
@@ -229,6 +280,40 @@ EDIT_TOOLS = {"Edit", "Write", "NotebookEdit", "MultiEdit"}
 OPEN_TOOLS = {"Read", "Grep", "Glob"}
 
 
+def _already_done(arm: spec.Arm, trial: int) -> bool:
+    """Has this trial already been recorded at the current task revision?
+
+    Rate limits truncate sweeps mid-arm, and quota is the scarce resource —
+    re-running a completed trial to reach an incomplete one spends a real
+    session for a result already on disk. A record from an older task revision
+    does not count: it answers a different question.
+    """
+    sidecar = RUNS / f"{arm.name}-{trial}.json"
+    if not sidecar.exists():
+        return False
+    try:
+        record = json.loads(sidecar.read_text())
+    except (json.JSONDecodeError, OSError):
+        return False
+    return record.get("task_revision", 1) == spec.TASK_REVISION
+
+
+def _current_transcripts() -> list[Path]:
+    """The newest transcript for each trial, one per stem.
+
+    A trial can have both a `.jsonl` (just written) and a `.jsonl.gz` (from an
+    earlier sweep, committed). They are different runs of the same arm, so
+    reading both double-counts and, worse, lets the older one win.
+    """
+    newest: dict[str, Path] = {}
+    for path in [*RUNS.glob("*.jsonl"), *RUNS.glob("*.jsonl.gz")]:
+        stem = path.name.split(".jsonl")[0]
+        current = newest.get(stem)
+        if current is None or path.stat().st_mtime > current.stat().st_mtime:
+            newest[stem] = path
+    return [newest[k] for k in sorted(newest)]
+
+
 def _read_transcript(path: Path) -> str:
     """Transcripts are committed gzipped — 13 MB of raw JSONL is 3.3 MB as
     evidence, and the evidence is the point."""
@@ -240,8 +325,19 @@ def _read_transcript(path: Path) -> str:
 
 
 def parse_transcript(path: Path, m: spec.Metrics) -> None:
+    raw = _read_transcript(path)
+    m.transcript_sha = hashlib.sha256(raw.encode("utf-8", "ignore")).hexdigest()
+
+    # Hook-injected freshness is counted off the raw transcript rather than a
+    # specific event shape: the injection is context, not a tool call, and the
+    # envelope it arrives in is Claude Code's to change. A hooked arm reading 0
+    # here means delivery failed, which invalidates that trial's claim about
+    # hooks — the same check that caught the first sweep measuring five
+    # identical arms.
+    m.hook_injections = sum(raw.count(marker) for marker in spec.HOOK_MARKERS)
+
     events = []
-    for line in _read_transcript(path).splitlines():
+    for line in raw.splitlines():
         line = line.strip()
         if not line:
             continue
@@ -252,6 +348,8 @@ def parse_transcript(path: Path, m: spec.Metrics) -> None:
 
     pending: dict[str, dict] = {}
     seen_files: set[str] = set()
+    touched_truth: set[str] = set()
+    edited_truth: set[str] = set()
     found_target_at: int | None = None
     last_failed_verify = False
 
@@ -276,7 +374,9 @@ def parse_transcript(path: Path, m: spec.Metrics) -> None:
                 blob = json.dumps(args)
                 if any(d in blob for d in spec.DECOY_SYMBOLS):
                     m.decoy_hits += 1
-                if any(g in blob for g in spec.GROUND_TRUTH_FILES) and found_target_at is None:
+                hit = {g for g in spec.GROUND_TRUTH_FILES if g in blob}
+                touched_truth |= hit
+                if hit and found_target_at is None:
                     found_target_at = m.tool_calls
 
                 path_arg = _path_of(args)
@@ -287,7 +387,9 @@ def parse_transcript(path: Path, m: spec.Metrics) -> None:
 
                 if name in EDIT_TOOLS and path_arg:
                     rel = _relative(path_arg)
-                    if rel and rel not in spec.ALLOWED_EDIT_FILES:
+                    if rel in spec.GROUND_TRUTH_FILES:
+                        edited_truth.add(rel)
+                    if rel and _is_off_target(rel):
                         m.off_target_edits += 1
                     if rel and rel.startswith("tests/"):
                         m.touched_tests = True
@@ -329,6 +431,8 @@ def parse_transcript(path: Path, m: spec.Metrics) -> None:
             m.ok = not event.get("is_error", False)
 
     m.files_read = len(seen_files)
+    m.ground_truth_touched = len(touched_truth)
+    m.ground_truth_edited = len(edited_truth)
     m.found_target_after = found_target_at or 0
 
 
@@ -339,6 +443,34 @@ def _path_of(args: dict) -> str:
         if isinstance(value, str) and "/" in value:
             return value
     return ""
+
+
+# Paths that are not the agent editing the project. Counting these as
+# "off-target" was biased against the Slate arms specifically, which is the
+# worst direction for a benchmark run by the tool's author to be wrong in:
+#
+#  - the agent's own scratchpad lives outside the trial tree entirely, and
+#    writing a throwaway verification script there is good practice, not a
+#    stray edit into the repo;
+#  - the context layer is only present in the Slate arms, and Slate's own
+#    AGENTS.md instructs the agent to update `.slate/decisions.md`. Penalising
+#    an arm for obeying the instructions that arm ships is circular.
+#
+# What remains is the real signal: source files outside the set the upstream
+# PR touched — e.g. inventing `src/flask/_teardown.py` when the helper
+# belonged in `helpers.py`.
+_LAYER_PREFIXES = (".slate/", ".claude/")
+_LAYER_FILES = {"AGENTS.md", "CLAUDE.md", ".mcp.json", ".cursor/mcp.json"}
+
+
+def _is_off_target(rel: str) -> bool:
+    if rel in spec.ALLOWED_EDIT_FILES:
+        return False
+    if rel.startswith("private/tmp/") or rel.startswith("tmp/"):
+        return False  # the agent's scratchpad, not the repo
+    if rel in _LAYER_FILES or rel.startswith(_LAYER_PREFIXES):
+        return False  # maintaining the context layer is the intended workflow
+    return True
 
 
 def _relative(path: str) -> str:
@@ -449,6 +581,9 @@ def main() -> int:
     ap.add_argument("--pilot", action="store_true", help="one trial per arm")
     ap.add_argument("--trials", type=int, default=spec.TRIALS)
     ap.add_argument("--arm", action="append", help="restrict to named arm(s)")
+    ap.add_argument("--resume", action="store_true",
+                    help="skip trials already recorded at this task revision "
+                         "(for picking a sweep back up after a rate limit)")
     ap.add_argument("--keep", action="store_true", help="keep trial worktrees")
     args = ap.parse_args()
 
@@ -460,18 +595,50 @@ def main() -> int:
         # Metric definitions can change without spending another token: the
         # transcripts are the record, the JSON files are just a view of them.
         # Grading results are preserved — they came from pytest, not the text.
-        transcripts = sorted(RUNS.glob("*.jsonl")) + sorted(RUNS.glob("*.jsonl.gz"))
+        # One transcript per trial, newest wins. Re-running an arm writes a
+        # fresh `.jsonl` beside the previous sweep's committed `.jsonl.gz`, and
+        # globbing both processed the stale one *second* — silently replacing
+        # today's metrics with the older sweep's. Dedupe by stem before
+        # parsing anything.
+        transcripts = _current_transcripts()
         for transcript in transcripts:
             stem = transcript.name.split(".jsonl")[0]
             sidecar = RUNS / f"{stem}.json"
             if not sidecar.exists():
                 continue
             old = json.loads(sidecar.read_text())
+            # Only reparse records from the *current* revision. Parsing uses
+            # revision-specific constants — DECOY_SYMBOLS, GROUND_TRUTH_FILES,
+            # ALLOWED_EDIT_FILES — so re-deriving an older record with today's
+            # spec silently rewrites it to answer today's question. Observed:
+            # revision 3 sets DECOY_SYMBOLS to (), and a reparse zeroed the
+            # decoy counts on every revision-1 record whose transcripts still
+            # contain 23 mentions of `RequestContext`. Preserving
+            # `task_revision` was not enough; the parse itself has to be
+            # refused.
+            if old.get("task_revision", 1) != spec.TASK_REVISION:
+                continue
             metrics = spec.Metrics(arm=old["arm"], trial=old["trial"])
             parse_transcript(transcript, metrics)
+            # Refuse to rewrite a record from a transcript that did not
+            # produce it. Without this the reparse is not a re-derivation, it
+            # is a substitution: today's `correct` and today's revision label
+            # kept, every behavioural metric replaced by an older session's.
+            recorded = old.get("transcript_sha", "")
+            if recorded and recorded != metrics.transcript_sha:
+                print(f"SKIP {sidecar.name}: transcript does not match the one "
+                      f"these metrics came from")
+                continue
             for key in ("grader_passed", "grader_failed", "new_suite_failures",
                         "correct", "touched_tests"):
                 setattr(metrics, key, old[key])
+            # Preserve the revision the trial was actually run under. A fresh
+            # Metrics() defaults to the *current* revision, so without this a
+            # reparse silently relabels every older record as belonging to
+            # today's experiment — which is precisely the mixing the field
+            # exists to prevent, done by the tool that is supposed to protect
+            # it. Absent means revision 1, from before the field existed.
+            metrics.task_revision = old.get("task_revision", 1)
             sidecar.write_text(json.dumps(asdict(metrics), indent=2))
             print(f"reparsed {sidecar.name}")
         return 0
@@ -516,6 +683,9 @@ def main() -> int:
     for arm in arms:
         print(f"{arm.name}: {arm.blurb}")
         for trial in range(1, trials + 1):
+            if args.resume and _already_done(arm, trial):
+                print(f"  {arm.name} trial {trial} ... skipped (already recorded)")
+                continue
             try:
                 run_trial(arm, trial, args.keep)
             except RateLimited as exc:

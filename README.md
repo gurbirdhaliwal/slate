@@ -156,6 +156,47 @@ tools aren't even exposed — and `slate agent access full` (or the
 `.slate/agent-access`, so committing it makes it team policy, and toggling
 it takes effect without restarting the agent.
 
+## Freshness the agent can't skip (Claude Code hooks)
+
+MCP tools are *offered* to the agent, and offering isn't enough. Measured
+across 25 real headless sessions, the agent made **0 calls to any `slate_*`
+tool in 320 tool calls** — with the server connected and `AGENTS.md` telling it
+to check freshness first ([benchmarks/agentbench/RESULTS.md](benchmarks/agentbench/RESULTS.md)).
+A signal the model has to opt into competes with grep, and grep wins.
+
+So Slate also delivers freshness as **hook-injected context**, which the model
+never gets to decline:
+
+```bash
+slate agent hooks install     # writes .claude/settings.json (also done by `agent enable claude`)
+```
+
+| Hook | When | What it injects |
+|------|------|-----------------|
+| `SessionStart` | every session, including after compaction | the whole layer's trust state — which docs are fresh, which aren't, and why |
+| `PreToolUse` | `Read`/`Edit`/`Write`/`NotebookEdit` | a warning **only** when that specific file is covered by a non-fresh doc's watches |
+
+Verified end-to-end, not assumed: in a repo with two deliberately stale docs, a
+headless session named both docs, their suspect-claim counts, the anchor commit
+and the culprit file — **in one turn, with zero tool calls**. Project
+`.claude/settings.json` hooks do fire under `claude -p`, unlike `.mcp.json`,
+which needs an explicit `--mcp-config`.
+
+The `PreToolUse` hook is quiet by design — silent when everything is fresh,
+silent on files no doc watches, and silent on the context docs themselves
+(editing a stale doc is you healing it). A warning that fires on every tool
+call is a banner, and banners get skimmed.
+
+It costs ~380ms per covered file operation and is deliberately uncached: a
+cache in the warning path is a way to suppress a warning that should have
+fired. If `slate` isn't on `PATH` the hook fails and the session continues
+normally — you lose the signal, never the session. Opt out with
+`slate agent enable claude --no-hooks`; check wiring with `slate agent status`.
+
+> Delivery into the context window is proven. Whether it changes *task
+> outcomes* is not yet measured — the 0/25-correct benchmark has not been
+> re-run against this path.
+
 ## Working in a team
 
 Because the layer is synced and committed alongside the code, two branches

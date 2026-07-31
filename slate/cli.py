@@ -36,6 +36,7 @@ from . import (
     __version__,
     agentcfg,
     banner,
+    claudehook,
     context,
     diffs,
     freshness,
@@ -215,6 +216,8 @@ def _build_parser() -> argparse.ArgumentParser:
     q = agent_sub.add_parser("enable", help="register the slate MCP server with a client", description="register the slate MCP server with a client")
     q.add_argument("client", choices=[*sorted(CLIENTS), "all"], help="which editor/agent to wire up")
     q.add_argument("--full", action="store_true", help="also grant full (write) access")
+    q.add_argument("--no-hooks", action="store_true",
+                   help="skip the Claude Code freshness hooks (MCP + instruction bridge only)")
     q.set_defaults(func=cmd_agent_enable)
     q = agent_sub.add_parser("access", help="get or set the agent access ceiling", description="get or set the agent access ceiling")
     q.add_argument("mode", nargs="?", choices=["read", "full"], help="omit to show current mode")
@@ -222,6 +225,24 @@ def _build_parser() -> argparse.ArgumentParser:
     q = agent_sub.add_parser("status", help="show wiring + access mode", description="show wiring + access mode")
     q.add_argument("--json", action="store_true", help="machine-readable output")
     q.set_defaults(func=cmd_agent_status)
+    q = agent_sub.add_parser(
+        "hook",
+        help="the Claude Code hook handler (Claude Code invokes this; not for humans)",
+        description="reads a hook payload on stdin and emits freshness as injected "
+                    "context: the whole layer's trust state at SessionStart, and a "
+                    "warning at PreToolUse when the file being touched is covered by "
+                    "a doc that is not fresh. Always exits 0 — a hook must never be "
+                    "the reason a session breaks.",
+    )
+    q.set_defaults(func=cmd_agent_hook)
+    q = agent_sub.add_parser(
+        "hooks",
+        help="install/uninstall the Claude Code freshness hooks",
+        description=f"manage slate's hook entries in {claudehook.SETTINGS_FILE} "
+                    f"(committed and shared with the team)",
+    )
+    q.add_argument("action", choices=["install", "uninstall", "status"])
+    q.set_defaults(func=cmd_agent_hooks)
 
     p = sub.add_parser("fleet", help="freshness roll-up across multiple repos", description="freshness roll-up across multiple repos")
     p.add_argument(
@@ -658,6 +679,19 @@ def cmd_agent_enable(root: Path, args: argparse.Namespace) -> int:
             # The instruction file is what it reads unprompted, so wiring the
             # server without the bridge leaves the layer invisible by default.
             _print_claude_bridge(agentcfg.bridge_claude(root))
+            # The bridge only gets the prose into the window. It does nothing
+            # about the agent declining to call slate_status — measured at 0
+            # calls in 320 (benchmarks/agentbench/RESULTS.md). The hooks are
+            # what make the freshness signal non-optional.
+            if not args.no_hooks:
+                try:
+                    path = claudehook.install(root)
+                    print(f"  wrote {path.relative_to(root)} (SessionStart + "
+                          f"PreToolUse freshness hooks — the agent no longer has "
+                          f"to ask for freshness)")
+                except claudehook.HookConfigError as exc:
+                    print(f"\n! could not install the freshness hooks: {exc}")
+                    print("  Fix that file (or pass --no-hooks) and re-run.")
     if args.full:
         agentcfg.set_access(root, agentcfg.FULL)
     mode = agentcfg.get_access(root)
@@ -689,6 +723,7 @@ def cmd_agent_status(root: Path, args: argparse.Namespace) -> int:
     info = {
         "access": agentcfg.get_access(root),
         "clients": agentcfg.enabled_clients(root),
+        "hooks": claudehook.installed_events(root),
     }
     if args.json:
         print(json.dumps(info, indent=2))
@@ -698,6 +733,49 @@ def cmd_agent_status(root: Path, args: argparse.Namespace) -> int:
         print(f"wired clients: {', '.join(info['clients'])}")
     else:
         print("wired clients: none — run `slate agent enable claude` (or cursor/all)")
+    if info["hooks"]:
+        print(f"claude hooks: {', '.join(info['hooks'])}")
+    else:
+        print("claude hooks: none — freshness only reaches the agent if it "
+              "chooses to ask (`slate agent hooks install`)")
+    return 0
+
+
+def cmd_agent_hook(root: Path, _args: argparse.Namespace) -> int:
+    """The hook body Claude Code invokes. Always exits 0.
+
+    `root` is the repo containing the cwd; Claude Code also passes `cwd` in
+    the payload, but trusting our own resolution keeps the hook working when
+    the agent has cd'd into a subdirectory.
+    """
+    output = claudehook.run(root, sys.stdin.read())
+    if output:
+        print(output)
+    return 0
+
+
+def cmd_agent_hooks(root: Path, args: argparse.Namespace) -> int:
+    try:
+        if args.action == "install":
+            path = claudehook.install(root)
+            print(f"installed freshness hooks in {path.relative_to(root)}")
+            print(f"  {claudehook.SESSION_START}: layer freshness at session start "
+                  f"(and after compaction)")
+            print(f"  {claudehook.PRE_TOOL_USE}: warns on {claudehook.TOOL_MATCHER} "
+                  f"when the target file is covered by a non-fresh doc")
+            print("\nCommit this file to share the hooks with the team.")
+            print("Restart the Claude Code session to pick them up.")
+        elif args.action == "uninstall":
+            if claudehook.uninstall(root):
+                print("removed slate's hook entries")
+            else:
+                print("no slate hooks installed")
+        else:
+            events = claudehook.installed_events(root)
+            print(", ".join(events) if events else "no slate hooks installed")
+    except claudehook.HookConfigError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     return 0
 
 

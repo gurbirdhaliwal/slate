@@ -90,7 +90,16 @@ def default_watches(spec: DocSpec, scan: RepoScan) -> list[str]:
         return src or ["**"]
     if spec.name == "workflows":
         return build_files
-    return []  # human-owned docs: freshness is attestation-based, not watch-based
+    # read-next names live symbols in prose (`freshness.evaluate_all`,
+    # `slate/merge.py`, ...), so it earns a watch-based verdict like the
+    # generated docs. Left unwatched it returned FRESH before its body was
+    # ever read, which kept every claim in the layer's most-read doc unchecked
+    # for the whole of this project's history.
+    if spec.name == "read-next":
+        return src or ["**"]
+    # decisions stays attestation-based: it is an append-only record, and a
+    # past decision remains true as a statement about the past.
+    return []
 
 
 @dataclass
@@ -98,6 +107,9 @@ class ContextDoc:
     spec: DocSpec
     meta: Meta
     body: str
+    # 1-based line in the *file* where `body` starts, so a claim's line number
+    # (which the segmenter reports against the body) can be blamed on disk.
+    body_line: int = 1
 
     @property
     def watches(self) -> list[str]:
@@ -114,8 +126,10 @@ def load(root: Path, spec: DocSpec) -> ContextDoc | None:
     path = spec.path(root)
     if not path.exists():
         return None
-    meta, body = frontmatter.parse(path.read_text())
-    return ContextDoc(spec, meta, body)
+    text = path.read_text()
+    meta, body = frontmatter.parse(text)
+    # `body` is always a suffix of `text`, so the prefix length gives the offset.
+    return ContextDoc(spec, meta, body, text.count("\n", 0, len(text) - len(body)) + 1)
 
 
 def load_all(root: Path) -> list[ContextDoc]:

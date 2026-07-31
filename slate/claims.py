@@ -35,11 +35,16 @@ class Claim:
     section: str
     path_refs: list[str] = field(default_factory=list)
     symbol_refs: list[str] = field(default_factory=list)
-    line: int = 0  # 1-based start line in the body
+    line: int = 0      # 1-based start line in the body
+    end_line: int = 0  # 1-based last line in the body (== line for one-liners)
 
     @property
     def refs(self) -> list[str]:
         return [*self.path_refs, *self.symbol_refs]
+
+    @property
+    def lines(self) -> list[int]:
+        return list(range(self.line, max(self.line, self.end_line) + 1))
 
 
 def human_claims(body: str) -> list[Claim]:
@@ -55,7 +60,7 @@ def human_claims(body: str) -> list[Claim]:
         nonlocal buffer, buffer_start
         if buffer:
             text = " ".join(part.strip() for part in buffer).strip()
-            _emit(claims, text, section, buffer_start)
+            _emit(claims, text, section, buffer_start, buffer_start + len(buffer) - 1)
             buffer = []
 
     for index, line in enumerate(lines):
@@ -85,13 +90,17 @@ def human_claims(body: str) -> list[Claim]:
     return claims
 
 
-def _emit(claims: list[Claim], text: str, section: str, line: int) -> None:
+def _emit(
+    claims: list[Claim], text: str, section: str, line: int, end_line: int | None = None
+) -> None:
     if not text:
         return
     path_refs = extract_path_refs(text)
     symbol_refs = extract_symbol_refs(text)
     if path_refs or symbol_refs:
-        claims.append(Claim(text, section, path_refs, symbol_refs, line))
+        claims.append(
+            Claim(text, section, path_refs, symbol_refs, line, end_line or line)
+        )
 
 
 def _auto_block_lines(body: str) -> set[int]:

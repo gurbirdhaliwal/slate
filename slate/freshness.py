@@ -55,6 +55,16 @@ class ClaimVerdict:
     status: str              # fresh | stale | unknowable
     refs: list[str] = field(default_factory=list)   # code refs that scope it
     risk: list[str] = field(default_factory=list)   # the refs that put it at risk
+    # Where the claim sits on disk. Human claims carry a real span; generated
+    # facts do not, because they are never edited by hand — `slate sync`
+    # rewrites the whole block deterministically.
+    doc_path: str = ""
+    line: int = 0
+    end_line: int = 0
+    # Which resolution reached the verdict: "symbol" means the named symbol
+    # provably moved, "path" only that a named file changed somewhere. A path
+    # verdict routinely marks a claim at risk without falsifying it.
+    scope: str = ""
 
     def as_dict(self) -> dict:
         return {
@@ -64,6 +74,10 @@ class ClaimVerdict:
             "status": self.status,
             "refs": self.refs,
             "risk": self.risk,
+            "doc_path": self.doc_path,
+            "line": self.line,
+            "end_line": self.end_line,
+            "scope": self.scope,
         }
 
 
@@ -219,7 +233,7 @@ def _claims_still_check_out(
     for ref in extract_symbol_refs(human_text):
         if _symbol_verdict(ref, changed_syms, all_stems) != CLAIM_FRESH:
             if _prose_supersedes(
-                root, doc, _ref_lines(doc.body, ref), _symbol_files(ref, hits), anchor
+                root, doc, _ref_lines(doc.body, ref), symbol_files(ref, hits), anchor
             ):
                 continue
             return False
@@ -239,7 +253,7 @@ def _ref_lines(body: str, ref: str) -> list[int]:
     return [n for n, line in enumerate(body.splitlines(), 1) if ref in line]
 
 
-def _symbol_files(ref: str, hits: list[str]) -> list[str]:
+def symbol_files(ref: str, hits: list[str]) -> list[str]:
     """Changed code files that could host a ``module.symbol`` reference.
 
     A resolvable qualifier names one file. Anything else (an unknown module, a
@@ -447,23 +461,33 @@ def _human_claim_verdicts(
     for claim in claims_mod.human_claims(doc.body):
         status = CLAIM_FRESH
         risk: list[str] = []
+        scope = ""
         for ref in claim.path_refs:
             if any(hit == ref or hit.startswith(ref + "/") for hit in hits):
                 if _prose_supersedes(root, doc, claim.lines, [ref], anchor):
                     continue
                 status = CLAIM_STALE
                 risk.append(ref)
+                scope = scope or "path"
         for ref in claim.symbol_refs:
             verdict = _symbol_verdict(ref, changed_syms, all_stems)
             if verdict != CLAIM_FRESH:
                 if _prose_supersedes(
-                    root, doc, claim.lines, _symbol_files(ref, hits), anchor
+                    root, doc, claim.lines, symbol_files(ref, hits), anchor
                 ):
                     continue
                 status = _worse(status, verdict)
                 risk.append(ref)
+                # A symbol verdict is the stronger evidence, so it wins the
+                # label even when a path ref already flagged the same claim.
+                scope = "symbol"
         out.append(ClaimVerdict(
             claim.text, claim.section, "human", status, refs=claim.refs, risk=risk,
+            doc_path=doc.spec.rel_path, scope=scope,
+            # File lines, not body lines: a repair task has to point at a
+            # place someone can open.
+            line=doc.body_line + claim.line - 1,
+            end_line=doc.body_line + claim.end_line - 1,
         ))
     return out
 

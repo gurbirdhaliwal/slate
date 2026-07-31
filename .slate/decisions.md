@@ -1,8 +1,8 @@
 ---
 slate_doc: decisions
 slate_generated: false
-slate_synced_commit: 2e84462
-slate_synced_at: 2026-07-31T18:05:28+00:00
+slate_synced_commit: 61b49bd
+slate_synced_at: 2026-07-31T19:10:37+00:00
 slate_synced_digest: e3b0c44298fc1c14
 slate_watches:
 ---
@@ -557,4 +557,41 @@ Revisit trigger: Path refs remain the residual over-flag — a file changing
           flagged. Blaming only the ref's own line would be more precise;
           it is also the less conservative direction, so it waits for a
           measured need.
+```
+
+```
+Date: 2026-07-31
+Decision: Repair tasks are a read-only worklist (`slate/repair.py`,
+          `slate repair [--json]`), and they cover hand-written claims only.
+          `ClaimVerdict` gained `doc_path`/`line`/`end_line`/`scope`;
+          `freshness._symbol_files` became public `symbol_files` so repair can
+          resolve a symbol ref to its candidate files without forking the
+          logic.
+Rationale: The pivot needs an addressable unit before it can need anything
+          else, and the read-only half is also the instrument for the Phase 0
+          experiment that gates the rest: a formatted task is exactly what you
+          hand an agent. Generated facts are excluded because `slate sync`
+          already rewrites them deterministically for zero tokens — and over
+          this repo's entire history, generated drift was the *only* staleness
+          that ever occurred, so routing it to a model would be strictly worse
+          than the machinery that already fixes it.
+Trade-off: `scope` exposes how strong the evidence is — `symbol` (the named
+          symbol provably moved) versus `path` (a file changed somewhere) —
+          because on the measured corpus most path-scoped flags were prose
+          that was still accurate. A consumer that cannot answer "this claim
+          is still correct" will rewrite correct prose on the common case.
+          That constraint propagates to Phase 2: the verification gate must
+          accept "no change needed" as a verifiable outcome, not only "the
+          claim now checks out".
+Safety:    Computes no trust and writes nothing. It reads `freshness`'s
+          verdicts, exactly as `cli`, `mcp` and `claudehook` do; a second
+          opinion about whether a doc is fresh is a second thing that can
+          disagree. New `ClaimVerdict` fields are additive, so status/verify/
+          diff and the MCP surface are unchanged
+          (`test_claim_verdicts_stay_backward_compatible`).
+Revisit trigger: Phase 0's exit criterion — hand an agent a task, does the
+          rewrite make Slate's own verifier turn it fresh, >=60% with ~0%
+          wrong-but-verifying. It has never been run. If it fails, the write
+          path in Phase 2 and 3 should not be built at all, and this module
+          stays what it is today: a list for a human.
 ```

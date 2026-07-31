@@ -1,8 +1,8 @@
 ---
 slate_doc: decisions
 slate_generated: false
-slate_synced_commit: f719dca
-slate_synced_at: 2026-07-28T22:56:56+00:00
+slate_synced_commit: 2e84462
+slate_synced_at: 2026-07-31T18:05:28+00:00
 slate_synced_digest: e3b0c44298fc1c14
 slate_watches:
 ---
@@ -490,4 +490,71 @@ Revisit trigger: A task shape where coupling is genuinely undiscoverable —
           reached 3 of 4 ground-truth files unaided. Do not re-enable without
           a measurement; the prior is now that agents do not act on
           completeness advice regardless of how it is delivered.
+```
+
+```
+Date: 2026-07-30
+Decision: `read-next.md` is watch-based like the generated docs; `decisions.md`
+          stays attestation-based. `context.default_watches` no longer returns
+          [] for both.
+Rationale: Measured over all 54 commits of this repo's history, *zero* human
+          claims were ever evaluated — not "none were stale", none were
+          checked. The claim-bearing docs (read-next: 11 claims, decisions: 7)
+          carried no watches, and `_evaluate` returns FRESH before reading the
+          body when the watch list is empty; the watched docs carry no prose
+          refs at all. The two sets were disjoint, so Part B's human half had
+          never executed. Re-walking history with watches injected surfaced
+          real rot: read-next claimed "top-level-dir granularity only — no
+          resolver" for 4 commits after `da71aae` made the map package-level
+          and added a resolver.
+Trade-off: read-next now goes stale on most code commits, and `slate sync`
+          cannot clear it — it has no auto-block, so only `slate mark` (after
+          a human or agent actually updates the focus text) re-anchors it.
+          That is the intended workflow, but it does put the CI gate in the
+          path of every PR that touches slate/ without updating the focus.
+Safety:    `decisions.md` is deliberately left attested: it is append-only and
+          a past decision stays true as a statement about the past.
+Revisit trigger: Alarm fatigue — if read-next is marked without being read.
+
+Date: 2026-07-30
+Decision: Freshness narrows on authorship: a claim whose prose was written at
+          or after the change to the code it names is fresh
+          (`freshness._prose_supersedes`, `gitutil.blame_lines` /
+          `is_ancestor` / `last_change_commit`). Both ref kinds: a symbol ref
+          resolves through `_symbol_files` to the changed code files that
+          could host it, widening to *every* changed code file when the
+          qualifier is unresolvable, so prose must outdate all of them.
+Rationale: Prose and code that land in the same commit are not doc rot — the
+          author wrote the sentence against the change — but the doc's anchor
+          predates that commit, so the claim was flagged the moment it was
+          written. On the corpus above this was 6 of 31 flags (19%), and it
+          was the single largest false-positive class. Both arms measured
+          through identical code paths with only the narrowing toggled:
+          31 -> 25 hit-instances. Symbol coverage changes nothing historically
+          (those flags are genuinely older than their code) but took this
+          repo's live working tree from 8 suspect claims to 4.
+Trade-off: ~500ms vs ~406ms unnarrowed on this repo (23%). Naive per-claim
+          blame cost 78%; the fixes are whole-doc blame (`blame_lines`) and a
+          per-evaluation answer cache (`_GIT_ANSWERS`), cleared at the top of
+          `evaluate_all`/`evaluate_doc` so a long-lived MCP process cannot
+          serve an answer from a previous repo state.
+Safety:    Narrowing only, exactly like symbol resolution: every unanswerable
+          question (no blame, unresolvable anchor, missing file) returns False
+          and leaves the verdict alone, so it can never manufacture a `fresh`.
+          Pinned by `test_narrowing_declines_when_blame_cannot_answer` and
+          `test_prose_older_than_the_code_change_stays_stale`.
+Note:      `_claims_still_check_out` returned False outright for any doc with
+          `generated: false`. Dead while such docs were unwatched; once
+          read-next was watched it made the doc permanently stale regardless
+          of its claims. Non-generated docs now skip only the auto-block
+          conditions and are judged on their prose refs.
+Revisit trigger: Path refs remain the residual over-flag — a file changing
+          after a sentence was written puts it at risk without falsifying it.
+          The fix is a prose convention (name `module.symbol`, not
+          `path/to/file.py`), which Part A already narrows for free, not more
+          trust math. Known bound: a claim is blamed as a unit, so an old
+          paragraph that gains a new ref blames to its oldest line and stays
+          flagged. Blaming only the ref's own line would be more precise;
+          it is also the less conservative direction, so it waits for a
+          measured need.
 ```

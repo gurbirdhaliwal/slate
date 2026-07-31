@@ -150,10 +150,11 @@ def _covering(
 ) -> list[freshness.DocReport]:
     """Non-fresh docs whose watches cover this path.
 
-    Human-owned docs carry no watches (`context.default_watches` returns []
-    for them) and `globs.any_match([], path)` is False, so they can never
-    match here — correct, since their freshness is attestation-based and
-    says nothing about any particular file.
+    `decisions` carries no watches (`context.default_watches` returns [] for
+    it) and `globs.any_match([], path)` is False, so it can never match here —
+    correct, since its freshness is attestation-based and says nothing about
+    any particular file. `read-next` *is* watch-based and does match, which is
+    the point: it is the doc most likely to describe a file wrongly.
     """
     return [
         r

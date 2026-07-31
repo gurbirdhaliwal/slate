@@ -51,14 +51,24 @@ def test_generated_doc_gets_dependency_suggestion(repo: Path) -> None:
     assert "shared/**" in patterns
 
 
-def test_human_doc_gets_reference_suggestion(repo: Path) -> None:
+def test_attested_doc_gets_reference_suggestion(repo: Path) -> None:
     init_layer(repo)
-    read_next = repo / ".slate" / "read-next.md"
-    read_next.write_text(read_next.read_text() + "\nWorking in `demo/cli.py` today.\n")
+    decisions = repo / ".slate" / "decisions.md"
+    decisions.write_text(decisions.read_text() + "\nWorking in `demo/cli.py` today.\n")
     scan = scanner.scan(repo)
-    doc = context.load(repo, context.spec_by_name("read-next"))
+    doc = context.load(repo, context.spec_by_name("decisions"))
     suggestions = imports.suggest(repo, doc, scan)
     assert any(s.pattern == "demo/**" for s in suggestions)
+
+
+def test_read_next_is_watch_based_by_default(repo: Path) -> None:
+    # read-next names live symbols in prose, so it is watched rather than
+    # attested; nothing is left to suggest because the source dirs are covered.
+    init_layer(repo)
+    scan = scanner.scan(repo)
+    doc = context.load(repo, context.spec_by_name("read-next"))
+    assert "demo/**" in doc.watches
+    assert imports.suggest(repo, doc, scan) == []
 
 
 def test_no_duplicate_suggestions_for_covered_dirs(repo: Path) -> None:

@@ -152,6 +152,15 @@ def build_trial(arm: spec.Arm, trial: int) -> Path:
         if arm.hooks:
             subprocess.run([str(SLATE_BIN), "agent", "hooks", "install"],
                            cwd=root, capture_output=True, check=True)
+        if arm.experiment == "E3":
+            _seed_claims(root)
+            _instrument_stop_hook(root)
+        if arm.repair:
+            # Both switches. `agentcfg.repair_enabled` requires the
+            # conjunction, so setting one would silently produce a control.
+            for args in (("agent", "access", "full"), ("agent", "repair", "on")):
+                subprocess.run([str(SLATE_BIN), *args], cwd=root,
+                               capture_output=True, check=True)
 
     _bridge_to_claude_md(root)
     git(root, "add", "-A")
@@ -163,6 +172,77 @@ def build_trial(arm: spec.Arm, trial: int) -> Path:
         # what happens to a committed context layer as a repo moves on.
         git(root, "merge", "-q", "--no-edit", base, "-m", "advance code")
     return root
+
+
+def _seed_claims(root: Path) -> None:
+    """Give the layer hand-written claims the task can falsify.
+
+    Without this the experiment measures nothing — see the E3 block in
+    `spec.py`. The claims go into `read-next` under its existing focus heading,
+    which is where a team would actually write them, and they are committed
+    with the rest of the layer so the prose is strictly older than any code the
+    agent changes. That ordering is load-bearing: prose younger than the code
+    it names is narrowed to fresh by `freshness._prose_supersedes`, correctly,
+    and would drop straight out of the experiment.
+    """
+    doc = root / ".slate" / "read-next.md"
+    body = doc.read_text()
+    seeded = "\n\n".join(spec.SEEDED_CLAIMS)
+    marker = spec.SEEDED_SECTION
+    if marker not in body:
+        raise RuntimeError(f"{spec.SEEDED_DOC} has no {marker!r} section to seed")
+    head, _, tail = body.partition(marker)
+    doc.write_text(f"{head}{marker}\n\n{seeded}\n{tail}")
+
+
+def _instrument_stop_hook(root: Path) -> None:
+    """Tee the Stop hook's stdin to a log so delivery can be measured.
+
+    Not from the transcript: `hook_injections` is already known to be a floor
+    (Claude Code records SessionStart's injected context and not PreToolUse's),
+    and whether it records Stop's is unknown. Reading it off the hook's own
+    invocations answers the question directly instead of inferring it.
+
+    The wrapper only adds logging — `tee` passes both streams through
+    unchanged — and it is installed in *both* E3 arms, so it cannot favour one.
+
+    Both ends are logged, because they answer different questions. The hook is
+    installed in both arms and is *inert* in the control, so counting
+    invocations would report full delivery for an arm that never spoke. The
+    gate needs the output side.
+    """
+    settings = root / ".claude" / "settings.json"
+    config = json.loads(settings.read_text())
+    stdin_log = root / spec.HOOK_LOG_IN
+    stdout_log = root / spec.HOOK_LOG_OUT
+    for group in config.get("hooks", {}).get("Stop", []):
+        for hook in group.get("hooks", []):
+            if hook.get("command") == claudehook_command():
+                hook["command"] = (
+                    f'tee -a "{stdin_log}" | {claudehook_command()} '
+                    f'| tee -a "{stdout_log}"')
+    settings.write_text(json.dumps(config, indent=2) + "\n")
+
+
+def claudehook_command() -> str:
+    return "slate agent hook"
+
+
+def repair_count(root: Path) -> int:
+    """Suspect hand-written claims in this tree, via the product's own CLI.
+
+    Shelling out rather than importing keeps the measurement on the same path a
+    user gets, and keeps the benchmark from accidentally depending on Slate
+    internals that the CLI does not expose.
+    """
+    proc = subprocess.run([str(SLATE_BIN), "repair", "--json"], cwd=root,
+                          capture_output=True, text=True)
+    if proc.returncode != 0:
+        return 0
+    try:
+        return len(json.loads(proc.stdout))
+    except json.JSONDecodeError:
+        return 0
 
 
 def _bridge_to_claude_md(root: Path) -> None:
@@ -365,6 +445,10 @@ def parse_transcript(path: Path, m: spec.Metrics) -> None:
                 pending[block.get("id", "")] = {"name": name, "args": args}
                 if "slate" in name.lower():
                     m.slate_tool_calls += 1
+                # MCP names arrive prefixed (`mcp__slate__slate_repair_apply`),
+                # so match on the suffix rather than equality.
+                if "slate_repair_apply" in name:
+                    m.repair_apply_calls += 1
 
                 # Agents reach for files through Read, Grep, Glob *and* shell
                 # (`grep -rn ... src/flask/app.py`). Counting only Read's
@@ -403,6 +487,15 @@ def parse_transcript(path: Path, m: spec.Metrics) -> None:
                 if not isinstance(block, dict) or block.get("type") != "tool_result":
                     continue
                 call = pending.get(block.get("tool_use_id", ""), {})
+                if "slate_repair_apply" in call.get("name", ""):
+                    # The verdict is the tool's own, not inferred from
+                    # is_error: a rejection is the gate working, and reading it
+                    # off the payload keeps the two apart.
+                    text = str(block.get("content", ""))
+                    if '"outcome": "rejected"' in text:
+                        m.repair_apply_rejected += 1
+                    elif '"outcome": "repaired"' in text or '"outcome": "unchanged"' in text:
+                        m.repair_apply_accepted += 1
                 if block.get("is_error") and call.get("name") == "Bash":
                     m.failed_commands += 1
                 if call.get("name") == "Bash":
@@ -543,24 +636,73 @@ def _counts(output: str) -> tuple[int, int]:
 # --------------------------------------------------------------------------
 
 
+def measure_repair(root: Path, arm: spec.Arm, m: spec.Metrics) -> None:
+    """The E3 numbers, taken from the tree the agent left behind.
+
+    Order matters and is the whole trick. `suspect_claims_end` is read from the
+    tree as-is, *then* the docs are restored to their committed state and the
+    count taken again — that second number is what the trial's code edits would
+    have left had nobody repaired anything. Without it, "claims remaining"
+    conflates an agent that repaired with an agent that never broke anything,
+    and the two arms do not make the same edits.
+    """
+    stdin_log = root / spec.HOOK_LOG_IN
+    if stdin_log.exists():
+        m.stop_hook_fired = sum(
+            1 for line in stdin_log.read_text(errors="ignore").splitlines()
+            if '"Stop"' in line)
+    stdout_log = root / spec.HOOK_LOG_OUT
+    if stdout_log.exists():
+        m.stop_hook_injected = sum(
+            1 for line in stdout_log.read_text(errors="ignore").splitlines()
+            if spec.STOP_MARKER in line)
+
+    # Keep the repaired prose as evidence before anything is restored.
+    doc = root / ".slate" / "read-next.md"
+    if doc.exists():
+        (RUNS / f"{arm.name}-{trial_tag(m)}.read-next.md").write_text(doc.read_text())
+
+    m.suspect_claims_end = repair_count(root)
+    git(root, "checkout", "--", ".slate", check=False)
+    m.suspect_claims_unrepaired = repair_count(root)
+    m.claims_repaired = max(0, m.suspect_claims_unrepaired - m.suspect_claims_end)
+
+
+def trial_tag(m: spec.Metrics) -> int:
+    return m.trial
+
+
 def run_trial(arm: spec.Arm, trial: int, keep: bool) -> spec.Metrics:
     metrics = spec.Metrics(arm=arm.name, trial=trial)
     root = build_trial(arm, trial)
     transcript = RUNS / f"{arm.name}-{trial}.jsonl"
     print(f"  {arm.name} trial {trial} ... ", end="", flush=True)
 
+    if arm.experiment == "E3":
+        # Zero by construction; recorded because a non-zero value means the
+        # trial was not the experiment it claims to be.
+        metrics.suspect_claims_start = repair_count(root)
+
     run_agent(root, transcript, arm)
     parse_transcript(transcript, metrics)
+    if arm.experiment == "E3":
+        measure_repair(root, arm, metrics)
     grade(root, metrics)
 
     (RUNS / f"{arm.name}-{trial}.json").write_text(
         json.dumps(asdict(metrics), indent=2))
+    tail = (f"| target@{metrics.found_target_after} "
+            f"| decoys={metrics.decoy_hits} corr={metrics.correction_cycles}")
+    if arm.experiment == "E3":
+        tail = (f"| hook {metrics.stop_hook_injected}/{metrics.stop_hook_fired} "
+                f"| repaired {metrics.claims_repaired}/"
+                f"{metrics.suspect_claims_unrepaired} "
+                f"| apply={metrics.repair_apply_accepted}ok/"
+                f"{metrics.repair_apply_rejected}rej")
     print(f"{'PASS' if metrics.correct else 'FAIL'} "
           f"| {metrics.fresh_input + metrics.cache_creation:,} ctx "
           f"| {metrics.num_turns} turns "
-          f"| {metrics.duration_ms / 1000:.0f}s "
-          f"| target@{metrics.found_target_after} "
-          f"| decoys={metrics.decoy_hits} corr={metrics.correction_cycles}")
+          f"| {metrics.duration_ms / 1000:.0f}s {tail}")
     if not keep:
         shutil.rmtree(root, ignore_errors=True)
     return metrics
@@ -655,7 +797,12 @@ def main() -> int:
               if good else "BASELINE BROKEN — fix before trusting any result")
         return 0 if good else 1
 
-    arms = [a for a in spec.ARMS if not args.arm or a.name in args.arm]
+    catalogue = (*spec.ARMS, *spec.REPAIR_ARMS)
+    arms = [a for a in catalogue if not args.arm or a.name in args.arm]
+    # E3 is opt-in by name. Sweeping everything would silently mix two
+    # experiments that answer different questions into one `runs/` directory.
+    if not args.arm:
+        arms = [a for a in arms if a.experiment != "E3"]
 
     if args.verify_delivery:
         ok = True

@@ -333,11 +333,17 @@ REPAIR_ARMS: tuple[Arm, ...] = (
 # Emitted only by `claudehook.session_end_text`. Delivery is measured, never
 # assumed — but NOT from the transcript this time. `hook_injections` is already
 # known to be a floor (Claude Code records SessionStart's injected context and
-# not PreToolUse's), and whether it records Stop's is unknown. So the Stop hook
-# command is wrapped to tee its stdin to a log inside the trial, and delivery is
-# read off that file. Identical wrapper in both arms; it only adds logging.
+# not PreToolUse's), and whether it records Stop's is unknown.
+#
+# So the Stop hook command is wrapped to tee *both* ends into the trial, and the
+# two logs answer different questions. Invocations alone are not delivery: the
+# hook fires in both arms and stays silent in `repair-off` by design, so a
+# stdin-only count would report full delivery for the control and make the gate
+# meaningless. What the gate needs is whether Slate actually *spoke*, which is
+# the output side. Identical wrapper in both arms; it only adds logging.
 STOP_MARKER = "finished this turn with"
-HOOK_LOG = ".slate-hook-log"
+HOOK_LOG_IN = ".slate-hook-in"     # every Stop invocation
+HOOK_LOG_OUT = ".slate-hook-out"   # only the ones that injected something
 
 TRIALS_PER_REPAIR_ARM = 10
 
@@ -501,9 +507,14 @@ class Metrics:
     suspect_claims_end: int = 0
     # unrepaired - end. How many of the jobs its own work created it closed.
     claims_repaired: int = 0
-    # Did the Stop hook actually deliver? Read from the tee'd hook log, not the
-    # transcript. A repair-on trial with zero here says nothing about repair.
+    # Stop hook invocations. Fires in both arms — it is installed in both and
+    # inert in the control — so this is a harness check, not the delivery gate.
     stop_hook_fired: int = 0
+    # Stop hook invocations that actually injected text. This is the gate: a
+    # repair-on trial with zero here says nothing about repair, and the control
+    # is expected to sit at zero because an inert hook is what makes it a
+    # control.
+    stop_hook_injected: int = 0
     # `slate_repair_apply` calls and how they came back. Rejections are not
     # failures of the agent — they are the gate doing its job — but a high rate
     # means the agent is producing edits the verifier has to catch.

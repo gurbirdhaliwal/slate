@@ -2,7 +2,7 @@
 slate_doc: read-next
 slate_generated: false
 slate_synced_commit: 27be9338
-slate_synced_at: 2026-08-01T17:58:40+00:00
+slate_synced_at: 2026-08-01T18:33:33+00:00
 slate_synced_digest: f7c6f9db02fdcfc4
 slate_watches:
   - examples/**

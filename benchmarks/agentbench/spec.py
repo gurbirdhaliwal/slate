@@ -549,13 +549,17 @@ class Metrics:
     repair_apply_calls: int = 0
     repair_apply_accepted: int = 0
     repair_apply_rejected: int = 0
-    # `slate_update_focus` / `slate_mark`: the other way a doc stops being
-    # suspect. Both rewrite or re-stamp a human-owned doc and **nothing
-    # verifies the result** — no `verify_repair`, no check that the claims
-    # survived. Convergence reached this way is convergence by attestation,
-    # which is a different and weaker thing than convergence by repair, and
-    # the two must be reported apart. Available in both arms now.
+    # Re-anchoring a human doc without verifying anything: `slate_update_focus`
+    # or `slate_mark` over MCP, and — the ones that actually got used —
+    # `slate mark` typed into Bash. Convergence reached this way is convergence
+    # by attestation, a different and weaker thing than convergence by repair.
     reanchor_calls: int = 0
+    # Edits to a context doc through the ordinary file tools, bypassing every
+    # Slate surface. Measured because it turned out to be the control's route:
+    # an agent with shell access can rewrite `read-next.md` and run
+    # `slate mark`, and no MCP gating can see it, let alone stop it. The Phase
+    # 2 verifier governs the MCP path only.
+    direct_doc_edits: int = 0
 
 
 # --- the numbers, fixed in advance -----------------------------------------

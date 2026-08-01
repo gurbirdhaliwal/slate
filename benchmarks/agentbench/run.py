@@ -452,10 +452,22 @@ def parse_transcript(path: Path, m: spec.Metrics) -> None:
                 # so match on the suffix rather than equality.
                 if "slate_repair_apply" in name:
                     m.repair_apply_calls += 1
-                # The unverified route to the same outcome: both rewrite or
-                # re-stamp a human doc with nothing checking the result.
+                # Every route to the same outcome that does NOT pass through
+                # `verify_repair`. Counting only the MCP tool names missed the
+                # two the agents actually used: `slate mark` typed into Bash,
+                # and a plain Edit of the doc. With shell access the MCP
+                # surface is not a gate at all, so a metric that only watches
+                # MCP reports zero while the layer is being re-stamped.
                 if "slate_update_focus" in name or "slate_mark" in name:
                     m.reanchor_calls += 1
+                elif name == "Bash":
+                    command = str(args.get("command", ""))
+                    if "slate mark" in command or "slate agent repair" in command:
+                        m.reanchor_calls += 1
+                elif name in EDIT_TOOLS:
+                    edited = _path_of(args)
+                    if edited and "/.slate/" in f"/{_relative(edited)}":
+                        m.direct_doc_edits += 1
 
                 # Agents reach for files through Read, Grep, Glob *and* shell
                 # (`grep -rn ... src/flask/app.py`). Counting only Read's

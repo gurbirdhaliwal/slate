@@ -1,0 +1,20 @@
+{
+  "item": "t03-copy-request-context",
+  "arm": "falsified",
+  "commit": "06ea505c",
+  "edited": true,
+  "declined": false,
+  "kept_refs": true,
+  "states_new_fact": true,
+  "drops_old_fact": true,
+  "refs_resolved": 1,
+  "refs_total": 1,
+  "fresh_after": true,
+  "before": "`flask.ctx.copy_current_request_context` copies the active context once, at\ndecoration time, and the wrapped function always runs inside that single\nshared copy.",
+  "after": "`flask.ctx.copy_current_request_context` captures the context active at\ndecoration time, but copies it fresh on every call to the wrapped function, so\nconcurrent invocations each get their own independent context copy instead of\nsharing one.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 13.0,
+  "said": "REWRITTEN",
+  "scope": "symbol"
+}

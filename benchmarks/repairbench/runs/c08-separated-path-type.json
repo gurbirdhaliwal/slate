@@ -1,0 +1,20 @@
+{
+  "item": "c08-separated-path-type",
+  "arm": "accurate",
+  "commit": "1af8f957",
+  "edited": false,
+  "declined": true,
+  "kept_refs": true,
+  "states_new_fact": false,
+  "drops_old_fact": false,
+  "refs_resolved": 1,
+  "refs_total": 2,
+  "fresh_after": false,
+  "before": "`flask.cli.SeparatedPathType` splits an environment variable on the OS path\nseparator and converts each item the way `click.Path` would.",
+  "after": "`flask.cli.SeparatedPathType` splits an environment variable on the OS path\nseparator and converts each item the way `click.Path` would.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 1815.7,
+  "said": "The change is a pure refactor \u2014 it fixes a Python compile-time restriction (no-arg `super()` inside a list comprehension) by hoisting `super().convert` into a local variable before the comprehension. The behavior is identical: split on the OS path separator via `split_envvar_value`, then convert each item using `click.Path`'s conversion logic. The passage remains accurate.\n\nUNCHANGED",
+  "scope": "symbol"
+}

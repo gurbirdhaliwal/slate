@@ -694,3 +694,60 @@ Revisit trigger: A real repo where stdlib citations produce enough noise to be
           the name alone. Import analysis of the documented module would do
           it; a name list would not.
 ```
+
+```
+Date: 2026-08-01
+Decision: repairbench ground truth is *constructed*, not mined. `corpus.py`'s
+          `build_trial` checks out a real Flask commit's parent, runs `slate
+          init`, commits an authored passage, and applies the `src/` half of
+          that commit on top. The corpus is 12 falsified passages and 12 the
+          commit leaves true.
+Rationale: Three cycles of mining real history failed the same way — the
+          evidence attached to a sentence was inferred by ref resolution, and
+          it was wrong for 9 of rev 1's 18 pairs. Each resolver fix narrowed
+          that without solving corpus scale. Constructing inverts it: the
+          passage's truth value is known because it was chosen, and the
+          falsifying diff is known because it was applied. rev 3 measured 12/12
+          vs 0/12 across arms (p=3.7e-07), the discrimination rev 1 could not
+          see at all when both its arms declined at ~88%.
+Trade-off: The passages are authored for the experiment, so they are cleaner
+          than prose someone wrote for its own sake, and one of the 12 still
+          carried a mis-authored `old_fact` — construction reduces mislabelling
+          (13 of 18 -> 1 of 12) without eliminating it. Authoring a passage
+          does not guarantee you understood the commit.
+Safety:    `corpus.py --verify` gates every item before a run: Slate must raise
+          exactly one task for the passage and its evidence must name exactly
+          the applied commit. The prose commit must precede the code commit or
+          `freshness._prose_supersedes` narrows the item out of the experiment,
+          and only the `src/` half is applied because `CHANGES.rst` entries
+          exist in the falsified arm only.
+Revisit trigger: A second subject repo. Flask has clean, single-purpose
+          commits; a repo that lands five things at once may not admit a
+          passage with one known truth value.
+```
+
+```
+Date: 2026-08-01
+Decision: When a benchmark's instrument is wrong, bump `spec.REVISION`, fix it,
+          and run fresh sessions. Never re-score recorded text, and never move
+          a threshold to meet a result.
+Rationale: rev 2 failed repair quality at 45%, and all six shortfalls were
+          correct repairs the scorer misread — four of them prose that named the
+          old behaviour in order to retire it. The tempting move was to re-score
+          the stored text with a better matcher. That is choosing the metric
+          after seeing the data, which is the exact failure this benchmark
+          exists to avoid; the thresholds stayed where rev 2 set them and rev 3
+          re-ran all 24.
+Trade-off: Fresh sessions cost real money and hours, and rev 3 still shipped
+          with two known scorer defects rather than a third re-run. Both are
+          conservative — they cost the agent credit it earned — so the PASS
+          survives them, and they are recorded in RESULTS.md rather than
+          silently patched.
+Safety:    Every record carries its `revision`; `run.py --report` only counts
+          records matching `spec.REVISION`, so a stale sidecar cannot be mixed
+          into a later run's numbers. Hand adjudication is stored beside the
+          mechanical score in `results-rev3.json`, never merged into it.
+Revisit trigger: An instrument defect that is *not* conservative — one that
+          could inflate a result rather than deflate it. That cannot be left
+          standing and must trigger a fresh revision immediately.
+```

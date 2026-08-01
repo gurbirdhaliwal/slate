@@ -1,0 +1,20 @@
+{
+  "item": "t11-cookie-domain-fallback",
+  "arm": "falsified",
+  "commit": "c24f8c81",
+  "edited": true,
+  "declined": false,
+  "kept_refs": true,
+  "states_new_fact": true,
+  "drops_old_fact": true,
+  "refs_resolved": 0,
+  "refs_total": 1,
+  "fresh_after": false,
+  "before": "`flask.sessions.SessionInterface.get_cookie_domain` uses\n`SESSION_COOKIE_DOMAIN` when it is configured and otherwise falls back to\ndetecting the domain from `SERVER_NAME`.",
+  "after": "`flask.sessions.SessionInterface.get_cookie_domain` uses\n`SESSION_COOKIE_DOMAIN` when it is configured and otherwise returns `None`.\nIt no longer falls back to detecting the domain from `SERVER_NAME`.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 17.3,
+  "said": "REWRITTEN",
+  "scope": "symbol"
+}

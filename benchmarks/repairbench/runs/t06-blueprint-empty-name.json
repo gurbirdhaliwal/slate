@@ -1,0 +1,20 @@
+{
+  "item": "t06-blueprint-empty-name",
+  "arm": "falsified",
+  "commit": "b8b41001",
+  "edited": true,
+  "declined": false,
+  "kept_refs": true,
+  "states_new_fact": true,
+  "drops_old_fact": true,
+  "refs_resolved": 1,
+  "refs_total": 1,
+  "fresh_after": true,
+  "before": "`flask.blueprints.Blueprint` rejects a name containing a dot, but accepts an\nempty name.",
+  "after": "`flask.blueprints.Blueprint` rejects a name containing a dot, and now also\nrejects an empty name.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 12.8,
+  "said": "REWRITTEN",
+  "scope": "symbol"
+}

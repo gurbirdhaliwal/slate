@@ -1,0 +1,20 @@
+{
+  "item": "c10-request-endpoint",
+  "arm": "accurate",
+  "commit": "a363642a",
+  "edited": false,
+  "declined": true,
+  "kept_refs": true,
+  "states_new_fact": false,
+  "drops_old_fact": false,
+  "refs_resolved": 0,
+  "refs_total": 1,
+  "fresh_after": false,
+  "before": "`flask.wrappers.Request.endpoint` is the name of the URL rule that matched,\nand `None` when no rule matched.",
+  "after": "`flask.wrappers.Request.endpoint` is the name of the URL rule that matched,\nand `None` when no rule matched.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 10.3,
+  "said": "The passage still accurately describes the code's behavior \u2014 the diff only added a `# type: ignore[no-any-return]` comment for mypy, with no change to logic or the documented contract. No edit needed.\n\nUNCHANGED",
+  "scope": "symbol"
+}

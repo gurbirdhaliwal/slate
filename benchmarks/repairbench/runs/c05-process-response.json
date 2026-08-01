@@ -1,0 +1,20 @@
+{
+  "item": "c05-process-response",
+  "arm": "accurate",
+  "commit": "7b008869",
+  "edited": false,
+  "declined": true,
+  "kept_refs": true,
+  "states_new_fact": false,
+  "drops_old_fact": false,
+  "refs_resolved": 0,
+  "refs_total": 1,
+  "fresh_after": false,
+  "before": "`flask.app.Flask.process_response` runs the registered `after_request`\ncallbacks in reverse order and then saves the session, unless the session\ninterface reports a null session.",
+  "after": "`flask.app.Flask.process_response` runs the registered `after_request`\ncallbacks in reverse order and then saves the session, unless the session\ninterface reports a null session.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 13.4,
+  "said": "just a lazy-accessor rename \u2014 `_get_session()` lazily creates/opens the session if it hasn't been already, then returns it (src/flask/ctx.py:380-392). The behavior the passage describes \u2014 running `after_request` callbacks in reverse order, then saving the session unless it's a null session \u2014 is unaffected by this change and still matches `process_response` at src/flask/app.py:1393-1417.\n\nUNCHANGED",
+  "scope": "symbol"
+}

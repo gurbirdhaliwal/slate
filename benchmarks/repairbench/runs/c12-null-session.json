@@ -1,0 +1,20 @@
+{
+  "item": "c12-null-session",
+  "arm": "accurate",
+  "commit": "3709c4a9",
+  "edited": false,
+  "declined": true,
+  "kept_refs": true,
+  "states_new_fact": false,
+  "drops_old_fact": false,
+  "refs_resolved": 1,
+  "refs_total": 1,
+  "fresh_after": false,
+  "before": "`flask.sessions.NullSession` fails on every write operation, raising a\n`RuntimeError` that tells you to set the secret key.",
+  "after": "`flask.sessions.NullSession` fails on every write operation, raising a\n`RuntimeError` that tells you to set the secret key.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 11.3,
+  "said": "I checked `src/flask/sessions.py:97-111` \u2014 the diff only removed a `# noqa: B950` lint-suppression comment. `NullSession._fail` still raises `RuntimeError` with the secret-key message, and it's still assigned to `__setitem__`, `__delitem__`, `clear`, `pop`, `popitem`, `update`, and `setdefault`. The passage remains accurate; no code changed.\n\nUNCHANGED",
+  "scope": "symbol"
+}

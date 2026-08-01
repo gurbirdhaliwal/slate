@@ -1,6 +1,12 @@
 # Execution plan — the repair-and-resume pivot
 
-**Status:** proposed, not started · **Drafted:** 2026-07-30
+**Status:** Phase 0 passed (2026-08-01), Phase 1 shipped · **Drafted:** 2026-07-30
+
+Phase 0 took two experiment cycles and three revisions. It is answered:
+`benchmarks/repairbench/RESULTS.md` records 12/12 falsified passages repaired
+and 0/12 accurate ones touched, so **Phases 2 and 3 are unblocked**. Read the
+constraints that result puts on Phase 2 before touching the gate — two of the
+three criteria drafted below are measured dead ends.
 
 ---
 
@@ -78,7 +84,13 @@ project can make about the pivot.
 
 ## Phase 0 — Prove repair converges
 
-*Before any product code.*
+*Before any product code.* **Answered 2026-08-01: PASS.** Full write-up in
+`benchmarks/repairbench/RESULTS.md`; the criteria that decided it are in
+`benchmarks/repairbench/spec.py`, not in the table below, which is the original
+draft and is superseded. The corpus had to be *constructed* rather than mined —
+every attempt to discover ground truth in real history foundered on evidence
+attribution — and the discrimination metric had to become a difference between
+arms rather than a threshold on one.
 
 **The question.** Given a stale claim plus the diff that staled it, does an
 agent produce prose that is *better*, not merely different?
@@ -166,10 +178,23 @@ Independently valuable to a human, with no agent involved.
 > check decides. What has to change is the check.
 
 `repair.verify_repair(root, doc, before, after) -> Verdict` must rest on
-signals the repair cannot move by existing. The candidate, carried over from
-the Phase 0 metrics: every symbol the new sentence names resolves to something
-real in the tree, the sentence still names code at all, and no other claim
-regresses. Re-anchoring remains a function of `freshness.evaluate` — never of
+signals the repair cannot move by existing. Phase 0 killed two of the three
+candidates originally listed here, and both are now measured rather than
+suspected:
+
+- **Not freshness.** A repair is newer prose by definition, so authorship
+  narrowing clears it whatever it says (revision 1, still binding).
+- **Not "every named symbol resolves".** It cannot express deletion, and prose
+  about removed API is correct prose. Revision 3 measured 4 of 14 symbols in
+  *correct* rewrites failing to resolve.
+- **What survives:** the sentence still names code at all (revision 1 and 3 both
+  measured 100%, so this is a floor, not a hurdle), no other claim regresses,
+  and the claim still exists at that location carrying refs.
+
+**And the gate must accept "no change needed" as a verifiable outcome.** It was
+the correct action in 12 of Phase 0's 24 trials, and on real history most
+flagged claims are prose that is still accurate. A gate that only recognises a
+successful rewrite scores the right answer as a failure. Re-anchoring remains a function of `freshness.evaluate` — never of
 "the agent reported success" — but freshness is no longer what licenses the
 repair.
 

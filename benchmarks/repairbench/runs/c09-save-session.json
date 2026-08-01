@@ -1,0 +1,20 @@
+{
+  "item": "c09-save-session",
+  "arm": "accurate",
+  "commit": "eb1182a1",
+  "edited": false,
+  "declined": true,
+  "kept_refs": true,
+  "states_new_fact": false,
+  "drops_old_fact": false,
+  "refs_resolved": 0,
+  "refs_total": 1,
+  "fresh_after": false,
+  "before": "`flask.sessions.SecureCookieSessionInterface.save_session` signs the session\nwith `get_signing_serializer` and sets the cookie with the expiry from\n`get_expiration_time`.",
+  "after": "`flask.sessions.SecureCookieSessionInterface.save_session` signs the session\nwith `get_signing_serializer` and sets the cookie with the expiry from\n`get_expiration_time`.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 3934.9,
+  "said": "The passage is confirmed accurate \u2014 the flagged commit only changed type-ignore comments, not behavior. No edit needed.\n\nUNCHANGED",
+  "scope": "symbol"
+}

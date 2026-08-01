@@ -1,9 +1,9 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: a816805
-slate_synced_at: 2026-08-01T01:40:10+00:00
-slate_synced_digest: 80b964d93058cd4e
+slate_synced_commit: 7cbd873
+slate_synced_at: 2026-08-01T17:10:36+00:00
+slate_synced_digest: 307a0dda437de58c
 slate_watches:
   - benchmarks/**
   - slate/**
@@ -219,12 +219,11 @@ returns 9999 purple`` turns the doc **fresh**. The criterion would have scored
 target claim becomes fresh" — would accept nonsense from every trial. The gate
 must rest on signals a repair cannot move by existing.
 
-**repairbench rev 1 ran and failed — inconclusively. Read
-`benchmarks/repairbench/RESULTS.md` before touching this.** Pre-registration in
-`spec.py` (committed before any agent ran), 36 trials, `spec.verdict()` → FAIL,
-so under the terms fixed in advance **Phases 2 and 3 are not built and
-`slate repair` stays a read-only list.** That conclusion stands; the primary
-number behind it does not, and must not be quoted.
+**repairbench rev 1 ran and failed — inconclusively.** Pre-registration in
+`spec.py` (committed before any agent ran), 36 trials, `spec.verdict()` → FAIL.
+Superseded by rev 3 below, which is what `benchmarks/repairbench/RESULTS.md`
+now describes; rev 1 survives there only as revision history. Its primary
+number must not be quoted.
 
 Why it is void: the metric scored *unchanged text* (the agent declined 16 of
 18), the resolver could not express Flask's API, and it punishes accurate prose
@@ -269,30 +268,61 @@ since a doc writing `logging.Formatter` about its *own* module would then
 never be flagged. Only one of those errors is permitted. All three behaviours
 are pinned in `tests/test_freshness.py`.
 
-**Where the arc actually stands.** Of the plan's phases, only **Phase 1** is
-complete — and it was built out of order, as Phase 0's instrument. **Phase 0 is
-still the open one**: it has consumed a full experiment cycle, had its exit
-criterion rewritten mid-flight for circularity, and still has no usable answer.
-Phase 2 is worse than not-started — both drafted gates are dead (freshness is
-circular; `refs_resolve` cannot express deletions), so it has no working design.
-Phases 3–5 untouched.
+**repairbench rev 3 passed — Phase 0 is answered (2026-08-01). This is the
+current state.** 24 trials on a *constructed* corpus: the agent rewrote 12 of 12
+falsified passages and touched 0 of 12 still-accurate ones (Fisher exact
+p=3.7e-07; pre-registered gate was a 40pp gap). Repair quality 10/12 mechanical,
+12/12 on hand adjudication. Read `benchmarks/repairbench/RESULTS.md` before
+touching any of this; the criteria are in `benchmarks/repairbench/spec.py`.
 
-Most of what shipped in this arc was *off-plan*: claims never being evaluated
-at all, co-landing prose flagged as rot, package symbols falsely fresh, `.rst`
-filenames read as symbols. Two false-`fresh` classes closed. Chasing the pivot
-has been an excellent bug-finding strategy and a poor hypothesis-testing one.
+What made it measurable was abandoning mined ground truth. `corpus.py`'s
+`build_trial` checks out a real Flask commit's parent, runs `slate init`,
+commits an authored passage, then applies the `src/` half of that commit on top
+— so the passage's truth value is known because it was *chosen* and the
+falsifying diff is known because it was *applied*. No resolver stands between a
+sentence and its evidence, which is what voided rev 1 (9 of 18 pairs carried
+misattributed evidence). Three details are load-bearing and easy to undo by
+accident: the prose commit must precede the code commit or `_prose_supersedes`
+narrows the item out of the experiment; only the `src/` half is applied, because
+`CHANGES.rst` entries exist in the falsified arm only and would be an answer key;
+and `corpus.py --verify` must pass for all 24 before a run, which is what proves
+Slate raises exactly one task naming exactly the applied commit.
 
-**Next, in priority order.** (0) **rev 2, with ground truth *constructed*
-rather than *discovered*.** Every attempt to mine a corpus from real repos has
-foundered on ref resolution, and each fix narrows the problem without solving
-corpus scale. Instead: take a real repo, make a real code change, and write the
-sentence that describes the old behaviour. Real prose, real diff, exact ground
-truth, no resolver in the loop. Design it before running anything — and note
-that rev 2 needs `spec.REVISION` bumped, the discrimination metric expressed as
-a *difference between arms* rather than a threshold on one, and the control
-matching fixed (10 of 18 controls skipped in rev 1 because the corpus stores
-segmenter-normalised text that no longer matches the file byte-for-byte).
-(1) Replicate the cost effect with cost
+**The control arm is the finding, not the treatment arm.** 12 declines, each
+reasoning about whether the change intersects *what the sentence claims* — one
+declined because the annotation that changed was a return type "which the
+passage doesn't reference". That judgement is precisely what `slate repair`
+cannot make and why `RepairTask.scope` exists.
+
+**Two instrument defects, both conservative, both left unfixed on purpose.**
+`corpus.asserts` applies its negation check to the *new* fact as well as the old,
+so a rewrite that names the new behaviour and then contrasts it ("no longer a
+`MethodViewType` metaclass") is scored as not having stated it. And `t08`'s
+`old_fact` pattern named a clause its commit never falsified — an authoring
+error, one in 12, down from 13 in 18 at rev 1. Both push the score *down*, so
+neither can have manufactured the PASS, and fixing-then-rescoring recorded text
+would be choosing the metric to fit the result. A rev 4 must run fresh sessions,
+and there is no reason to spend them: 83% already cleared a 70% bar.
+
+**Where the arc stands.** Phases 0 and 1 complete. **Phase 2 is next and now has
+a working design constraint set** rather than two dead gates: it cannot rest on
+freshness (circular) or on `refs_resolve` (cannot express deletion — 4 of 14
+symbols in *correct* rewrites failed to resolve), what survives is "still names
+code" + "no other claim regresses" + "the claim still exists carrying refs", and
+**"no change needed" has to be an accepted verifiable outcome** — it was the
+right answer in half the trials. Phases 3–5 untouched.
+
+Most of what shipped in this arc was still *off-plan*: claims never being
+evaluated at all, co-landing prose flagged as rot, package symbols falsely
+fresh, `.rst` filenames read as symbols. Two false-`fresh` classes closed.
+Chasing the pivot has been an excellent bug-finding strategy, and it took three
+revisions of instrument before it was also a hypothesis test.
+
+**Next, in priority order.** (0) **Phase 2 — the verification gate**, per the
+constraints above, with `test_repair_cannot_manufacture_fresh` as its exit
+criterion; the ref-deletion trap in `claims._emit` is the one that matters, since
+a claim stripped of backticks vanishes from `human_claims` and the doc goes
+green. (1) Replicate the cost effect with cost
 *pre-registered* and higher n, and run SessionStart and PreToolUse as separate
 arms — right now the sweep cannot say which hook did the work. (2) The old
 `benchmarks/RESULTS.md` + `benchmark.py` are still self-referential and

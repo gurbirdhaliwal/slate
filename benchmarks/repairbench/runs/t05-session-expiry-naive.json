@@ -1,0 +1,20 @@
+{
+  "item": "t05-session-expiry-naive",
+  "arm": "falsified",
+  "commit": "ed42e929",
+  "edited": true,
+  "declined": false,
+  "kept_refs": true,
+  "states_new_fact": true,
+  "drops_old_fact": true,
+  "refs_resolved": 0,
+  "refs_total": 1,
+  "fresh_after": true,
+  "before": "`flask.sessions.SessionInterface.get_expiration_time` returns a naive UTC\ndatetime built from `datetime.utcnow`, or `None` when the session is not\npermanent.",
+  "after": "`flask.sessions.SessionInterface.get_expiration_time` returns a timezone-aware\nUTC datetime built from `datetime.now(timezone.utc)`, or `None` when the\nsession is not permanent.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 12.5,
+  "said": "REWRITTEN",
+  "scope": "symbol"
+}

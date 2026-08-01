@@ -1,0 +1,20 @@
+{
+  "item": "t07-teardown-first-error",
+  "arm": "falsified",
+  "commit": "fbb6f0bc",
+  "edited": true,
+  "declined": false,
+  "kept_refs": true,
+  "states_new_fact": true,
+  "drops_old_fact": true,
+  "refs_resolved": 0,
+  "refs_total": 1,
+  "fresh_after": false,
+  "before": "`flask.app.Flask.do_teardown_request` runs the teardown callbacks in reverse\nregistration order and stops at the first one that raises.",
+  "after": "`flask.app.Flask.do_teardown_request` runs the teardown callbacks in reverse\nregistration order. All callbacks are called even if one raises; any errors\nare collected via `_CollectErrors` and re-raised together (as a\n`BaseExceptionGroup` on Python 3.11+) after every callback has run.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 14.2,
+  "said": "I updated the \"Behaviour notes\" passage in `.slate/read-next.md` \u2014 it now describes the current behavior: all teardown callbacks run regardless of errors, with errors collected and raised together at the end (as a `BaseExceptionGroup` on 3.11+) instead of stopping at the first failure.\n\nREWRITTEN",
+  "scope": "symbol"
+}

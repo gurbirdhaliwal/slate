@@ -1,141 +1,175 @@
-# repairbench — revision 1
+# repairbench — revision 3
 
-**36 trials, 2026-07-31, `claude-sonnet-5`. Verdict: FAIL — but the failure is
-in the instrument, not in the hypothesis. Revision 1 is inconclusive and its
-primary number should not be quoted.**
+**24 trials, 2026-08-01, `claude-sonnet-5`. Verdict: PASS. Phase 0 of
+`docs/repair-and-resume-plan.md` is answered, and Phases 2–3 are unblocked.**
 
-Pre-registration: [`spec.py`](spec.py), committed in `8ada299` before any agent
-ran. Raw records: [`results-rev1.json`](results-rev1.json).
-
-## What the thresholds said
+Pre-registration: [`spec.py`](spec.py), committed in `2eb1da5` before any agent
+ran. Corpus: [`corpus_rev2.json`](corpus_rev2.json), constructed and verified
+before the run. Raw records: [`results-rev3.json`](results-rev3.json), one
+sidecar and one transcript per trial in [`runs/`](runs).
 
 | Metric | Result | Threshold | |
 |---|---|---|---|
-| every named symbol exists | 29% | ≥90% | **fail** |
-| rewrite still names code | 100% | ≥95% | pass |
-| declined on accurate claims | 88% | ≥50% | pass |
+| discrimination (falsified − accurate edit rate) | 100% − 0% = **100pp** | ≥40pp | pass |
+| significance of that gap | Fisher exact **p = 3.7e-07** | p < 0.05 | pass |
+| repair quality | **10/12 = 83%** | ≥70% | pass |
+| rewrite still names code | **12/12 = 100%** | ≥95% | pass |
 
-`spec.verdict()` returns FAIL, which under the pre-registration means Phases 2
-and 3 of `docs/repair-and-resume-plan.md` do not get built. That conclusion
-stands. The reasoning below is why it should not be read as "agents cannot
-repair documentation".
+## The result
 
-## The headline the thresholds missed
+**The agent rewrote 12 of 12 falsified passages and touched 0 of 12 accurate
+ones.** Perfect separation, on passages that Slate flags identically and that
+are mechanically indistinguishable from inside a trial.
 
-**The agent declined 16 of 18 genuinely stale claims.** It edited two.
+This is the measurement revision 1 could not make. There, both arms declined at
+~88%, so the control threshold passed while measuring nothing. The question was
+never "does the agent decline?" — it was "can the agent tell the difference?",
+and the answer at n=12 per arm is yes.
 
-That is a valid measurement — declining is directly observed, with no
-instrument in the way — and it is the most interesting number here. It also
-guts the control comparison:
+The control declines are reasoned, not reflexive. Each cites the specific nature
+of the change it was shown:
 
-| arm | declined |
-|---|---|
-| repairs (known stale) | 16/18 — 89% |
-| controls (known accurate) | 7/8 — 88% |
+> c08: "a pure refactor — it fixes a Python compile-time restriction (no-arg
+> `super()` inside a list comprehension) by hoisting `super().convert` into a
+> local variable… The passage remains accurate."
 
-The control arm passed its threshold, and the pass is meaningless. The arms are
-indistinguishable. The threshold was a proxy for discrimination, and identical
-decline rates across arms show there is none — the agent declines almost
-everything, so it would have "passed" against any control set at all.
+> c07: "only the return type annotation changed from `FileSystemLoader | None`
+> to `BaseLoader | None`, **which the passage doesn't reference**."
 
-Recording this is the point of having written the threshold down first. It
-passed, and it still tells us nothing.
+The second one matters more than it looks. The agent is reasoning about whether
+the change intersects *what the sentence claims*, which is the judgement the
+whole pivot depends on and the one `slate repair` explicitly cannot make.
 
-## Why the primary metric is void
+## Adjudication (2026-08-01, by hand)
 
-Three independent reasons, any one sufficient:
+Every rewrite was read against the code it describes. **All 24 trials took the
+correct action: 12 truthful repairs, 12 correct declines.**
 
-1. **It scored unchanged text.** With 16/18 declines, most "rewrites" measured
-   were the original sentences. The metric describes the docs Flask already
-   ships, not anything an agent produced.
-2. **The resolver cannot express Flask's API.** `flask.request`, `flask.g`,
-   `flask.url_for`, `app.config` are attributes of a package, not modules, so
-   looking for `flask/request.py` fails on prose that is perfectly correct.
-   This is the same shallow-resolution bound the decision log already records,
-   now measured at scale: 15 of the 18 unresolved refs are real Flask API.
-3. **It punishes accurate prose about deletions.** The agent wrote "The
-   `flask.ext` package has been removed" — true, useful, and it names something
-   that by definition no longer exists. A resolve-based gate marks the correct
-   sentence wrong.
+The mechanical score says 10/12 on repair quality. Both shortfalls are
+instrument defects, and both cost the agent credit it had earned:
 
-Point 3 is not an implementation bug, and it matters beyond this run: it rules
-out `refs_resolve` as Phase 2's gate in the form proposed. A gate that cannot
-express "this API is gone" cannot verify documentation about a codebase that
-deletes things.
+- **`t04` — scorer error.** The rewrite names `__init_subclass__` correctly, and
+  ends "(no longer a separate `MethodViewType` metaclass)". That trailing
+  contrast put a negation cue inside the window around the *new* fact, so
+  `states_new_fact` read False. Negation-awareness — added at this revision to
+  stop punishing prose that retires a fact — belongs to the old-fact question
+  only. Applied to the new fact, it penalises exactly the well-written contrast
+  it was built to reward.
+- **`t08` — corpus error.** The authored `truth` note claimed the subdomain is
+  now derived from `SERVER_NAME`. It is not. The commit gates the
+  `default_subdomain` branch on `host_matching` and changes its fallback from
+  `None` to `""`. The agent's rewrite says exactly that and is more precise than
+  the note it was scored against; `drops_old_fact` read False because it kept a
+  clause the commit never falsified.
 
-## The corpus is weaker than it was designed to be
+**Neither defect can have manufactured the PASS** — both push the score down.
+83% is a floor on repair quality at this revision, not an estimate.
 
-The treatment arm assumed *a maintainer later rewrote this sentence* implies
-*this sentence was false*. Inspection says otherwise:
+The corpus error is worth stating plainly: constructing ground truth reduced
+mislabelling from 13 of 18 pairs in revision 1 to 1 of 12 here, but it did not
+eliminate it. Authoring a passage does not guarantee you understood the commit.
 
-- `docs/views.rst` ×2 — fix commit is "rewrite class-based view docs". An
-  editorial restructure. The old sentences were not wrong.
-- `docs/api.rst` — `:class:`ctx._AppCtxGlobals`` became `:class:`._AppCtxGlobals``.
-  A Sphinx reference-style change, not a factual correction.
-- `.slate/read-next.md` — a real falsification ("renders `freshness.evaluate_all`
-  and nothing else" was untrue once co-change shipped), and the agent missed it.
+## Neither defect was fixed and rescored, on purpose
 
-So an unknown fraction of the 18 "stale" claims were never stale, and the
-agent's declines may be largely correct. The two readings — *too conservative*
-versus *correctly conservative on a mislabelled corpus* — cannot be separated
-from this data.
+Both fixes are known and neither was applied. Rescoring recorded text with a
+matcher built after reading that text is choosing the metric to fit the result,
+which is the failure this whole benchmark exists to avoid. A revision 4 that
+fixes the scorer must run fresh sessions, and there is no reason to spend them:
+the corrected number moves 83% → 100% on a threshold of 70% that already passed.
 
-## Harness defects found
+The fixes, for whoever does bump the revision:
 
-- **10 of 18 controls were skipped**, all "sentence not present at HEAD": the
-  control corpus stores claim text normalised by the segmenter (lines joined),
-  which no longer matches the file byte-for-byte. The control arm ran at n=8.
-- **`.rst` is missing from `refs._FILE_EXTENSIONS`**, so `CHANGES.rst` is
-  extracted as a *symbol reference* rather than a filename. A real product bug
-  for any repo documenting in reStructuredText, not just a harness artifact.
+1. `corpus.asserts()` should take the negation check as a parameter — on for
+   `old_fact`, off for `new_fact`.
+2. `t08`'s `old_fact` should name the unconditional "always uses" and the
+   `None` fallback, which is what the commit actually falsified.
 
-## Adjudication (2026-07-31, by hand)
+## Method
 
-Every pair was labelled after the run. The corpus is worse than the write-up
-above assumed, and in a way that changes the reading of the decline rate:
+Ground truth is **constructed, not discovered** — the change that closed out
+revision 1's failure mode. For each item, [`corpus.py`](corpus.py):
 
-| | count |
-|---|---|
-| genuinely falsified | 10/18 |
-| editorial rewrite — the sentence was true | **8/18** |
-| evidence misattributed — the diff shown does not bear on the sentence | **9/18** |
-| **falsified *and* correctly evidenced** | **5/18** |
+1. checks out `<commit>^`,
+2. runs `slate init`, so the layer is generated and anchored there,
+3. appends an authored passage to `.slate/read-next.md` and commits it,
+4. applies the `src/` half of `<commit>` on top and commits that.
 
-The misattribution category was not anticipated and is the more damaging of
-the two. Ref resolution picked the wrong file — `flask.ext` and `flask.request`
-resolve to a *test fixture* named `flask.py`, `ctx._AppCtxGlobals` to a commit
-titled "update dev dependencies" — so half the trials handed the agent a diff
-that had nothing to do with the sentence in front of it. Declining an
-irrelevant diff is correct behaviour, not a miss.
+The passage's truth value at HEAD is known because it was chosen; the falsifying
+diff is known because it was applied. No resolver stands between a sentence and
+its evidence, which is what destroyed 9 of revision 1's 18 pairs.
 
-So the 16/18 decline rate is mostly defensible: 8 of those declines were on
-sentences that were true, and several more on sentences whose evidence was
-noise.
+Three construction details carry real weight:
 
-**On the 5 pairs that were both falsified and correctly evidenced, the agent
-declined 5 of 5.** That is the only clean measurement in the run, and four of
-the five are the same `docs/config.rst` deprecation pattern, so it is really
-about two independent cases. It is a direction, not a result.
+- **Step 3 precedes step 4.** Prose committed *after* its code is narrowed to
+  fresh by `freshness._prose_supersedes` — correctly — and would have dropped
+  silently out of the experiment.
+- **Only the `src/` half is applied, in both arms.** The full commits carry
+  `CHANGES.rst` entries and only the falsified arm's commits do, so applying
+  them whole would hand the agent an answer key that exists in one arm only.
+- **All 24 are verified before the run** (`corpus.py --verify`): Slate raises
+  exactly one task for the passage, and its evidence names exactly the applied
+  commit. All 24 came back `scope: symbol`.
 
-## What revision 2 needs
+The prompt is identical across arms and says a passage "may be out of date",
+never that it is (`spec.PROMPT_MUST_NOT_ASSERT_STALENESS`).
 
-1. ~~Label the corpus by falsification, not by edit.~~ **Done** — see the
-   adjudication above. It left 5 usable pairs out of 18, which is not a corpus.
-2. **Fix ref resolution first.** It is now the blocker: misattribution is what
-   destroyed 9 of the 18, and no amount of re-labelling recovers them. A
-   corpus cannot be built from a resolver that maps `flask.request` to a test
-   fixture.
-3. **Drop `refs_resolve` as a primary.** It cannot survive deletions. If a
-   mechanical gate is wanted, it has to be able to say "gone".
-4. **Measure discrimination as a difference between arms**, not a threshold on
-   one. Identical decline rates must read as failure, not as a pass.
-5. **Fix the control matching** so the arm runs at full n.
+## What this does not show
 
-## What stands from revision 1
+- **Nothing about delivery.** Every trial handed the agent a scoped task and
+  asked for a decision. That is not evidence an agent will repair docs it was
+  not asked about — revision 1's clearest surviving finding, and the 2026-07-27
+  sweep's, is that *offering* a documentation action does not get the action.
+- **Nothing about unscoped repair.** The unit was one passage with one diff.
+  "Repair the layer" is a different, larger task.
+- **One model, one repo, n=12 per arm.** Flask is a well-documented library with
+  clean commits. A repo with tangled commits is untested.
+- **`refs_resolve` remains descriptive** and remains low (4 of 14 symbols in
+  rewrites resolve). It is not a gate at any revision: it cannot express
+  deletions, and prose about removed API is correct prose. See `spec.py`.
+- **Wall clock is not model effort.** Median trial 15s, but six trials — three
+  per arm — ran 15–65 minutes on API retries and backoff, and `c04`'s session
+  dropped mid-response and was re-run (`5c59d69` makes a failed session void
+  rather than scoring it a decline, so a dropped connection cannot look like
+  discrimination). Total 4.7h for 24 trials is transport, not thinking.
 
-- The agent never stripped backticks — 18/18 kept their refs. The cheapest way
-  to make a doc green and never be caught again did not happen once.
-- Agents offered an explicit, well-scoped repair task mostly decline it. That
-  echoes the MCP finding from the 2026-07-27 sweep: *offering* an agent a
-  documentation action is not sufficient to get the action, even when the task
-  is handed over pre-scoped with the diff attached.
+## Revision history
+
+**Revision 1 (2026-07-31) — void, inconclusive.** 36 trials, mined corpus,
+`spec.verdict()` FAIL. The primary metric scored unchanged text (the agent
+declined 16 of 18), the resolver could not express Flask's package-attribute
+API, and it punished accurate prose about deletions. Hand-adjudication then
+found 8 of 18 treatment pairs were editorial rewrites of true sentences and 9 of
+18 carried misattributed evidence, leaving 5 usable pairs. The control arm ran
+at n=8 because the corpus stored segmenter-normalised text that no longer
+matched the file byte-for-byte. **Its primary number must not be quoted.**
+
+What still stands from it: the agent never stripped backticks (18/18), and
+agents mostly decline documentation actions they are merely offered.
+
+**Revision 2 (2026-08-01) — superseded, not re-scored.** First run on the
+constructed corpus. Discrimination passed decisively (11/12 vs 0/12; the one
+falsified passage left alone was `t08`, the item whose ground truth is now known
+to have been mis-authored). Repair quality failed at 45% — and all six
+shortfalls, read by hand, were correct repairs the scorer misread: four negated
+the old behaviour in order to retire it ("it no longer falls back to
+`SERVER_NAME`"), and two `old_fact` patterns named details the commit never
+removed. The scorer was made negation-aware, two corpus patterns were corrected,
+**the thresholds were left exactly where they were**, and the revision was
+bumped so nothing is compared across the change. Records:
+[`results-rev2.json`](results-rev2.json).
+
+**Revision 3 (2026-08-01) — this run.** Fresh sessions, 24/24 recorded.
+
+## What it unblocks
+
+Under the pre-registration, PASS means Phases 2 and 3 of
+`docs/repair-and-resume-plan.md` get built. Two constraints the data puts on
+Phase 2's verification gate:
+
+1. **The gate cannot be freshness** (revision 1, still binding — a repair is
+   newer prose by definition) and **cannot be `refs_resolve`** (it cannot say
+   "gone"). Both are now measured dead ends, not suspicions.
+2. **"No change needed" must be an accepted, verifiable outcome.** It was the
+   correct answer in 12 of 24 trials here, and on real history most flagged
+   claims are prose that is still accurate. A gate that only recognises
+   successful rewrites scores the correct action as a failure.

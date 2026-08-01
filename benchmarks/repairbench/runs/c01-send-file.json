@@ -1,0 +1,20 @@
+{
+  "item": "c01-send-file",
+  "arm": "accurate",
+  "commit": "4104f299",
+  "edited": false,
+  "declined": true,
+  "kept_refs": true,
+  "states_new_fact": false,
+  "drops_old_fact": false,
+  "refs_resolved": 1,
+  "refs_total": 1,
+  "fresh_after": false,
+  "before": "`flask.helpers.send_file` sends the contents of a file to the client, and does\nnot force a download unless `as_attachment` is true.",
+  "after": "`flask.helpers.send_file` sends the contents of a file to the client, and does\nnot force a download unless `as_attachment` is true.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 345.3,
+  "said": "The change was purely a type-hint fix (`os.PathLike` \u2192 `os.PathLike[t.AnyStr]`), with no change to runtime behavior. The docstring and behavior confirm `send_file` still just sends the file contents and only forces a download when `as_attachment=True`. The passage remains accurate.\n\nUNCHANGED",
+  "scope": "symbol"
+}

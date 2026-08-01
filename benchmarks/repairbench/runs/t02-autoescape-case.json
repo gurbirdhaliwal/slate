@@ -1,0 +1,20 @@
+{
+  "item": "t02-autoescape-case",
+  "arm": "falsified",
+  "commit": "9368fb3f",
+  "edited": true,
+  "declined": false,
+  "kept_refs": true,
+  "states_new_fact": true,
+  "drops_old_fact": true,
+  "refs_resolved": 0,
+  "refs_total": 1,
+  "fresh_after": false,
+  "before": "`flask.sansio.app.App.select_jinja_autoescape` decides autoescaping from the\ntemplate's extension and compares it exactly, so a file named `INDEX.HTML` is\nnot autoescaped.",
+  "after": "`flask.sansio.app.App.select_jinja_autoescape` decides autoescaping from the\ntemplate's extension and compares it case-insensitively (via `.lower()`), so\na file named `INDEX.HTML` is autoescaped.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 12.5,
+  "said": "REWRITTEN",
+  "scope": "symbol"
+}

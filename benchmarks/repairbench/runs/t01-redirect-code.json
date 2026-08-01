@@ -1,0 +1,20 @@
+{
+  "item": "t01-redirect-code",
+  "arm": "falsified",
+  "commit": "eca5fd1d",
+  "edited": true,
+  "declined": false,
+  "kept_refs": true,
+  "states_new_fact": true,
+  "drops_old_fact": true,
+  "refs_resolved": 1,
+  "refs_total": 2,
+  "fresh_after": false,
+  "before": "`flask.helpers.redirect` builds the redirect response and defaults `code` to\n302, delegating to `current_app.redirect` when an application context is\nactive.",
+  "after": "`flask.helpers.redirect` builds the redirect response and defaults `code` to\n303, delegating to `current_app.redirect` when an application context is\nactive.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 15.8,
+  "said": "The default status code changed from 302 to 303 in commit `eca5fd1d`, so I updated the passage in `.slate/read-next.md` to match.\n\nREWRITTEN",
+  "scope": "symbol"
+}

@@ -86,3 +86,28 @@ def test_no_reference_is_lost_vs_whole_text() -> None:
 
 def c_refs(claim: claims.Claim) -> set[str]:
     return set(claim.refs)
+
+
+# --- filenames are not symbols ----------------------------------------------
+
+
+def test_doc_filenames_are_not_symbol_references() -> None:
+    """A filename read as a symbol is a claim about code nobody named.
+
+    repairbench rev 1 scored `CHANGES.rst` as a symbol reference, so a doc that
+    merely pointed at its own changelog was measured against a phantom. The
+    extension guard has to cover the formats docs are actually written in, not
+    only the ones Slate can parse.
+    """
+    for name in ("CHANGES.rst", "guide.mdx", "notes.adoc", "paper.tex",
+                 "main.go", "Server.java", "schema.sql", "pom.xml"):
+        assert extract_symbol_refs(f"see `{name}` for detail") == [], name
+
+
+def test_real_symbols_still_extract() -> None:
+    # The guard must not swallow genuine references that happen to end in a
+    # short lowercase word.
+    assert extract_symbol_refs("`context.get_auto_block` and `Doc.h`") == [
+        "context.get_auto_block"
+    ]
+    assert extract_symbol_refs("`freshness.evaluate_all`") == ["freshness.evaluate_all"]

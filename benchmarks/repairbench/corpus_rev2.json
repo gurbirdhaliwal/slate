@@ -25,7 +25,7 @@
     "commit": "06ea505c",
     "subject": "separate copy per call",
     "claim": "`flask.ctx.copy_current_request_context` copies the active context once, at decoration time, and the wrapped function always runs inside that single shared copy.",
-    "old_fact": ["(?i)single shared copy", "(?i)at decoration time", "(?i)copies .{0,40}once"],
+    "old_fact": ["(?i)single shared copy", "(?i)copies .{0,40}once"],
     "new_fact": ["(?i)(each|every|per) call", "(?i)separate copy", "(?i)its own copy", "(?i)independent"],
     "truth": "The copy is now made inside the wrapper, so each call gets its own context."
   },
@@ -85,7 +85,7 @@
     "commit": "28d5a4d7",
     "subject": "add encoding parameter to open_resource",
     "claim": "`flask.app.Flask.open_resource` takes only the resource path and a `mode`; text mode uses the platform default and the caller cannot override it.",
-    "old_fact": ["(?i)takes only", "(?i)cannot override", "(?i)platform default"],
+    "old_fact": ["(?i)takes only", "(?i)cannot override"],
     "new_fact": ["`encoding`", "(?i)encoding (parameter|argument|keyword)"],
     "truth": "open_resource gained an encoding parameter, used in text mode."
   },

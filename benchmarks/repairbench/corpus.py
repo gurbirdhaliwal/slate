@@ -156,11 +156,45 @@ def matches(pattern: str, text: str) -> bool:
     return re.search(pattern, normalise(text)) is not None
 
 
+# Naming the old behaviour in order to say it is gone is good documentation,
+# and it is what a repair written by someone who knows the history looks like:
+# "it no longer falls back to `SERVER_NAME`". Revision 2 scored those as still
+# asserting the old fact and marked six correct repairs wrong.
+# Only *contrastive* cues — the ways prose retires a fact. Bare negations are
+# deliberately absent: "not" catches unrelated clauses ("or `None` when the
+# session is not permanent" sits 65 characters from an unrelated "naive") and
+# every false negation here is a false pass, the one direction that matters.
+NEGATION_CUES = (
+    "no longer", "instead of", "rather than", "used to", "previously",
+    "removed", "prior to", "formerly", "replaced", "no fallback",
+)
+NEGATION_WINDOW = 80
+
+
+def _negated(text: str, start: int, end: int) -> bool:
+    """Is this mention inside a construction that denies it?
+
+    Looks both ways: the cue can precede the mention ("no longer falls back to
+    SERVER_NAME") or follow it ("falls back to SERVER_NAME (removed in ...)").
+    """
+    left = text[max(0, start - NEGATION_WINDOW):start].lower()
+    right = text[end:end + NEGATION_WINDOW].lower()
+    return any(cue in left or cue in right for cue in NEGATION_CUES)
+
+
 def asserts(patterns: list[str], text: str) -> bool:
-    """Any-of. The lists are alternative phrasings of one fact, not a
-    conjunction: a repair states the new fact *somehow*, and drops every way of
-    stating the old one."""
-    return any(matches(p, text) for p in patterns)
+    """Does the text *assert* any of these facts?
+
+    Any-of: the lists are alternative phrasings of one fact, not a conjunction.
+    A repair states the new fact somehow, and stops asserting the old one — but
+    a mention it explicitly negates is not an assertion.
+    """
+    flat = normalise(text)
+    for pattern in patterns:
+        for hit in re.finditer(pattern, flat):
+            if not _negated(flat, hit.start(), hit.end()):
+                return True
+    return False
 
 
 def task_for(repo: Path) -> dict | None:

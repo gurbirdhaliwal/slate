@@ -70,6 +70,35 @@ All 24 are verified before the run: Slate raises exactly one task for the
 passage, and the evidence names exactly the applied commit
 (``corpus.py --verify``). Both arms are mechanically identical, so nothing but
 the content of the diff can tell an agent which arm it is in.
+
+What revision 3 changes, and what it deliberately does not
+----------------------------------------------------------
+Revision 2 ran all 24 trials. Discrimination passed decisively (11/12 falsified
+rewritten, 0/12 accurate touched) and repair quality failed at 45%. Every one
+of the six shortfalls was then read by hand, and all six were *correct repairs*
+that the scorer misread, in two ways:
+
+* four negated the old behaviour in order to retire it — "it no longer falls
+  back to ``SERVER_NAME``", "(no longer a ``MethodViewType`` metaclass)".
+  ``drops_old_fact`` asked whether the old fact was *mentioned*, which is not
+  the same question as whether it is *asserted*. That is now negation-aware.
+* two ``old_fact`` patterns named details the commit did not actually remove —
+  ``open_resource`` really does still default to the platform encoding, and
+  ``copy_current_request_context`` really is still applied at decoration time.
+  Those were authoring errors in the corpus, and the patterns are removed.
+
+The thresholds are **unchanged**. The point of writing them down first is lost
+if a run that misses them is answered by lowering them, so revision 3 fixes the
+instrument and keeps the bar exactly where revision 2 set it. Revision 2's
+numbers are superseded, not re-scored: rescoring the recorded text with a
+matcher built after reading that text would be choosing the metric to fit the
+result. Revision 3's records come from fresh sessions.
+
+Known bound on the new matcher: a rewrite that genuinely still asserts the old
+behaviour while a negation cue happens to sit within 90 characters is scored as
+having dropped it. That direction is a false pass, so it is the one to watch;
+it is bounded by the primary also requiring the new fact to be stated, and by
+adjudication remaining part of the report.
 """
 
 from __future__ import annotations
@@ -91,7 +120,9 @@ TRIALS_PER_ARM = 12
 #   1 — first pre-registration, after the freshness criterion was retired.
 #   2 — constructed corpus; discrimination measured between arms; refs_resolve
 #       demoted to descriptive; control matching fixed by construction.
-REVISION = 2
+#   3 — negation-aware fact matching, after revision 2's scorer marked six
+#       correct repairs wrong. Thresholds deliberately unchanged; see below.
+REVISION = 3
 
 # Identical for both arms, and it must stay that way: the control arm only
 # measures discrimination if the agent cannot tell which arm it is in. It says

@@ -3,6 +3,10 @@
 These pin two things the rest of the arc depends on: that a task points at a
 place someone can open, and that a task is never mistaken for proof the prose
 is wrong. Most flagged claims on real history were still accurate.
+
+The second half pins the verification gate. Those are written as adversarial
+cases on purpose: the interesting failures of a repair loop are the ones where
+the doc ends up *looking* healthier than it is.
 """
 
 from __future__ import annotations
@@ -124,3 +128,141 @@ def test_claim_verdicts_stay_backward_compatible(repo: Path) -> None:
     report = next(r for r in freshness.evaluate_all(repo) if r.claims)
     payload = report.claims[0].as_dict()
     assert {"text", "section", "kind", "status", "refs", "risk"} <= set(payload)
+
+
+# --------------------------------------------------------------------------
+# the verification gate
+
+
+BODY = """# Notes
+
+## Engine
+
+`engine.run` returns 42.
+
+## Helpers
+
+`helper.a` returns 1.
+"""
+
+
+def verify(after: str, target: str = "`engine.run` returns 42.") -> repair.Verdict:
+    return repair.verify_repair(BODY, after, target)
+
+
+def test_an_honest_repair_is_accepted() -> None:
+    after = BODY.replace("`engine.run` returns 42.", "`engine.run` returns 43.")
+    verdict = verify(after)
+    assert verdict.outcome == repair.REPAIRED
+    assert verdict.ok and verdict.reasons == []
+
+
+def test_stripping_the_refs_is_rejected() -> None:
+    # The cheapest way to make a doc green, and the most damaging: with no
+    # backticks the sentence stops being a claim, so nothing can ever catch it
+    # being wrong again.
+    after = BODY.replace("`engine.run` returns 42.", "The engine returns 43.")
+    verdict = verify(after)
+    assert verdict.outcome == repair.REJECTED
+    assert any("never be checked again" in reason for reason in verdict.reasons)
+
+
+def test_fluent_prose_with_nothing_checkable_is_rejected() -> None:
+    after = BODY.replace(
+        "`engine.run` returns 42.",
+        "The engine has been carefully reworked and now behaves as expected.")
+    assert verify(after).outcome == repair.REJECTED
+
+
+def test_deleting_the_claim_outright_is_rejected() -> None:
+    after = BODY.replace("`engine.run` returns 42.\n", "")
+    verdict = verify(after)
+    assert verdict.outcome == repair.REJECTED
+    assert verdict.claims_after < verdict.claims_before
+
+
+def test_breaking_another_claim_while_fixing_this_one_is_rejected() -> None:
+    after = (BODY
+             .replace("`engine.run` returns 42.", "`engine.run` returns 43.")
+             .replace("`helper.a` returns 1.", "`helper.a` returns 99."))
+    verdict = verify(after)
+    assert verdict.outcome == repair.REJECTED
+    assert any("other claim" in reason for reason in verdict.reasons)
+
+
+def test_editing_a_different_claim_instead_is_rejected() -> None:
+    after = BODY.replace("`helper.a` returns 1.", "`helper.a` returns 99.")
+    verdict = verify(after)
+    assert verdict.outcome == repair.REJECTED
+    assert any("left alone" in reason for reason in verdict.reasons)
+
+
+def test_no_change_needed_is_an_accepted_outcome() -> None:
+    # It was the correct action in 12 of repairbench rev 3's 24 trials. A gate
+    # that only recognises a successful rewrite scores the right answer wrong.
+    verdict = verify(BODY)
+    assert verdict.outcome == repair.UNCHANGED
+    assert verdict.ok
+
+
+def test_rewrapping_the_same_claim_is_not_an_edit() -> None:
+    after = BODY.replace("`engine.run` returns 42.", "`engine.run`\nreturns 42.")
+    assert verify(after).outcome == repair.UNCHANGED
+
+
+def test_moving_the_repair_to_another_section_is_rejected() -> None:
+    after = BODY.replace("`engine.run` returns 42.\n", "").replace(
+        "`helper.a` returns 1.", "`helper.a` returns 1.\n\n`engine.run` returns 43.")
+    verdict = verify(after)
+    assert verdict.outcome == repair.REJECTED
+    assert any("not 'Engine'" in reason for reason in verdict.reasons)
+
+
+def test_a_target_that_is_not_in_the_document_verifies_nothing() -> None:
+    verdict = repair.verify_repair(BODY, BODY, "`engine.run` returns 7.")
+    assert verdict.outcome == repair.REJECTED
+    assert any("nothing to verify" in reason for reason in verdict.reasons)
+
+
+def test_verdict_json_shape_is_complete() -> None:
+    payload = verify(BODY).as_dict()
+    assert set(payload) == {
+        "outcome", "ok", "reasons", "claims_before", "claims_after"}
+
+
+def test_repair_cannot_manufacture_fresh(repo: Path) -> None:
+    """The exit criterion for Phase 2, in the spirit of
+    `test_merged_layer_is_not_falsely_fresh`.
+
+    The trap is demonstrated, not assumed: the doc really does go green when
+    the refs are deleted, because `_claims_still_check_out` reads references
+    out of the human text and a sentence without backticks has none. The gate
+    is what stands between that edit and the layer.
+    """
+    init_layer(repo)
+    claim(repo, "`engine.run` returns 42.")
+    commit_all(repo, "describe run")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    commit_all(repo, "change run")
+
+    doc_path = repo / ".slate" / "read-next.md"
+    stale = next(r for r in freshness.evaluate_all(repo)
+                 if r.rel_path == ".slate/read-next.md")
+    assert stale.status != context.FRESH
+
+    before = context.load(repo, stale.doc.spec).body
+    doc_path.write_text(doc_path.read_text().replace(
+        "`engine.run` returns 42.", "The engine returns something."))
+
+    # The trap is real: freshness alone now calls this doc fresh, on prose that
+    # says strictly less than the sentence it replaced.
+    healed = next(r for r in freshness.evaluate_all(repo)
+                  if r.rel_path == ".slate/read-next.md")
+    assert healed.status == context.FRESH
+
+    # The gate refuses it, and says why.
+    after = context.load(repo, stale.doc.spec).body
+    verdict = repair.verify_repair(before, after, "`engine.run` returns 42.")
+    assert verdict.outcome == repair.REJECTED
+    assert not verdict.ok
+    assert any("never be checked again" in reason for reason in verdict.reasons)

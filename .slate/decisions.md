@@ -751,3 +751,53 @@ Revisit trigger: An instrument defect that is *not* conservative — one that
           could inflate a result rather than deflate it. That cannot be left
           standing and must trigger a fresh revision immediately.
 ```
+
+```
+Date: 2026-08-01
+Decision: `repair.verify_repair(before, after, target)` is a pure function of
+          two document bodies and the segmenter. It returns `repaired`,
+          `unchanged` or `rejected`, and it decides whether an edit is
+          admissible — never whether the doc is fresh. The drafted
+          `(root, doc, before, after)` signature was cut down.
+Rationale: No check that survived Phase 0 needs the tree. Freshness cannot
+          score a repair (a repair is newer prose by definition, so authorship
+          narrowing reads a timestamp the repair just updated), and
+          "every named symbol resolves" cannot express deletion — repairbench
+          rev 3 measured 4 of 14 symbols in *correct* rewrites failing to
+          resolve. What is left is textual: the claim still exists carrying
+          refs, nothing else moved, and declining is a pass. A handle to the
+          repo that no check uses is how a purely textual gate grows a second
+          opinion about trust, which §10 forbids.
+Trade-off: The gate cannot say a repair is *true*. `repaired` means well-formed
+          and confined, nothing more. Truth stays with the human reviewing a
+          proposal, and Phase 3 keeps repairs as proposals for that reason.
+Safety:    `test_repair_cannot_manufacture_fresh` demonstrates the trap rather
+          than assuming it — it asserts the doc really does turn `fresh` once
+          the refs are stripped, then that the gate refuses the edit. Nine more
+          adversarial cases cover ref deletion, unverifiable prose, collateral
+          edits, editing the wrong claim, and relocation to another section.
+Revisit trigger: A repair that legitimately needs to touch two claims at once
+          (splitting a paragraph that documents two symbols). Today that is a
+          rejection, deliberately — the safe direction — and a human unblocks it.
+```
+
+```
+Date: 2026-08-01
+Decision: The repaired claim is located by *section*, not by line number, and
+          "no change needed" is an accepted outcome rather than a failure to
+          repair.
+Rationale: A rewrite reflows the paragraph it replaces, so pinning an exact
+          line would reject the ordinary case; the segmenter already joins a
+          unit's lines before emitting it, so re-wrapping is not a claim-level
+          change at all. And declining was the correct action in 12 of
+          repairbench rev 3's 24 trials — on real history most flagged claims
+          are prose that is still accurate, because a `path`-scoped verdict
+          only says a file changed somewhere near them.
+Trade-off: Section granularity lets a repair move within its own section
+          unnoticed. That is a smaller risk than rejecting every reflow, and
+          the claim must still exist and still carry refs either way.
+Safety:    `test_moving_the_repair_to_another_section_is_rejected` and
+          `test_rewrapping_the_same_claim_is_not_an_edit` pin both sides.
+Revisit trigger: A doc whose sections are large enough that "somewhere in this
+          section" stops being a useful location.
+```

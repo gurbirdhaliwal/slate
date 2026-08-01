@@ -1,9 +1,9 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: 7cbd873
-slate_synced_at: 2026-08-01T17:10:36+00:00
-slate_synced_digest: 307a0dda437de58c
+slate_synced_commit: d5581ad
+slate_synced_at: 2026-08-01T17:35:56+00:00
+slate_synced_digest: 8faf2c9b24db995d
 slate_watches:
   - benchmarks/**
   - slate/**
@@ -187,14 +187,15 @@ not an engine change. Known bound: a claim spanning both new and old prose
 blames to the oldest line, so an old paragraph gaining a new ref stays flagged.
 Conservative on purpose — the safe direction.
 
-**Repair tasks — landed (2026-07-31). This is the current focus.** New
-`slate/repair.py` + `slate repair [--json]`: the suspect *hand-written* claims,
-strongest evidence first, each with the refs that put it at risk, the commits
-behind them, and a file line someone can open. `ClaimVerdict` gained
+**Repair tasks (Phase 1) — landed (2026-07-31).** New `slate/repair.py` +
+`slate repair [--json]`: the suspect *hand-written* claims, strongest evidence
+first, each with the refs that put it at risk, the commits behind them, and a
+file line someone can open. `ClaimVerdict` gained
 `doc_path`/`line`/`end_line`/`scope` (additive, as Part B was);
 `freshness.symbol_files` went public because repair resolves a symbol ref to
-its candidate files the same way the engine does. Reads only — no writes, no
-model, no second opinion about freshness.
+its candidate files the same way the engine does. The worklist half is still
+reads-only — no writes, no model, no second opinion about freshness — and the
+gate added beside it in Phase 2 keeps all three properties.
 
 Two scoping calls worth keeping. **Generated facts are not repair tasks**:
 `slate sync` already rewrites the auto-block deterministically for zero tokens,
@@ -304,13 +305,30 @@ neither can have manufactured the PASS, and fixing-then-rescoring recorded text
 would be choosing the metric to fit the result. A rev 4 must run fresh sessions,
 and there is no reason to spend them: 83% already cleared a 70% bar.
 
-**Where the arc stands.** Phases 0 and 1 complete. **Phase 2 is next and now has
-a working design constraint set** rather than two dead gates: it cannot rest on
-freshness (circular) or on `refs_resolve` (cannot express deletion — 4 of 14
-symbols in *correct* rewrites failed to resolve), what survives is "still names
-code" + "no other claim regresses" + "the claim still exists carrying refs", and
-**"no change needed" has to be an accepted verifiable outcome** — it was the
-right answer in half the trials. Phases 3–5 untouched.
+**Phase 2 — the verification gate — landed (2026-08-01). This is the current
+state.** `repair.verify_repair(before, after, target)` returns a `Verdict` of
+`repaired` / `unchanged` / `rejected`, and it decides *admissibility of an edit*,
+never freshness. It is pure — the two doc bodies and `claims.human_claims`, no
+tree, no git, no scan, no model — because the drafted `(root, doc, ...)`
+signature handed a purely textual check a handle to the repo, which is how it
+would grow a second opinion about trust.
+
+Three things must hold, all about damage rather than truth: the target claim
+still exists in its own section *carrying refs*; nothing else moved; and
+"no change needed" is a pass. The first is the one that matters —
+`claims._emit` only emits a unit that references code, so an agent can "repair"
+a claim by deleting its backticks, the claim vanishes from `human_claims`, and
+the doc goes green. `test_repair_cannot_manufacture_fresh` demonstrates that
+rather than assuming it: it asserts the doc really does turn `fresh` after the
+refs are stripped, then that the gate refuses the edit. Located by *section*,
+not line — a rewrite reflows the paragraph it replaces, so an exact line would
+reject the ordinary case.
+
+**Where the arc stands.** Phases 0, 1 and 2 complete. Phase 3 is next, and the
+ordering constraint that the verifier ships before the writer is now satisfied.
+Phases 3–5 otherwise untouched. Nothing calls `verify_repair` yet, by design:
+Phase 3 owns the write path (`slate_repair_apply`, `agentcfg.FULL`, default
+off) and the `SessionEnd` delivery that tells an agent it has a repair job.
 
 Most of what shipped in this arc was still *off-plan*: claims never being
 evaluated at all, co-landing prose flagged as rot, package symbols falsely
@@ -318,11 +336,19 @@ fresh, `.rst` filenames read as symbols. Two false-`fresh` classes closed.
 Chasing the pivot has been an excellent bug-finding strategy, and it took three
 revisions of instrument before it was also a hypothesis test.
 
-**Next, in priority order.** (0) **Phase 2 — the verification gate**, per the
-constraints above, with `test_repair_cannot_manufacture_fresh` as its exit
-criterion; the ref-deletion trap in `claims._emit` is the one that matters, since
-a claim stripped of backticks vanishes from `human_claims` and the doc goes
-green. (1) Replicate the cost effect with cost
+**Next, in priority order.** (0) **Phase 3 — session-end delivery.** A
+`SessionEnd`/`Stop` event in `claudehook.py` following the shape of
+`session_start_text` exactly (`additionalContext` only, no trust math, silence
+and exit 0 on any failure), plus `slate_repair_tasks` (read) and
+`slate_repair_apply` (write) on MCP, gated behind `agentcfg.FULL` and default
+off. Repair-*after*, not repair-before: describing a change you just made is
+near-free and accurate, reconstructing why a doc rotted from someone else's diff
+is archaeology. Do not add PreToolUse blocking — it collides with the landmine
+that no hook path may break a session. And note what Phase 0 does *not* license:
+every trial handed the agent a scoped task and asked for a decision, so nothing
+measured says an agent will repair docs it was not asked about. That is exactly
+what the 3-calls-in-687 MCP finding says it will not do, and it is the bet Phase
+3 makes and Phase 4 tests. (1) Replicate the cost effect with cost
 *pre-registered* and higher n, and run SessionStart and PreToolUse as separate
 arms — right now the sweep cannot say which hook did the work. (2) The old
 `benchmarks/RESULTS.md` + `benchmark.py` are still self-referential and
@@ -346,4 +372,6 @@ control, side effects only) would turn "the layer loaded" into a logged fact.
 - Claude Code reads `CLAUDE.md`, not `AGENTS.md`. Project `.claude/settings.json` hooks *do* load under `claude -p`; project `.mcp.json` does **not** without `--mcp-config`. Verify delivery with a canary before trusting any agent-behaviour measurement.
 - `slate sync` cannot clear `read-next`. It has `generated: false`, so there is no auto-block to regenerate — only `slate mark read-next` re-anchors it, and only after someone has actually rewritten the focus text. Marking a doc you have not read is the one way to turn this whole layer back into a rumor.
 - Authorship narrowing may only ever narrow. `freshness._prose_supersedes` must return False for every question it cannot answer — no blame, no anchor, no file. A `git` call that starts *assuming* recency is a false `fresh` with extra steps.
+- `repair.verify_repair` must stay pure and must never consult freshness. It answers "is this edit admissible", not "is this doc now accurate" — freshness cannot answer the second about a repair, because a repair is newer prose by definition and authorship narrowing reads a timestamp the repair just updated. Measured: replacing a stale sentence with "`engine.run` returns 9999 purple" turns the doc `fresh`. Re-anchoring stays with `freshness.evaluate` and `slate mark`.
+- A repair may never be allowed to *remove* a claim's refs. `claims._emit` only emits a unit that references code, so stripping the backticks deletes the claim from the trust surface entirely and the doc goes green — a false `fresh` manufactured by the feature meant to prevent it. Pinned by `test_repair_cannot_manufacture_fresh`.
 - Don't reintroduce the old `apps/`/`packages/`/`infra/` trees from git history (decision log 2026-07-15).

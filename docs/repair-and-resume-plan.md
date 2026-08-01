@@ -1,6 +1,6 @@
 # Execution plan — the repair-and-resume pivot
 
-**Status:** Phase 0 passed (2026-08-01), Phase 1 shipped · **Drafted:** 2026-07-30
+**Status:** Phases 0–2 done (2026-08-01) · **Drafted:** 2026-07-30
 
 Phase 0 took two experiment cycles and three revisions. It is answered:
 `benchmarks/repairbench/RESULTS.md` records 12/12 falsified passages repaired
@@ -169,7 +169,22 @@ Independently valuable to a human, with no agent involved.
 
 ## Phase 2 — The verification gate
 
-*The false-fresh invariant lives or dies here.*
+*The false-fresh invariant lives or dies here.* **Shipped 2026-08-01** as
+`repair.verify_repair(before, after, target) -> Verdict`, with
+`test_repair_cannot_manufacture_fresh` as the exit criterion. Two deviations
+from the draft below, both deliberate:
+
+- **The signature dropped `root` and `doc`.** No check that survived Phase 0
+  needs the tree, and a handle to the repo is how a pure admissibility check
+  grows a second opinion about freshness. The function consults the two bodies
+  and the segmenter, nothing else.
+- **The claim is located by section, not by line.** A rewrite reflows the
+  paragraph it replaces, so an exact line would reject the ordinary case. What
+  is pinned is that the repaired claim still exists *in its own section,
+  carrying refs*.
+
+Outcomes are `repaired`, `unchanged`, and `rejected`. `unchanged` is a pass —
+see the constraint below.
 
 > **This gate as originally drafted does not work.** It required "the target
 > claim becomes fresh", which every edit satisfies — see the retired criterion

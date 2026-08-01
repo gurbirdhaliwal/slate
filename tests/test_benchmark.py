@@ -58,3 +58,67 @@ def test_benchmark_markdown_renders(repo: Path) -> None:
     )
     assert "## 1. Session start" in proc.stdout
     assert "0 tokens" in proc.stdout
+
+
+# --------------------------------------------------------------------------
+# agentbench E3 — the repair sweep's pre-registration
+
+
+def _agentbench_spec():
+    import importlib.util
+    import sys as _sys
+    path = (Path(__file__).resolve().parent.parent / "benchmarks" / "agentbench"
+            / "spec.py")
+    module_spec = importlib.util.spec_from_file_location("agentbench_spec", path)
+    module = importlib.util.module_from_spec(module_spec)
+    # Registered before exec: `@dataclass` resolves annotations through
+    # `sys.modules[cls.__module__]`, which is None for a module that is only
+    # half-imported, and the failure surfaces as an AttributeError inside
+    # dataclasses rather than anywhere near here.
+    _sys.modules[module_spec.name] = module
+    module_spec.loader.exec_module(module)
+    return module
+
+
+def test_seeded_claims_name_code() -> None:
+    """The whole experiment rests on these being *claims*.
+
+    `claims._emit` only emits a body unit that references code, so a seeded
+    sentence with no backticked ref is invisible to `slate repair` — which is
+    exactly how the plan's original design came to measure zero. A future edit
+    that softens the prose must not be able to do that silently.
+    """
+    from slate.claims import human_claims
+
+    spec = _agentbench_spec()
+    assert spec.SEEDED_CLAIMS, "the E3 arms need seeded claims to have anything to repair"
+    for claim_text in spec.SEEDED_CLAIMS:
+        emitted = human_claims(f"## Current focus\n\n{claim_text}\n")
+        refs = [r for c in emitted for r in c.refs]
+        assert refs, f"seeded claim carries no code reference: {claim_text[:60]}"
+
+
+def test_repair_verdict_needs_a_gap_not_a_level() -> None:
+    """Revision 1 of repairbench passed a threshold on one arm and measured
+    nothing. An arm that repairs everything must still fail if the control
+    does too."""
+    spec = _agentbench_spec()
+    passed, failures = spec.repair_verdict(
+        convergence_on=1.0, convergence_off=1.0,
+        accepted=5, rejected=0, delivery=1.0)
+    assert not passed
+    assert any("no convergence" in f for f in failures)
+
+
+def test_repair_verdict_voids_rather_than_fails_on_bad_delivery() -> None:
+    spec = _agentbench_spec()
+    _, failures = spec.repair_verdict(1.0, 0.0, 5, 0, delivery=0.0)
+    assert any("VOID" in f for f in failures)
+
+
+def test_repair_verdict_keeps_the_plans_kill_criterion() -> None:
+    """"If verified repairs do not exceed rejections ... the pivot failed"."""
+    spec = _agentbench_spec()
+    passed, failures = spec.repair_verdict(1.0, 0.0, 2, 2, 1.0)
+    assert not passed
+    assert any("costs more than it returns" in f for f in failures)

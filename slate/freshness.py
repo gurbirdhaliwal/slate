@@ -156,10 +156,10 @@ def _evaluate(root: Path, doc: ContextDoc, get_scan: Callable[[], RepoScan]) -> 
 
     scan = get_scan()
     changed_syms = _changed_symbols(root, anchor, hits)
-    all_stems = {_stem(f) for f in scan.files if _is_code(f)}
-    claims = _build_claims(root, anchor, doc, hits, scan, changed_syms, all_stems)
+    all_modules = {_module_path(f) for f in scan.files if _is_code(f)}
+    claims = _build_claims(root, anchor, doc, hits, scan, changed_syms, all_modules)
 
-    if _claims_still_check_out(root, anchor, doc, hits, scan, changed_syms, all_stems):
+    if _claims_still_check_out(root, anchor, doc, hits, scan, changed_syms, all_modules):
         return DocReport(
             doc, FRESH, changed_watched=hits, content_verified=True, claims=claims,
             reason=(
@@ -180,7 +180,7 @@ def _evaluate(root: Path, doc: ContextDoc, get_scan: Callable[[], RepoScan]) -> 
 
 def _claims_still_check_out(
     root: Path, anchor: str, doc: ContextDoc, hits: list[str], scan: RepoScan,
-    changed_syms: list[tuple[str, set[str] | None]], all_stems: set[str],
+    changed_syms: list[tuple[str, set[str] | None]], all_modules: set[str],
 ) -> bool:
     """True when the watched changes provably did not invalidate the doc.
 
@@ -231,7 +231,7 @@ def _claims_still_check_out(
                 return False
 
     for ref in extract_symbol_refs(human_text):
-        if _symbol_verdict(ref, changed_syms, all_stems) != CLAIM_FRESH:
+        if _symbol_verdict(ref, changed_syms, all_modules) != CLAIM_FRESH:
             if _prose_supersedes(
                 root, doc, _ref_lines(doc.body, ref), symbol_files(ref, hits), anchor
             ):
@@ -265,7 +265,11 @@ def symbol_files(ref: str, hits: list[str]) -> list[str]:
     if len(parts) < 2:
         return []
     code = [hit for hit in hits if _is_code(hit)]
-    return [hit for hit in code if _stem(hit) == parts[-2]] or code
+    prefix = ".".join(parts[:-1])
+    named = [hit for hit in code
+             if _qualifies(_module_path(hit), parts[-2])
+             or _qualifies(_module_path(hit), prefix)]
+    return named or code
 
 
 def _prose_supersedes(
@@ -325,10 +329,50 @@ def _stem(path: str) -> str:
     return Path(path).stem
 
 
+# Directories that hold a package rather than being part of its import path.
+_SOURCE_ROOTS = {"src", "lib"}
+
+
+def _module_path(path: str) -> str:
+    """Dotted module path for a code file.
+
+    ``src/flask/views.py`` -> ``flask.views``; ``pkg/__init__.py`` -> ``pkg``;
+    ``tests/apps/flask.py`` -> ``tests.apps.flask``.
+
+    Matching on the *stem* alone was a false `fresh`, not merely imprecision.
+    A claim about ``pkg.request`` whose symbol lives in ``pkg/__init__.py``
+    never matched, because that file's stem is ``__init__``; and when some
+    unrelated ``fixtures/pkg.py`` existed, the qualifier counted as "known" and
+    suppressed the conservative fallback that would otherwise have caught it.
+    Flask has exactly that shape — a test fixture named ``flask.py`` beside the
+    real package.
+    """
+    parts = list(Path(path).parts)
+    if parts and parts[0] in _SOURCE_ROOTS:
+        parts = parts[1:]
+    if not parts:
+        return ""
+    if parts[-1] == "__init__.py":
+        parts = parts[:-1]          # the package, not a module inside it
+    else:
+        parts[-1] = Path(parts[-1]).stem
+    return ".".join(parts)
+
+
+def _qualifies(module: str, qualifier: str) -> bool:
+    """Does `qualifier` name `module`?
+
+    Both the bare tail and a dotted prefix count, so ``views`` and
+    ``flask.views`` each name ``flask.views``. Deliberately generous: matching
+    too much costs a false `stale`, matching too little costs a false `fresh`.
+    """
+    return bool(module) and (module == qualifier or module.endswith("." + qualifier))
+
+
 def _changed_symbols(
     root: Path, anchor: str | None, hits: list[str]
 ) -> list[tuple[str, set[str] | None]]:
-    """For each changed *code* hit: (module stem, changed symbols | None).
+    """For each changed *code* hit: (dotted module path, changed symbols | None).
 
     ``None`` marks an opaque file (unparseable, deleted, or a code language we
     can't parse) — the caller reads it as "every symbol here might have moved".
@@ -339,12 +383,12 @@ def _changed_symbols(
         if not _is_code(hit):
             continue  # non-code changes can't touch a code symbol
         syms = symbols.changed_symbols(root / hit, hunks.get(hit, []))
-        resolved.append((_stem(hit), syms))
+        resolved.append((_module_path(hit), syms))
     return resolved
 
 
 def _symbol_verdict(
-    ref: str, changed: list[tuple[str, set[str] | None]], all_stems: set[str]
+    ref: str, changed: list[tuple[str, set[str] | None]], all_modules: set[str]
 ) -> str:
     """Classify a ``module.symbol`` reference against the change.
 
@@ -364,24 +408,29 @@ def _symbol_verdict(
     if len(parts) < 2:
         return CLAIM_UNKNOWABLE  # not a resolvable module.symbol — refuse to vouch
     symbol, qualifier = parts[-1], parts[-2]
+    # The full dotted prefix is the precise name when the ref carries one:
+    # `flask.views.View` names the module `flask.views`, not merely `views`.
+    prefix = ".".join(parts[:-1])
+    known = any(_qualifies(m, qualifier) or _qualifies(m, prefix) for m in all_modules)
     dotted = f"{qualifier}.{symbol}"
     verdict = CLAIM_FRESH
-    for stem, syms in changed:
+    for module, syms in changed:
+        names_it = _qualifies(module, qualifier) or _qualifies(module, prefix)
         if syms is None:
             # Opaque changed file. It could hold the symbol unless the ref
             # clearly names a *different*, known module.
-            if stem == qualifier or qualifier not in all_stems:
+            if names_it or not known:
                 verdict = _worse(verdict, CLAIM_UNKNOWABLE)
             continue
-        if stem == qualifier and symbol in syms:
+        if names_it and symbol in syms:
             return CLAIM_STALE  # `module.symbol` — the referenced def changed here
         if dotted in syms:
             return CLAIM_STALE  # `Class.method` — the referenced method changed here
-    if qualifier not in all_stems:
+    if not known:
         # An unresolvable qualifier (not a known module, not a matched class):
         # if any changed file moved a symbol of this name, we can't prove ours
         # is a different one. Conservative — unknowable, never fresh.
-        for _stem_, syms in changed:
+        for _module_, syms in changed:
             if syms is not None and symbol in syms:
                 verdict = _worse(verdict, CLAIM_UNKNOWABLE)
     return verdict
@@ -393,7 +442,7 @@ def _worse(a: str, b: str) -> str:
 
 def _build_claims(
     root: Path, anchor: str, doc: ContextDoc, hits: list[str], scan: RepoScan,
-    changed_syms: list[tuple[str, set[str] | None]], all_stems: set[str],
+    changed_syms: list[tuple[str, set[str] | None]], all_modules: set[str],
 ) -> list[ClaimVerdict]:
     """The per-claim breakdown behind the doc-level status (presentation/score).
 
@@ -402,7 +451,7 @@ def _build_claims(
     disagree on any reference they both see.
     """
     return _generated_claims(doc, scan) + _human_claim_verdicts(
-        root, anchor, doc, hits, changed_syms, all_stems
+        root, anchor, doc, hits, changed_syms, all_modules
     )
 
 
@@ -455,7 +504,7 @@ def _is_fact_line(line: str) -> bool:
 
 def _human_claim_verdicts(
     root: Path, anchor: str, doc: ContextDoc, hits: list[str],
-    changed_syms: list[tuple[str, set[str] | None]], all_stems: set[str],
+    changed_syms: list[tuple[str, set[str] | None]], all_modules: set[str],
 ) -> list[ClaimVerdict]:
     out: list[ClaimVerdict] = []
     for claim in claims_mod.human_claims(doc.body):
@@ -470,7 +519,7 @@ def _human_claim_verdicts(
                 risk.append(ref)
                 scope = scope or "path"
         for ref in claim.symbol_refs:
-            verdict = _symbol_verdict(ref, changed_syms, all_stems)
+            verdict = _symbol_verdict(ref, changed_syms, all_modules)
             if verdict != CLAIM_FRESH:
                 if _prose_supersedes(
                     root, doc, claim.lines, symbol_files(ref, hits), anchor

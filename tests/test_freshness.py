@@ -454,3 +454,72 @@ def test_unresolvable_symbol_needs_prose_newer_than_every_change(repo: Path) -> 
     commit_all(repo, "move a same-named symbol elsewhere")
     r = report_for(repo, "read-next")
     assert r.status == STALE, r.reason
+
+
+# --- symbol refs resolve by module path, not by filename stem ---------------
+
+
+def test_package_symbol_with_a_same_named_decoy_is_not_falsely_fresh(repo: Path) -> None:
+    """The worst bug this engine can have, found on Flask's real layout.
+
+    `pkg.request` lives in `pkg/__init__.py`, whose *stem* is `__init__`, so
+    stem matching never saw it. Worse, an unrelated `fixtures/pkg.py` made the
+    qualifier count as "known", which suppressed the conservative fallback —
+    and the claim came back fresh while the code it described had moved.
+    """
+    (repo / "pkg").mkdir()
+    (repo / "pkg" / "__init__.py").write_text("def request():\n    return 1\n")
+    (repo / "fixtures").mkdir()
+    (repo / "fixtures" / "pkg.py").write_text("DECOY = 1\n")
+    commit_all(repo, "a package, and a decoy sharing its name")
+    init_layer(repo)
+    _claim(repo, "The `pkg.request` helper returns 1.")
+    commit_all(repo, "describe it")
+
+    (repo / "pkg" / "__init__.py").write_text("def request():\n    return 999\n")
+    commit_all(repo, "move pkg.request")
+    r = report_for(repo, "read-next")
+    assert r.status == STALE, r.reason
+    assert any("pkg.request" in c.risk for c in r.suspect_claims if c.kind == "human")
+
+
+def test_dotted_ref_resolves_through_a_src_layout(repo: Path) -> None:
+    # `app.views.View` names the module `app.views`, which lives at
+    # src/app/views.py — the near-universal packaging layout.
+    (repo / "src" / "app").mkdir(parents=True)
+    (repo / "src" / "app" / "views.py").write_text("class View:\n    pass\n")
+    commit_all(repo, "add a src layout")
+    init_layer(repo)
+    _claim(repo, "See `app.views.View` for the base class.")
+    commit_all(repo, "describe it")
+
+    (repo / "src" / "app" / "views.py").write_text("class View:\n    x = 1\n")
+    commit_all(repo, "move View")
+    assert report_for(repo, "read-next").status == STALE
+
+
+def test_module_resolution_does_not_flag_unrelated_changes(repo: Path) -> None:
+    # The other direction: broader matching must not turn every edit into a
+    # stale claim, or the signal is worth nothing.
+    (repo / "pkg").mkdir()
+    (repo / "pkg" / "__init__.py").write_text("def request():\n    return 1\n")
+    (repo / "other").mkdir()
+    (repo / "other" / "thing.py").write_text("A = 1\n")
+    commit_all(repo, "two unrelated modules")
+    init_layer(repo)
+    _claim(repo, "The `pkg.request` helper returns 1.")
+    commit_all(repo, "describe it")
+
+    (repo / "other" / "thing.py").write_text("A = 2\n")
+    commit_all(repo, "change something else entirely")
+    assert report_for(repo, "read-next").status == FRESH
+
+
+def test_module_path_shapes() -> None:
+    assert freshness._module_path("src/flask/views.py") == "flask.views"
+    assert freshness._module_path("pkg/__init__.py") == "pkg"
+    assert freshness._module_path("tests/apps/flask.py") == "tests.apps.flask"
+    assert freshness._qualifies("flask.views", "views")
+    assert freshness._qualifies("flask.views", "flask.views")
+    assert not freshness._qualifies("flask.views", "flask")
+    assert not freshness._qualifies("", "anything")

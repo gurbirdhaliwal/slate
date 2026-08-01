@@ -106,12 +106,14 @@ TRIALS = 5
 #   3 — new task (session access tracking) chosen for a difficulty band, plus
 #       `ground_truth_touched` to measure scope discovery directly rather
 #       than relying on upstream tests to cover the secondary file.
-#   4 — Phase 4: the repair arms. The layer's read-next now carries seeded
-#       hand-written claims (see SEEDED_CLAIMS), which changes what context
-#       every arm receives. Cost and correctness are NOT comparable to
-#       revision 3 — the doc is richer — so the revision is bumped even
-#       though the task text is untouched.
-TASK_REVISION = 4
+# Phase 4 added the E3 arms and did NOT bump this. The seeding that makes E3
+# work is gated on `arm.experiment == "E3"`, so the E1 arms receive exactly
+# what they received before — same task, same grader, same context. Bumping
+# would have made `report.py` refuse to show a still-valid E1 sweep, which is
+# the opposite of what this guard is for. E3 arms carry extra seeded prose and
+# are therefore not comparable to E1 on cost or correctness; that is a property
+# of the arms, which is what arms are for, not of the revision.
+TASK_REVISION = 3
 
 # Identical for every arm. Describes the behaviour, never the file layout or
 # the shape of the fix — naming those would hand over the very thing the
@@ -289,6 +291,10 @@ ARMS: tuple[Arm, ...] = (
 # is fine, because it is the same doc on both sides. It is NOT fine to compare
 # these arms' cost or correctness against revision 3, hence the bump.
 
+# These claims make the E3 arms' context strictly richer than the E1 arms'.
+# That is fine for the comparison this experiment makes — repair-off vs
+# repair-on see the identical doc — and it means E3 cost and correctness must
+# never be read against E1's. Different arms, different context, by design.
 SEEDED_CLAIMS = (
     # Falsified by: `session` becomes a property that sets `accessed`, and the
     # attribute moves to `_session`.

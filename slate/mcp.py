@@ -32,6 +32,7 @@ from . import (
     generator,
     gitutil,
     imports as imports_mod,
+    repair,
     scanner,
     value,
     verify,
@@ -54,6 +55,14 @@ _WRITE_DENIED = (
     "The user can grant write access with `slate agent access full` (or the "
     "'Slate: Agent Access' toggle in VS Code); `.slate/agent-access` is the "
     "committed policy file."
+)
+
+_REPAIR_DENIED = (
+    "Slate doc repair is off in this repo, so this tool is disabled. It is a "
+    "second switch on top of full access, because repair edits prose a human "
+    "wrote. The user can turn it on with `slate agent repair on`; "
+    "`.slate/agent-repair` is the committed policy file. Report the suspect "
+    "claims instead and let them decide."
 )
 
 
@@ -144,6 +153,15 @@ class SlateMCPServer:
                 {},
             ),
             _tool(
+                "slate_repair_tasks",
+                "The hand-written claims the code no longer vouches for: the "
+                "sentence, where it lives, the refs that put it at risk and the "
+                "commits behind them. Strongest evidence first. A task is NOT "
+                "proof the prose is wrong — 'this claim is still correct' is a "
+                "valid answer and usually the right one for path-scoped evidence.",
+                {},
+            ),
+            _tool(
                 "slate_watches",
                 "Watch globs per context doc (the paths whose changes make the "
                 "doc suspect) plus proposed additions derived from the repo's "
@@ -210,20 +228,53 @@ class SlateMCPServer:
                     required=["decision", "rationale"],
                 ),
             ]
+            if agentcfg.repair_enabled(self.root):
+                tools.append(_tool(
+                    "slate_repair_apply",
+                    "Replace one suspect claim with a rewrite, after Slate "
+                    "verifies the edit. The rewrite MUST still name code in "
+                    "backticks — a sentence with no refs stops being a checkable "
+                    "claim at all, and that edit is refused. Only the target "
+                    "claim may change. Leaving an accurate claim alone is a "
+                    "correct outcome; do not call this to make a flag go away.",
+                    {
+                        "doc": {
+                            "type": "string",
+                            "description": "Doc name, e.g. \"read-next\".",
+                        },
+                        "target": {
+                            "type": "string",
+                            "description": "The claim text exactly as slate_repair_tasks reported it.",
+                        },
+                        "replacement": {
+                            "type": "string",
+                            "description": "The rewritten claim. Must name code in backticks.",
+                        },
+                    },
+                    required=["doc", "target", "replacement"],
+                ))
         return tools
 
-    _WRITE_TOOLS = {"slate_sync", "slate_mark", "slate_update_focus", "slate_append_decision"}
+    _WRITE_TOOLS = {"slate_sync", "slate_mark", "slate_update_focus",
+                    "slate_append_decision", "slate_repair_apply"}
 
     def _call(self, name: str, args: dict) -> tuple[str, bool]:
         if name in self._WRITE_TOOLS and self.access != agentcfg.FULL:
             return _WRITE_DENIED, True
         if name == "slate_watches" and args.get("apply") and self.access != agentcfg.FULL:
             return _WRITE_DENIED, True
+        # Full access is not enough on its own. It was granted for sync/mark/
+        # focus — none of which touch prose the user wrote in response to a job
+        # the user never gave.
+        if name == "slate_repair_apply" and not agentcfg.repair_enabled(self.root):
+            return _REPAIR_DENIED, True
         handlers = {
             "slate_read": self._t_read,
             "slate_status": self._t_status,
             "slate_verify": self._t_verify,
             "slate_diff": self._t_diff,
+            "slate_repair_tasks": self._t_repair_tasks,
+            "slate_repair_apply": self._t_repair_apply,
             "slate_watches": self._t_watches,
             "slate_sync": self._t_sync,
             "slate_mark": self._t_mark,
@@ -402,6 +453,67 @@ class SlateMCPServer:
                     "output": event["manual_output_tokens"],
                 },
             }
+        return json.dumps(payload, indent=2), False
+
+    def _t_repair_tasks(self, args: dict) -> tuple[str, bool]:
+        reports = freshness.evaluate_all(self.root)
+        if not reports:
+            return _NO_LAYER, True
+        tasks = repair.repair_tasks(self.root, reports)
+        return json.dumps({
+            "tasks": [t.as_dict() for t in tasks],
+            "note": (
+                "A task means the code a claim names changed, not that the claim "
+                "is false. `symbol` scope is strong evidence; `path` scope often "
+                "is not. Deciding a claim is still correct is a valid outcome."
+            ),
+        }, indent=2), False
+
+    def _t_repair_apply(self, args: dict) -> tuple[str, bool]:
+        """Verify a rewrite, then write it — or refuse and say why.
+
+        The engine decides, never the caller. `verify_repair` is the same gate
+        `slate repair` would apply by hand, and the doc is only touched after it
+        returns something other than `rejected`.
+
+        The doc is *not* re-anchored here. A repair is newer prose by
+        definition, so `freshness` would clear it on authorship alone whatever
+        it says — re-stamping would be Slate vouching for text it never checked.
+        Whoever reviews the diff runs `slate mark`.
+        """
+        name = (args.get("doc") or "").strip()
+        target = (args.get("target") or "").strip()
+        replacement = (args.get("replacement") or "").strip()
+        if not name or not target or not replacement:
+            return "doc, target and replacement are required", True
+        try:
+            spec = context.spec_by_name(name)
+        except (KeyError, ValueError):
+            return f"unknown doc: {name}", True
+        doc = context.load(self.root, spec)
+        if doc is None:
+            return _NO_LAYER, True
+
+        before = doc.body
+        after = repair.replace_claim(before, target, replacement)
+        verdict = repair.verify_repair(before, after, target)
+        payload = verdict.as_dict()
+        payload["doc"] = spec.rel_path
+        if not verdict.ok:
+            payload["note"] = (
+                "Nothing was written. Fix the rewrite or leave the claim alone — "
+                "an accurate claim is allowed to stay as it is."
+            )
+            return json.dumps(payload, indent=2), True
+
+        if verdict.outcome == repair.REPAIRED:
+            doc.body = after
+            context.save(self.root, doc)
+        payload["note"] = (
+            "Doc change is unstaged and the doc was NOT re-anchored — freshness "
+            "cannot score a repair (it is newer prose by definition). Review the "
+            "diff, then `slate mark` if it is right."
+        )
         return json.dumps(payload, indent=2), False
 
     def _t_mark(self, args: dict) -> tuple[str, bool]:

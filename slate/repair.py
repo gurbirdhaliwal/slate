@@ -226,6 +226,27 @@ def _abbreviate(text: str, width: int = 60) -> str:
     return text if len(text) <= width else text[: width - 1] + "…"
 
 
+def replace_claim(body: str, target: str, replacement: str) -> str:
+    """Swap one claim's lines for new text, by span rather than by string.
+
+    The segmenter joins a unit's lines before reporting it, so the claim text a
+    caller quotes back rarely appears in the file verbatim — a plain string
+    replace would silently miss every wrapped paragraph, which is the bug that
+    dropped 10 of repairbench rev 1's 18 controls.
+
+    A target that is not present returns the body untouched, so the caller's
+    `verify_repair` sees an unchanged document and rejects it. Failing into "no
+    edit" is the safe direction; guessing which claim was meant is not.
+    """
+    for claim in human_claims(body):
+        if claim.text != target:
+            continue
+        lines = body.splitlines()
+        lines[claim.line - 1:claim.end_line] = replacement.splitlines()
+        return "\n".join(lines) + ("\n" if body.endswith("\n") else "")
+    return body
+
+
 def _commits_for(
     root: Path, risk: list[str], hits: list[str], anchor: str
 ) -> tuple[dict[str, str], list[str]]:

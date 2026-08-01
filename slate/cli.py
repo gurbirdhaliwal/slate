@@ -236,6 +236,15 @@ def _build_parser() -> argparse.ArgumentParser:
     q = agent_sub.add_parser("access", help="get or set the agent access ceiling", description="get or set the agent access ceiling")
     q.add_argument("mode", nargs="?", choices=["read", "full"], help="omit to show current mode")
     q.set_defaults(func=cmd_agent_access)
+    q = agent_sub.add_parser(
+        "repair",
+        help="get or set whether the agent may rewrite suspect claims",
+        description="doc repair is a second switch on top of full access, because "
+                    "it edits prose a human wrote in response to a job the human "
+                    "never gave. Both must be on before anything is written.",
+    )
+    q.add_argument("state", nargs="?", choices=["on", "off"], help="omit to show current state")
+    q.set_defaults(func=cmd_agent_repair)
     q = agent_sub.add_parser("status", help="show wiring + access mode", description="show wiring + access mode")
     q.add_argument("--json", action="store_true", help="machine-readable output")
     q.set_defaults(func=cmd_agent_status)
@@ -772,9 +781,27 @@ def cmd_agent_access(root: Path, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_agent_repair(root: Path, args: argparse.Namespace) -> int:
+    if args.state:
+        agentcfg.set_repair(root, args.state)
+        print(f"agent repair set to {args.state} "
+              f"({agentcfg.repair_path(root).relative_to(root)})")
+        if args.state == agentcfg.REPAIR_ON and agentcfg.get_access(root) != agentcfg.FULL:
+            # Deliberately not an error: the user asked for one of the two
+            # switches and got it. Saying nothing would leave them believing
+            # repair is live when it is not.
+            print("  note: agent access is still read-only, so nothing can be "
+                  "written yet — `slate agent access full` throws the other switch.")
+        return 0
+    print(agentcfg.get_repair(root))
+    return 0
+
+
 def cmd_agent_status(root: Path, args: argparse.Namespace) -> int:
     info = {
         "access": agentcfg.get_access(root),
+        "repair": agentcfg.get_repair(root),
+        "repair_effective": agentcfg.repair_enabled(root),
         "clients": agentcfg.enabled_clients(root),
         "hooks": claudehook.installed_events(root),
     }
@@ -782,6 +809,8 @@ def cmd_agent_status(root: Path, args: argparse.Namespace) -> int:
         print(json.dumps(info, indent=2))
         return 0
     print(f"access: {info['access']}")
+    print(f"repair: {info['repair']}"
+          + ("" if info["repair_effective"] else " (not in effect — needs full access)"))
     if info["clients"]:
         print(f"wired clients: {', '.join(info['clients'])}")
     else:

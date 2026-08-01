@@ -8,7 +8,7 @@ import io
 import json
 from pathlib import Path
 
-from slate import agentcfg, generator, scanner
+from slate import agentcfg, context, generator, scanner
 from slate.mcp import SlateMCPServer, replace_section, serve
 
 from .conftest import commit_all
@@ -212,3 +212,102 @@ def test_replace_section_preserves_following_sections() -> None:
     assert "old" not in out
     assert "new" in out
     assert "keep me" in out
+
+
+# --------------------------------------------------------------------------
+# repair tools (Phase 3)
+
+
+def suspect_layer(repo: Path) -> None:
+    """A layer with one hand-written claim the code no longer vouches for."""
+    init_layer(repo)
+    read_next = repo / ".slate" / "read-next.md"
+    read_next.write_text(read_next.read_text() + "\n`engine.run` returns 42.\n")
+    commit_all(repo, "describe run")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    commit_all(repo, "change run")
+
+
+def enable_repair(repo: Path) -> None:
+    agentcfg.set_access(repo, agentcfg.FULL)
+    agentcfg.set_repair(repo, agentcfg.REPAIR_ON)
+
+
+def test_repair_tasks_is_a_read_tool(repo: Path) -> None:
+    suspect_layer(repo)
+    tools = list_tools(SlateMCPServer(repo))  # default access: read
+    assert "slate_repair_tasks" in tools
+    payload, is_error = call(SlateMCPServer(repo), "slate_repair_tasks")
+    assert not is_error
+    assert any("engine.run" in t["text"] for t in payload["tasks"])
+
+
+def test_repair_apply_is_hidden_without_both_switches(repo: Path) -> None:
+    suspect_layer(repo)
+    assert "slate_repair_apply" not in list_tools(SlateMCPServer(repo))
+    agentcfg.set_access(repo, agentcfg.FULL)  # full access alone is not enough
+    assert "slate_repair_apply" not in list_tools(SlateMCPServer(repo))
+    agentcfg.set_repair(repo, agentcfg.REPAIR_ON)
+    assert "slate_repair_apply" in list_tools(SlateMCPServer(repo))
+
+
+def test_repair_apply_is_denied_when_repair_is_off(repo: Path) -> None:
+    suspect_layer(repo)
+    agentcfg.set_access(repo, agentcfg.FULL)
+    payload, is_error = call(SlateMCPServer(repo, access=agentcfg.FULL), "slate_repair_apply", {
+        "doc": "read-next", "target": "`engine.run` returns 42.",
+        "replacement": "`engine.run` returns 43.",
+    })
+    assert is_error and "repair is off" in payload["text"]
+    assert "`engine.run` returns 42." in (repo / ".slate" / "read-next.md").read_text()
+
+
+def test_an_honest_repair_is_written(repo: Path) -> None:
+    suspect_layer(repo)
+    enable_repair(repo)
+    payload, is_error = call(SlateMCPServer(repo, access=agentcfg.FULL), "slate_repair_apply", {
+        "doc": "read-next", "target": "`engine.run` returns 42.",
+        "replacement": "`engine.run` returns 43.",
+    })
+    assert not is_error and payload["outcome"] == "repaired"
+    body = (repo / ".slate" / "read-next.md").read_text()
+    assert "`engine.run` returns 43." in body and "returns 42." not in body
+
+
+def test_a_repair_that_strips_refs_is_refused_and_writes_nothing(repo: Path) -> None:
+    # The false-`fresh` the repair loop could manufacture for itself.
+    suspect_layer(repo)
+    enable_repair(repo)
+    payload, is_error = call(SlateMCPServer(repo, access=agentcfg.FULL), "slate_repair_apply", {
+        "doc": "read-next", "target": "`engine.run` returns 42.",
+        "replacement": "The engine returns something sensible.",
+    })
+    assert is_error and payload["outcome"] == "rejected"
+    assert any("never be checked again" in r for r in payload["reasons"])
+    assert "`engine.run` returns 42." in (repo / ".slate" / "read-next.md").read_text()
+
+
+def test_a_repair_does_not_re_anchor_the_doc(repo: Path) -> None:
+    """Freshness cannot score a repair — a repair is newer prose by definition,
+    so re-stamping would be Slate vouching for text it never checked."""
+    suspect_layer(repo)
+    enable_repair(repo)
+    before = context.load(repo, context.spec_by_name("read-next")).synced_commit
+    call(SlateMCPServer(repo, access=agentcfg.FULL), "slate_repair_apply", {
+        "doc": "read-next", "target": "`engine.run` returns 42.",
+        "replacement": "`engine.run` returns 43.",
+    })
+    after = context.load(repo, context.spec_by_name("read-next")).synced_commit
+    assert after == before
+
+
+def test_repair_apply_on_a_missing_target_writes_nothing(repo: Path) -> None:
+    suspect_layer(repo)
+    enable_repair(repo)
+    original = (repo / ".slate" / "read-next.md").read_text()
+    payload, is_error = call(SlateMCPServer(repo, access=agentcfg.FULL), "slate_repair_apply", {
+        "doc": "read-next", "target": "`engine.run` returns 7.",
+        "replacement": "`engine.run` returns 43.",
+    })
+    assert is_error and payload["outcome"] == "rejected"
+    assert (repo / ".slate" / "read-next.md").read_text() == original

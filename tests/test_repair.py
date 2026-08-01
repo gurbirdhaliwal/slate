@@ -266,3 +266,21 @@ def test_repair_cannot_manufacture_fresh(repo: Path) -> None:
     assert verdict.outcome == repair.REJECTED
     assert not verdict.ok
     assert any("never be checked again" in reason for reason in verdict.reasons)
+
+
+def test_replace_claim_finds_a_wrapped_paragraph() -> None:
+    # The claim text is normalised by the segmenter, so it never appears in the
+    # file verbatim once the paragraph wraps. A plain string replace misses it
+    # silently — the same normalisation bug that dropped 10 of repairbench
+    # rev 1's 18 controls.
+    body = "# Notes\n\n## Engine\n\n`engine.run`\nreturns 42.\n"
+    out = repair.replace_claim(body, "`engine.run` returns 42.", "`engine.run` returns 43.")
+    assert "returns 43." in out and "returns 42." not in out
+    assert repair.verify_repair(body, out, "`engine.run` returns 42.").outcome == repair.REPAIRED
+
+
+def test_replace_claim_leaves_the_body_alone_when_the_target_is_absent() -> None:
+    # Failing into "no edit" lets verify_repair reject it; guessing which claim
+    # was meant would be the unsafe direction.
+    body = "# Notes\n\n## Engine\n\n`engine.run` returns 42.\n"
+    assert repair.replace_claim(body, "`engine.run` returns 7.", "anything") == body

@@ -96,10 +96,12 @@ coarse in practice.
 The consultation problem is closed on the delivery side. Slate no longer
 *offers* freshness to Claude Code; it injects it. New `slate/claudehook.py` +
 `slate agent hook` (the stdin handler) and `slate agent hooks install`, which
-writes two entries to `.claude/settings.json`: **SessionStart** (the layer's
+writes entries to `.claude/settings.json`: **SessionStart** (the layer's
 whole trust state, empty matcher so it also covers `compact`) and
 **PreToolUse** on `Read|Edit|Write|NotebookEdit` (warns only when the target
-file is covered by a non-fresh doc's watches). `slate agent enable claude`
+file is covered by a non-fresh doc's watches). Phase 3 added a third,
+**Stop** — see below; it is installed inert and does nothing until both repair
+switches are on. `slate agent enable claude`
 installs them; `--no-hooks` opts out; `slate agent status` reports them.
 
 Why this exists: the MCP path was measured and does not work — 0 `slate_*`
@@ -107,7 +109,7 @@ calls in 320 tool calls across 25 sessions. Hooks are not offered to the model,
 so there is no choice to decline. The module computes **no trust math** (it
 calls `freshness.evaluate_all` and renders, like `cli` and `mcp`), and every
 entry point fails to *silence* — never to a false `fresh`, never to a broken
-session. Pinned by `tests/test_claude_hook.py` (30 tests; 225 total).
+session. Pinned by `tests/test_claude_hook.py` (47 tests; 317 total).
 
 **Measured (2026-07-27 sweep, 4 arms × 5 trials, all same-day).** Delivery
 works and is verified end-to-end. What it buys is less settled:
@@ -324,11 +326,47 @@ refs are stripped, then that the gate refuses the edit. Located by *section*,
 not line — a rewrite reflows the paragraph it replaces, so an exact line would
 reject the ordinary case.
 
-**Where the arc stands.** Phases 0, 1 and 2 complete. Phase 3 is next, and the
-ordering constraint that the verifier ships before the writer is now satisfied.
-Phases 3–5 otherwise untouched. Nothing calls `verify_repair` yet, by design:
-Phase 3 owns the write path (`slate_repair_apply`, `agentcfg.FULL`, default
-off) and the `SessionEnd` delivery that tells an agent it has a repair job.
+**Phase 3 — session-end delivery — landed (2026-08-01). This is the current
+state.** The repair loop is wired end to end: `claudehook.session_end_text`
+names the suspect claims when the agent finishes a turn, `slate_repair_tasks`
+lists them in full, and `slate_repair_apply` puts a rewrite through
+`repair.verify_repair` before anything is written.
+
+**The event is `Stop`, not `SessionEnd` — this was measured, not chosen.** A
+canary against a real session found `SessionEnd` has no decision control and no
+`additionalContext` whatsoever: it fires after the session is over and shows
+stderr to the user, so nothing it emits reaches the model. The plan's drafted
+"`SessionEnd`/`Stop` … `additionalContext` only" was not implementable. `Stop`
+accepts `additionalContext` and *continues the conversation*, which is the only
+way an end-of-session job can be acted on — and is why it needs brakes. Two,
+independent: the client's `stop_hook_active` (observed `False` then `True`
+across one continued turn) and a per-session note reusing `_already_announced`.
+No `decision: "block"` anywhere; blocking is how a hook becomes the reason a
+session will not end.
+
+**The same canary changed the copy.** An imperative instruction injected by a
+hook reads as a prompt-injection attempt and gets refused — correctly. So
+`session_end_text` names itself and the settings file it came from, reports what
+it observed, and says leaving a claim alone is a correct outcome. It offers; it
+never commands.
+
+**Gated twice, and the conjunction is the point.** `agentcfg.repair_enabled`
+requires `agent-repair` on *and* access `full`; either alone grants nothing,
+because otherwise the repair file is a way around the access ceiling. Default
+off. `slate agent repair on` warns when the other switch is still read-only.
+
+Shipped as apply-behind-gates rather than the plan's propose-only: a proposal
+the agent renders for a human to paste back gives it no path to the doc, and
+Phase 4's primary metric — suspect claims at session end versus session start —
+would then be zero by construction. Four consents replace it (off by default,
+full access, the client's per-call prompt, and the verifier), and a repair
+leaves the doc **unstaged and un-re-anchored**, so a human still decides.
+
+**Where the arc stands.** Phases 0–3 complete. Phase 4 is next: `repair-off` vs
+`repair-on`, pre-registered in `benchmarks/agentbench/spec.py` before running,
+n ≥ 10. It needs no constructed stale arm — the agent's own edits stale the
+layer naturally, which is what unblocks `STALE_DOC_COMMIT` being `None` at
+revision 3. Phase 5 (ledger and pitch) untouched.
 
 Most of what shipped in this arc was still *off-plan*: claims never being
 evaluated at all, co-landing prose flagged as rot, package symbols falsely
@@ -336,19 +374,20 @@ fresh, `.rst` filenames read as symbols. Two false-`fresh` classes closed.
 Chasing the pivot has been an excellent bug-finding strategy, and it took three
 revisions of instrument before it was also a hypothesis test.
 
-**Next, in priority order.** (0) **Phase 3 — session-end delivery.** A
-`SessionEnd`/`Stop` event in `claudehook.py` following the shape of
-`session_start_text` exactly (`additionalContext` only, no trust math, silence
-and exit 0 on any failure), plus `slate_repair_tasks` (read) and
-`slate_repair_apply` (write) on MCP, gated behind `agentcfg.FULL` and default
-off. Repair-*after*, not repair-before: describing a change you just made is
-near-free and accurate, reconstructing why a doc rotted from someone else's diff
-is archaeology. Do not add PreToolUse blocking — it collides with the landmine
-that no hook path may break a session. And note what Phase 0 does *not* license:
-every trial handed the agent a scoped task and asked for a decision, so nothing
-measured says an agent will repair docs it was not asked about. That is exactly
-what the 3-calls-in-687 MCP finding says it will not do, and it is the bet Phase
-3 makes and Phase 4 tests. (1) Replicate the cost effect with cost
+**Next, in priority order.** (0) **Phase 4 — measure the thing that is now
+measurable.** Arms `repair-off` vs `repair-on` at revision 3, n ≥ 10,
+pre-registered in `benchmarks/agentbench/spec.py` *before* running — the
+discipline repairbench had to learn twice. Primary: suspect-claim count at
+session end versus session start. Secondary: verified-repair rate, rejection
+rate, cost delta. Kill criterion, stated in advance: if verified repairs do not
+exceed rejections, or the layer does not measurably converge, the pivot failed
+and gets reported the way `decoy_hits` was. **The live question is uptake, not
+capability.** Phase 0 measured an agent handed a scoped task and asked for a
+decision — 12/12 repaired, 12/12 correctly declined. It says nothing about
+whether an agent picks up a repair job it was not asked about, and the
+3-calls-in-687 MCP finding says the default is no. The `Stop` hook is the bet
+that injecting the job beats offering it. Do not report Phase 3 as a win before
+that number exists. (1) Replicate the cost effect with cost
 *pre-registered* and higher n, and run SessionStart and PreToolUse as separate
 arms — right now the sweep cannot say which hook did the work. (2) The old
 `benchmarks/RESULTS.md` + `benchmark.py` are still self-referential and
@@ -373,5 +412,9 @@ control, side effects only) would turn "the layer loaded" into a logged fact.
 - `slate sync` cannot clear `read-next`. It has `generated: false`, so there is no auto-block to regenerate — only `slate mark read-next` re-anchors it, and only after someone has actually rewritten the focus text. Marking a doc you have not read is the one way to turn this whole layer back into a rumor.
 - Authorship narrowing may only ever narrow. `freshness._prose_supersedes` must return False for every question it cannot answer — no blame, no anchor, no file. A `git` call that starts *assuming* recency is a false `fresh` with extra steps.
 - `repair.verify_repair` must stay pure and must never consult freshness. It answers "is this edit admissible", not "is this doc now accurate" — freshness cannot answer the second about a repair, because a repair is newer prose by definition and authorship narrowing reads a timestamp the repair just updated. Measured: replacing a stale sentence with "`engine.run` returns 9999 purple" turns the doc `fresh`. Re-anchoring stays with `freshness.evaluate` and `slate mark`.
+- `additionalContext` on a `Stop` hook **continues the conversation**. A Stop path that speaks unconditionally is an infinite session: the agent finishes, the hook speaks, it finishes again. Both brakes have to stay — `stop_hook_active` from the client, and the per-session note via `_already_announced`. And never emit `decision: "block"` from any hook: that is how Slate becomes the reason a session will not end.
+- `SessionEnd` cannot inject context. No decision control, no `additionalContext` — it fires after the session is over and shows stderr to the user only. Anything that must reach the model at the end of a turn goes on `Stop`. Verified with a canary, not read off a doc.
+- Hook text must offer, never command. A bare imperative arriving through a hook reads as a prompt-injection attempt and gets refused — observed in the canary. `claudehook.session_end_text` names itself, names the settings file it came from, states what it observed, and says declining is a correct outcome.
+- `agentcfg.repair_enabled` requires *both* `agent-repair` on and access `full`. Never let one imply the other: the repair file would become a way around the access ceiling, which is the only thing that ceiling is for.
 - A repair may never be allowed to *remove* a claim's refs. `claims._emit` only emits a unit that references code, so stripping the backticks deletes the claim from the trust surface entirely and the doc goes green — a false `fresh` manufactured by the feature meant to prevent it. Pinned by `test_repair_cannot_manufacture_fresh`.
 - Don't reintroduce the old `apps/`/`packages/`/`infra/` trees from git history (decision log 2026-07-15).

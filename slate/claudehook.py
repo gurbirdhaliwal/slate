@@ -14,7 +14,7 @@ it always returns something. The fix is to stop asking. Claude Code hooks
 run as ordinary subprocesses at fixed lifecycle points, and their stdout is
 injected into the model's context whether or not the model wanted it.
 
-Two events, doing two different jobs:
+Three events, doing three different jobs:
 
 - **SessionStart** — states the freshness of the whole layer once, up
   front, so "which of these docs can I trust" is answered before the agent
@@ -26,6 +26,11 @@ Two events, doing two different jobs:
   is not fresh*. Just-in-time, scoped to the file at hand, and silent
   otherwise; a warning that fires on every tool call is a banner, and
   banners are skimmed.
+- **Stop** — names the claims the session's own work left suspect, at the
+  moment the agent finishes a turn and still has the context in its window.
+  Off by default and gated twice (`slate agent repair on` *and* full
+  access), announced once per session, and silent when the client says this
+  Stop is already the product of a stop hook. It offers; it never commands.
 
 **This module computes no trust math.** It calls `freshness.evaluate_all`
 and renders the result, exactly as `cli` and `mcp` do. The rule that the
@@ -55,11 +60,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from . import context, freshness, globs
+from . import agentcfg, context, freshness, globs, repair as repair_mod
 from .context import CONTEXT_DOC_PATHS, FRESH, NEEDS_VERIFICATION, STALE
 
 SESSION_START = "SessionStart"
 PRE_TOOL_USE = "PreToolUse"
+# The end-of-session repair prompt rides `Stop`, not `SessionEnd`. The plan
+# drafted it on either, and `SessionEnd` turns out to be incapable of it:
+# measured against a real session, `SessionEnd` has no decision control and no
+# `additionalContext` at all — it shows stderr to the user and nothing reaches
+# the model, because it fires after the session is already over. `Stop` fires
+# when the model finishes a turn, accepts `additionalContext`, and continues
+# the conversation so the agent can act on it. See the decision log, 2026-08-01.
+STOP = "Stop"
 
 # Tools whose target file is worth checking against watch coverage. Read is
 # included on purpose: the damage a stale doc does is done at the moment the
@@ -273,6 +286,65 @@ def cochange_text(root: Path, rel_path: str, session_id: str) -> str | None:
     return "\n".join(lines)
 
 
+# --- session end: the repair prompt -----------------------------------------
+# Repair-*after*, not repair-before. Reconstructing why a doc rotted from a diff
+# the agent had no part in is archaeology — expensive, error-prone, and a detour
+# the developer did not ask for. Describing a change it just made, with the
+# context still in the window, is near-free and far more accurate. Session N
+# pays a small tax; session N+1 starts from something true.
+#
+# What this is *not* evidence for: repairbench measured an agent handed a scoped
+# task and asked for a decision (12/12 repaired, 12/12 correctly declined). It
+# did not measure whether an agent will take up a repair job it was not asked
+# about, and the MCP finding — 3 `slate_*` calls in 687 — says the opposite is
+# the default. That is the bet this makes and Phase 4 tests.
+
+_MAX_TASKS_LISTED = 3
+
+
+def session_end_text(
+    root: Path, reports: list[freshness.DocReport]
+) -> str | None:
+    """The repair worklist, stated when the agent finishes a turn.
+
+    Descriptive and attributed, never imperative. A hook that injects a bare
+    command reads exactly like a prompt-injection attempt, and a canary against
+    a real session confirmed it: an instruction delivered this way was
+    identified as an injection and refused, correctly. So this says who is
+    speaking, what it observed, and what the agent *may* do — the agent decides.
+    """
+    tasks = repair_mod.repair_tasks(root, reports)
+    if not tasks:
+        return None
+
+    strong = [t for t in tasks if t.evidence_is_strong]
+    lines = [
+        f"Slate (this repo's context layer, wired up in {SETTINGS_FILE}) "
+        f"finished this turn with {len(tasks)} hand-written claim(s) in the "
+        f"context docs that the code no longer vouches for"
+        + (f", {len(strong)} of them where the named symbol provably moved" if strong else "")
+        + ":",
+    ]
+    for task in tasks[:_MAX_TASKS_LISTED]:
+        text = task.text.strip().replace("\n", " ")
+        if len(text) > 160:
+            text = text[:157] + "…"
+        lines.append(f"  {task.doc_path}:{task.line} [{task.scope} evidence] {text}")
+        if task.risk:
+            lines.append(f"      at risk: {', '.join(task.risk[:_MAX_PATHS])}")
+    if len(tasks) > _MAX_TASKS_LISTED:
+        lines.append(f"  … and {len(tasks) - _MAX_TASKS_LISTED} more")
+
+    lines.append(
+        "  A flag is not proof the prose is wrong — on this repo's own history "
+        "most flagged claims were still accurate, and leaving one alone is a "
+        "correct outcome. If you changed this code in this session you are the "
+        "cheapest person to say so: `slate repair` lists them in full, and "
+        "`slate_repair_apply` verifies a rewrite before it lands."
+    )
+    return "\n".join(lines)
+
+
 # --- payload handling -------------------------------------------------------
 
 def _rel_target(root: Path, payload: dict) -> str | None:
@@ -308,8 +380,28 @@ def build_output(root: Path, payload: dict) -> dict | None:
     through a subprocess.
     """
     event = payload.get("hook_event_name")
-    if event not in (SESSION_START, PRE_TOOL_USE):
+    if event not in (SESSION_START, PRE_TOOL_USE, STOP):
         return None
+
+    if event == STOP:
+        # `additionalContext` on Stop continues the conversation, so speaking
+        # unconditionally is an infinite loop: the agent finishes, the hook
+        # speaks, it finishes again, forever. Two independent brakes, because
+        # one of them depends on the client.
+        #
+        # `stop_hook_active` is set by Claude Code on any Stop that is already
+        # the product of a stop hook (measured False then True across one
+        # continued turn). If a future client drops the field, the per-session
+        # note still bounds this to one announcement.
+        if payload.get("stop_hook_active"):
+            return None
+        if not agentcfg.repair_enabled(root):
+            return None  # default off; both switches must be thrown
+        seen = _seen_path(root, str(payload.get("session_id", "")))
+        if _already_announced(seen, (STOP, "repair")):
+            return None
+        text = session_end_text(root, freshness.evaluate_all(root))
+        return _output(STOP, text) if text else None
 
     if event == PRE_TOOL_USE:
         # Cheap rejections before the ~380ms evaluation: most tool calls are
@@ -368,7 +460,14 @@ SETTINGS_FILE = ".claude/settings.json"
 _ENTRIES = {
     SESSION_START: "",           # every source, including `compact`
     PRE_TOOL_USE: TOOL_MATCHER,
+    STOP: "",                    # no matcher support on Stop
 }
+
+# The Stop entry is installed unconditionally and is inert until `slate agent
+# repair on` *and* full access are both set — `build_output` checks the switches
+# before it evaluates anything. Installing it up front means turning repair on
+# is one command rather than one command plus a re-install, and an entry that
+# returns silence costs a subprocess at the end of a turn.
 
 
 class HookConfigError(RuntimeError):

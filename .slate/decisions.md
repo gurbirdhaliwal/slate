@@ -801,3 +801,81 @@ Safety:    `test_moving_the_repair_to_another_section_is_rejected` and
 Revisit trigger: A doc whose sections are large enough that "somewhere in this
           section" stops being a useful location.
 ```
+
+```
+Date: 2026-08-01
+Decision: The end-of-session repair prompt is delivered on the `Stop` hook, not
+          `SessionEnd`, with two independent loop brakes and no `decision:
+          "block"` on any path.
+Rationale: The plan drafted "SessionEnd/Stop ... additionalContext only", and
+          half of that is impossible. A canary against a real session showed
+          `SessionEnd` has no decision control and no `additionalContext` at
+          all — it fires after the session is over and shows stderr to the
+          user, so nothing it emits reaches the model. `Stop` accepts
+          `additionalContext` and continues the conversation, which is the only
+          place an end-of-session job can still be acted on.
+Trade-off: Continuing the conversation is a loop by construction. It is bounded
+          by `stop_hook_active` (observed False then True across one continued
+          turn) and, independently, by a per-session note through
+          `_already_announced` — so a client that drops the field still gets
+          one announcement. Blocking would be stronger delivery and is refused:
+          a hook that can prevent a session ending is the landmine this module
+          was built around.
+Safety:    Eight tests in `tests/test_claude_hook.py` — silent by default,
+          silent on one switch, silent when the layer is clean, silent under
+          `stop_hook_active`, once per session, never emits `decision`, and
+          malformed input stays silence.
+Revisit trigger: A client that offers a lifecycle event which is both late in
+          the turn and free of continuation semantics. That would drop the loop
+          brakes entirely.
+```
+
+```
+Date: 2026-08-01
+Decision: Hook text offers, it never commands. `claudehook.session_end_text`
+          names itself and the settings file it came from, reports what it
+          observed, and states that leaving a claim alone is a correct outcome.
+Rationale: The canary injected a bare imperative and the model identified it as
+          a prompt-injection attempt and refused it — correctly, and that is
+          the behaviour we want models to have. An instruction arriving from a
+          subprocess has no more authority than any other untrusted text, so
+          delivery that reads like a command is delivery that gets declined on
+          principle rather than on merit. Attribution and description are what
+          make it legible as the user's own tooling.
+Trade-off: Softer phrasing is weaker delivery, and Phase 4 may find it too
+          weak. That is a measurable question; writing a stronger imperative to
+          win it would be optimising for compliance against a model that is
+          right to resist.
+Safety:    `test_stop_names_the_suspect_claim` asserts the "correct outcome"
+          language is present, so a later tightening of the copy cannot quietly
+          turn it into an order.
+Revisit trigger: Phase 4 showing uptake near zero *and* transcripts showing the
+          agent read the text and declined on grounds other than suspicion.
+```
+
+```
+Date: 2026-08-01
+Decision: `slate_repair_apply` writes the doc after `verify_repair` accepts it,
+          rather than only proposing a diff — but behind four consents, and it
+          never re-anchors.
+Rationale: The plan said start with propose-diff. A proposal the agent renders
+          for a human to paste back gives the agent no path to the doc, and
+          Phase 4's primary metric is suspect-claim count at session end versus
+          session start — which would then be zero by construction, measuring
+          the harness rather than the pivot. The propose posture is preserved
+          by consent instead of by impotence: repair off by default, full
+          access required on top, the client's own per-call permission prompt,
+          and the verifier refusing anything malformed.
+Trade-off: An agent can now change tracked files. That is the risk the plan
+          named ("an agent silently editing tracked files is how a tool gets
+          uninstalled once"), and it is bounded by leaving the change unstaged
+          and the doc un-re-anchored, so the layer does not vouch for the new
+          text until a human runs `slate mark`.
+Safety:    `tests/test_mcp.py` pins the tool hidden without both switches,
+          denied when called anyway, writing nothing on a rejected rewrite or a
+          missing target, and leaving `slate_synced_commit` untouched on a
+          successful one.
+Revisit trigger: Phase 4 data on rejection rate. A high rejection rate means
+          the agent is producing edits the gate has to catch, and the answer
+          then is propose-only after all.
+```

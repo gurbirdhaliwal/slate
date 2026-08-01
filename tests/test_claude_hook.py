@@ -83,7 +83,11 @@ def test_internal_failure_is_silent(layered: Path, monkeypatch) -> None:
 
 
 def test_unknown_event_is_ignored(layered: Path) -> None:
-    assert claudehook.build_output(layered, payload(hook_event_name="Stop")) is None
+    # Not `Stop` any more — that became a handled event in Phase 3, and this
+    # assertion would have kept passing for the wrong reason (repair is off by
+    # default, so Stop is silent anyway).
+    assert claudehook.build_output(layered, payload(hook_event_name="PreCompact")) is None
+    assert claudehook.build_output(layered, payload(hook_event_name="SessionEnd")) is None
 
 
 # --- SessionStart -----------------------------------------------------------
@@ -284,7 +288,7 @@ def test_installed_events_reflects_state(repo: Path) -> None:
     assert claudehook.installed_events(repo) == []
     claudehook.install(repo)
     assert set(claudehook.installed_events(repo)) == {
-        claudehook.SESSION_START, claudehook.PRE_TOOL_USE
+        claudehook.SESSION_START, claudehook.PRE_TOOL_USE, claudehook.STOP
     }
 
 
@@ -420,3 +424,96 @@ def test_cochange_failure_does_not_break_the_hook(coupled: Path, monkeypatch) ->
     monkeypatch.setattr(cochange, "partners", boom)
     raw = claudehook.run(coupled, json.dumps(edit(coupled, "demo/engine.py")))
     assert raw is None or "changed together" not in raw
+
+
+# --------------------------------------------------------------------------
+# Stop: the session-end repair prompt (Phase 3)
+#
+# It rides `Stop` rather than `SessionEnd` because `SessionEnd` cannot inject
+# anything — no decision control, no `additionalContext`, it fires after the
+# session is over. `Stop` fires when the model finishes a turn and continues
+# the conversation, which is the only place an end-of-session job can be acted
+# on. That continuation is also why the loop guards below are not optional.
+
+
+def stop(session_id: str = "s1", **kwargs) -> dict:
+    return payload(hook_event_name="Stop", session_id=session_id, **kwargs)
+
+
+@pytest.fixture
+def suspect(layered: Path) -> Path:
+    """A layer with one hand-written claim the code no longer vouches for."""
+    read_next = layered / ".slate" / "read-next.md"
+    read_next.write_text(read_next.read_text() + "\n`engine.run` returns 42.\n")
+    commit_all(layered, "describe run")
+    (layered / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    commit_all(layered, "change run")
+    return layered
+
+
+def enable_repair(repo: Path) -> None:
+    from slate import agentcfg
+    agentcfg.set_access(repo, agentcfg.FULL)
+    agentcfg.set_repair(repo, agentcfg.REPAIR_ON)
+
+
+def test_stop_is_silent_by_default(suspect: Path) -> None:
+    # There is a real repair task here; the switch is what keeps it quiet.
+    assert claudehook.build_output(suspect, stop()) is None
+
+
+def test_stop_needs_both_switches(suspect: Path) -> None:
+    from slate import agentcfg
+    agentcfg.set_repair(suspect, agentcfg.REPAIR_ON)  # but access is still read
+    assert claudehook.build_output(suspect, stop()) is None
+    agentcfg.set_access(suspect, agentcfg.FULL)
+    assert claudehook.build_output(suspect, stop()) is not None
+
+
+def test_stop_names_the_suspect_claim(suspect: Path) -> None:
+    enable_repair(suspect)
+    out = claudehook.build_output(suspect, stop())
+    specific = out["hookSpecificOutput"]
+    assert specific["hookEventName"] == claudehook.STOP
+    text = specific["additionalContext"]
+    assert "engine.run" in text
+    # It must offer, not command: a bare imperative injected by a hook reads as
+    # a prompt-injection attempt, and a canary against a real session had one
+    # identified and refused.
+    assert "correct outcome" in text
+
+
+def test_stop_stays_silent_when_the_layer_is_clean(layered: Path) -> None:
+    enable_repair(layered)
+    assert claudehook.build_output(layered, stop()) is None
+
+
+def test_stop_hook_active_ends_the_loop(suspect: Path) -> None:
+    # `additionalContext` on Stop continues the conversation, so a hook that
+    # speaks unconditionally never lets the session end.
+    enable_repair(suspect)
+    assert claudehook.build_output(suspect, stop(stop_hook_active=True)) is None
+
+
+def test_stop_announces_once_per_session(suspect: Path) -> None:
+    # The second brake, independent of the client: if a future Claude Code
+    # drops `stop_hook_active`, this still bounds it to one announcement.
+    enable_repair(suspect)
+    assert claudehook.build_output(suspect, stop("abc")) is not None
+    assert claudehook.build_output(suspect, stop("abc")) is None
+    assert claudehook.build_output(suspect, stop("def")) is not None
+
+
+def test_stop_never_blocks(suspect: Path) -> None:
+    # A hook that blocks the stop is a hook that can stop a session ending,
+    # which is the landmine this module is built around.
+    enable_repair(suspect)
+    out = claudehook.build_output(suspect, stop())
+    assert "decision" not in out
+    assert set(out) == {"hookSpecificOutput"}
+
+
+def test_stop_failure_is_silence(suspect: Path) -> None:
+    enable_repair(suspect)
+    assert claudehook.run(suspect, '{"hook_event_name": "Stop"') is None
+    assert claudehook.run(suspect, "not json at all") is None

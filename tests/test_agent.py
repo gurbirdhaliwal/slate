@@ -77,3 +77,43 @@ def test_cli_agent_access_prints_current(repo: Path, capsys) -> None:
     code = main(["-C", str(repo), "agent", "access"])
     assert code == 0
     assert capsys.readouterr().out.strip() == "read"
+
+
+# --- the repair switch (Phase 3) -------------------------------------------
+
+
+def test_repair_defaults_to_off(repo: Path) -> None:
+    assert agentcfg.get_repair(repo) == "off"
+    assert not agentcfg.repair_enabled(repo)
+
+
+def test_repair_needs_full_access_to_take_effect(repo: Path) -> None:
+    # Otherwise the repair file is a way around the access ceiling, which is
+    # the one thing that ceiling exists to be.
+    agentcfg.set_repair(repo, "on")
+    assert agentcfg.get_repair(repo) == "on"
+    assert not agentcfg.repair_enabled(repo)
+    agentcfg.set_access(repo, "full")
+    assert agentcfg.repair_enabled(repo)
+
+
+def test_full_access_alone_does_not_enable_repair(repo: Path) -> None:
+    agentcfg.set_access(repo, "full")
+    assert not agentcfg.repair_enabled(repo)
+
+
+def test_repair_file_garbage_degrades_to_off(repo: Path) -> None:
+    agentcfg.set_access(repo, "full")
+    agentcfg.repair_path(repo).write_text("yes please\n")
+    assert agentcfg.get_repair(repo) == "off"
+    assert not agentcfg.repair_enabled(repo)
+
+
+def test_cli_repair_round_trip(repo: Path, capsys) -> None:
+    assert main(["-C", str(repo), "agent", "repair", "on"]) == 0
+    assert "read-only" in capsys.readouterr().out  # warns the other switch is off
+    assert main(["-C", str(repo), "agent", "repair"]) == 0
+    assert capsys.readouterr().out.strip() == "on"
+    assert main(["-C", str(repo), "agent", "repair", "off"]) == 0
+    capsys.readouterr()
+    assert agentcfg.get_repair(repo) == "off"

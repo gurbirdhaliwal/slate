@@ -1,6 +1,6 @@
 # Execution plan — the repair-and-resume pivot
 
-**Status:** Phases 0–2 done (2026-08-01) · **Drafted:** 2026-07-30
+**Status:** Phases 0–3 done (2026-08-01) · **Drafted:** 2026-07-30
 
 Phase 0 took two experiment cycles and three revisions. It is answered:
 `benchmarks/repairbench/RESULTS.md` records 12/12 falsified passages repaired
@@ -248,6 +248,28 @@ worst-bug invariant, introduced by the feature meant to serve it.
 
 ## Phase 3 — Delivery: session-end repair
 
+**Shipped 2026-08-01.** One correction, forced by measurement rather than
+preference: **the event is `Stop`, not `SessionEnd`.** A canary against a real
+session settled it —
+
+- `SessionEnd` has no decision control and no `additionalContext` at all. It
+  fires after the session is over and shows stderr to the user; nothing it
+  emits reaches the model. The drafted "`SessionEnd`/`Stop` … `additionalContext`
+  only" was not implementable as written.
+- `Stop` fires when the model finishes a turn, accepts `additionalContext`, and
+  **continues the conversation** so the agent can act on it.
+
+That continuation is a loop, so it needs brakes. Two, independent: the client's
+`stop_hook_active` flag (measured `False` then `True` across one continued
+turn), and a per-session note of its own so a client that drops the field still
+bounds this to one announcement. No `decision: "block"` anywhere — blocking is
+how a hook becomes the reason a session will not end.
+
+The canary produced a second finding that changed the copy, not just the wiring:
+an imperative instruction injected by a hook **reads as a prompt-injection
+attempt and gets refused**, correctly. The rendered text therefore says who is
+speaking and what it observed, and offers rather than commands.
+
 ### Why session-end, not session-start
 
 **Repair-before** asks the agent to reconstruct *why* a doc went stale from a
@@ -287,6 +309,17 @@ converge on its own.
   `agentcfg.FULL` (`slate/agentcfg.py:25`). An agent silently editing tracked
   files is how a tool gets uninstalled once. Start with propose-diff; consider
   auto-apply only after Phase 4 data.
+
+  **Shipped as apply-behind-gates rather than propose-only**, deliberately.
+  A proposal the agent renders for a human to paste back gives the agent no path
+  to the doc, which makes Phase 4 unmeasurable: its primary metric is
+  suspect-claim count at session end versus session start, and if repairs never
+  land that number is identically zero by construction. The propose-diff posture
+  is preserved by four independent consents instead — repair off by default,
+  full access required on top of it, the client's own per-call permission
+  prompt, and `verify_repair` refusing anything malformed. The doc is left
+  unstaged and **not re-anchored**, so a human still reviews the diff before the
+  layer vouches for it.
 
 ---
 

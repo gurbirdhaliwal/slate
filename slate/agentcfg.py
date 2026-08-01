@@ -49,6 +49,52 @@ def set_access(root: Path, mode: str) -> None:
     path.write_text(mode + "\n")
 
 
+# --- repair (Phase 3) -------------------------------------------------------
+# A third switch, deliberately separate from the access mode. `full` already
+# lets an agent sync, mark, and rewrite read-next — all of which a user asked
+# for by granting it. Repair is different in kind: it edits prose the user
+# wrote, in response to a job the user never gave. An agent silently editing
+# tracked files is how a tool gets uninstalled once, so this starts off and
+# both switches must be thrown before anything writes.
+
+REPAIR_ON = "on"
+REPAIR_OFF = "off"
+REPAIR_STATES = (REPAIR_ON, REPAIR_OFF)
+
+_REPAIR_FILE = f"{SLATE_DIR}/agent-repair"
+
+
+def repair_path(root: Path) -> Path:
+    return root / _REPAIR_FILE
+
+
+def get_repair(root: Path) -> str:
+    """The repair switch on its own; anything missing or unrecognized is off."""
+    try:
+        state = repair_path(root).read_text().strip().lower()
+    except OSError:
+        return REPAIR_OFF
+    return state if state in REPAIR_STATES else REPAIR_OFF
+
+
+def set_repair(root: Path, state: str) -> None:
+    if state not in REPAIR_STATES:
+        raise ValueError(f"repair must be one of {REPAIR_STATES}, got {state!r}")
+    path = repair_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(state + "\n")
+
+
+def repair_enabled(root: Path) -> bool:
+    """Both switches, and the conjunction is the point.
+
+    Turning repair on while access is read must grant nothing — otherwise the
+    repair file becomes a way around the access ceiling, which is the one thing
+    that ceiling exists to be.
+    """
+    return get_repair(root) == REPAIR_ON and get_access(root) == FULL
+
+
 # --- client registration ----------------------------------------------------
 # Each entry: (config file rel path, top-level key). Both Claude Code and
 # Cursor use the same {"mcpServers": {name: {command, args}}} shape.

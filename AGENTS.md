@@ -1,8 +1,8 @@
 ---
 slate_doc: agents
 slate_generated: true
-slate_synced_commit: d71beab
-slate_synced_at: 2026-07-31T20:05:56+00:00
+slate_synced_commit: 47e8952
+slate_synced_at: 2026-08-01T00:39:25+00:00
 slate_synced_digest: e74b8fdd32d89b23
 slate_watches:
   - .slate/**

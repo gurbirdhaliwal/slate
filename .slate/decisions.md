@@ -1,8 +1,8 @@
 ---
 slate_doc: decisions
 slate_generated: false
-slate_synced_commit: d71beab
-slate_synced_at: 2026-07-31T20:05:56+00:00
+slate_synced_commit: 47e8952
+slate_synced_at: 2026-08-01T00:39:25+00:00
 slate_synced_digest: e3b0c44298fc1c14
 slate_watches:
 ---
@@ -633,4 +633,35 @@ Revisit trigger: Failing any one threshold means Phases 2 and 3 are not built
           and `slate repair` stays a read-only list for a human. Passing all
           three is a floor, not a licence: it says the agent does not make
           things worse, not that it makes them right.
+```
+
+```
+Date: 2026-07-31
+Decision: Symbol references resolve by dotted *module path*, not by filename
+          stem. `_changed_symbols` carries `_module_path(hit)`
+          (`src/flask/views.py` -> `flask.views`, `pkg/__init__.py` -> `pkg`)
+          and `_symbol_verdict` matches a ref's qualifier — or its full dotted
+          prefix — through `_qualifies`.
+Rationale: Stem matching produced a false `fresh`, the one failure §10 forbids.
+          A claim about `pkg.request` whose symbol lives in `pkg/__init__.py`
+          never matched, because that file's stem is `__init__`; and when any
+          unrelated `fixtures/pkg.py` existed the qualifier counted as "known",
+          which suppressed the conservative fallback that would otherwise have
+          caught it. Flask has exactly that shape, a test fixture named
+          `flask.py` beside the real package, which is how repairbench found
+          it: 9 of 18 corpus pairs carried evidence resolved to the wrong file.
+Trade-off: `_qualifies` matches a bare tail as well as a dotted prefix, so
+          `views` still names `flask.views` and an unrelated `a.b.views` also
+          matches. Deliberately generous: matching too much costs a false
+          `stale`, matching too little costs a false `fresh`, and only one of
+          those is allowed to happen.
+Safety:    Three tests, one per direction — the decoy case that was falsely
+          fresh, a `src/` layout that stem matching could not reach at all, and
+          an unrelated-module edit that must stay fresh so the broader matching
+          cannot be paid for in alarm fatigue.
+Revisit trigger: The remaining half of the problem is untouched — `refs`
+          assumes every backticked dotted name is code in *this* repo, so
+          `logging.Formatter` matches a local `logging.py`. Any doc citing
+          stdlib or a third-party API gets false staleness, and no repairbench
+          corpus is trustworthy until that is fixed.
 ```

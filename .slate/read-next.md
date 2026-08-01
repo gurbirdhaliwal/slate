@@ -1,9 +1,9 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: d71beab
-slate_synced_at: 2026-07-31T20:05:56+00:00
-slate_synced_digest: 549f3f8797408c56
+slate_synced_commit: 47e8952
+slate_synced_at: 2026-08-01T00:39:25+00:00
+slate_synced_digest: 72159ba4e4ded245
 slate_watches:
   - benchmarks/**
   - slate/**
@@ -232,13 +232,27 @@ built and `slate repair` stays a read-only list. The control arm is the
 load-bearing one — Phase 0.5 measured that most flagged claims are still
 accurate, so an agent that rewrites whatever it is shown damages docs.
 
-**Two resolution limits found while building the corpus, both real for users.**
-Mining Flask showed `refs` assumes every backticked dotted name is code in
-*this* repo: `logging.Formatter` and `werkzeug.wsgi.DispatcherMiddleware`
-matched same-named local files, and `flask.request` resolved to a **test
-fixture** named `flask.py` while `flask.views.View` hit an `examples/` file.
-Slate's own flat layout hides both; any repo with `tests/` or `examples/`, or
-any doc that references stdlib, gets false staleness. Neither is fixed.
+**Symbol refs resolve by module path, not filename stem — landed (2026-07-31).
+This closed a false `fresh`.** `_changed_symbols` now carries a dotted module
+path (`_module_path`: `src/flask/views.py` → `flask.views`, `pkg/__init__.py`
+→ `pkg`) and `_symbol_verdict` matches a ref's qualifier against it via
+`_qualifies`, taking the full dotted prefix when the ref carries one.
+
+Stem matching was not merely imprecise. A claim about `pkg.request` whose
+symbol lives in `pkg/__init__.py` never matched — that file's stem is
+`__init__` — and when any unrelated `fixtures/pkg.py` existed, the qualifier
+counted as "known" and *suppressed the conservative fallback* that would
+otherwise have caught it. The claim came back **fresh** while the code it
+described had moved. Flask has exactly that shape: a test fixture named
+`flask.py` beside the real package. Pinned by
+`test_package_symbol_with_a_same_named_decoy_is_not_falsely_fresh`, plus a
+src-layout case and a no-over-flagging case in the other direction.
+
+**Still unfixed:** `refs` assumes every backticked dotted name is code in
+*this* repo, so `logging.Formatter` and `werkzeug.wsgi.DispatcherMiddleware`
+match same-named local files. Any doc referencing stdlib or a third-party API
+gets false staleness. That is the remaining half of the resolution problem and
+the next thing in the way of a repairbench corpus.
 
 **Next, in priority order.** (0) Score Phase 0 with `slate repair --json` as
 the instrument; the corpus is thin (3 verified genuinely-falsified claims

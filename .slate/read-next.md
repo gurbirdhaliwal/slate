@@ -1,9 +1,9 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: 47e8952
-slate_synced_at: 2026-08-01T00:39:25+00:00
-slate_synced_digest: 72159ba4e4ded245
+slate_synced_commit: 3b26748
+slate_synced_at: 2026-08-01T01:32:31+00:00
+slate_synced_digest: 80b964d93058cd4e
 slate_watches:
   - benchmarks/**
   - slate/**
@@ -248,11 +248,20 @@ described had moved. Flask has exactly that shape: a test fixture named
 `test_package_symbol_with_a_same_named_decoy_is_not_falsely_fresh`, plus a
 src-layout case and a no-over-flagging case in the other direction.
 
-**Still unfixed:** `refs` assumes every backticked dotted name is code in
-*this* repo, so `logging.Formatter` and `werkzeug.wsgi.DispatcherMiddleware`
-match same-named local files. Any doc referencing stdlib or a third-party API
-gets false staleness. That is the remaining half of the resolution problem and
-the next thing in the way of a repairbench corpus.
+**References to code outside the repo — measured, mostly a non-problem
+(2026-07-31).** This was written up as the next blocker and that was wrong; it
+was checked before being built, and module-path resolution had already closed
+most of it. A doc citing stdlib `logging.Formatter` in a repo that has its own
+`app/logging.py` stays **fresh** when that module changes, because resolution
+sees the module never defined `Formatter`.
+
+Two cases remain, both conservative: an *unparseable* local module leaves the
+claim `unknowable`, and a local module that genuinely defines `Formatter`
+leaves it `stale`. `sys.stdlib_module_names` would clear both and should not
+be used for it — that trades a false `stale` for a possible false `fresh`,
+since a doc writing `logging.Formatter` about its *own* module would then
+never be flagged. Only one of those errors is permitted. All three behaviours
+are pinned in `tests/test_freshness.py`.
 
 **Next, in priority order.** (0) Score Phase 0 with `slate repair --json` as
 the instrument; the corpus is thin (3 verified genuinely-falsified claims

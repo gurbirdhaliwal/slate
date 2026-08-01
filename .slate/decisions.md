@@ -1,8 +1,8 @@
 ---
 slate_doc: decisions
 slate_generated: false
-slate_synced_commit: 47e8952
-slate_synced_at: 2026-08-01T00:39:25+00:00
+slate_synced_commit: 3b26748
+slate_synced_at: 2026-08-01T01:32:31+00:00
 slate_synced_digest: e3b0c44298fc1c14
 slate_watches:
 ---
@@ -664,4 +664,33 @@ Revisit trigger: The remaining half of the problem is untouched — `refs`
           `logging.Formatter` matches a local `logging.py`. Any doc citing
           stdlib or a third-party API gets false staleness, and no repairbench
           corpus is trustworthy until that is fixed.
+```
+
+```
+Date: 2026-07-31
+Decision: Do not disambiguate stdlib references with `sys.stdlib_module_names`.
+          A doc citing code outside this repo keeps whatever verdict symbol
+          resolution reaches, including a conservative one.
+Rationale: This was recorded as the next blocker and the record was wrong. It
+          was measured before being built: module-path resolution had already
+          closed the common case. A doc citing stdlib `logging.Formatter` in a
+          repo with its own `app/logging.py` stays fresh when that module
+          changes, because resolution sees the module never defined
+          `Formatter`. Only two cases remain — an unparseable local module
+          (`unknowable`) and a local module that genuinely defines the same
+          name (`stale`) — and both are ambiguity, not error.
+Trade-off: Those two cases are false positives for a doc that meant the
+          standard library, and they stay. Clearing them means treating a
+          stdlib-rooted name as external, which would stop flagging a doc that
+          writes `logging.Formatter` about its *own* module. That is a false
+          `fresh` traded for a false `stale`, and only one of those is
+          permitted (§10).
+Safety:    All three behaviours pinned in `tests/test_freshness.py` — the
+          fresh case, the unparseable case, and the shadowing case — so a
+          later "cleanup" cannot quietly convert them.
+Revisit trigger: A real repo where stdlib citations produce enough noise to be
+          worth the risk, *and* a way to tell "the doc means the stdlib" from
+          "the doc means our module of the same name" that does not rest on
+          the name alone. Import analysis of the documented module would do
+          it; a name list would not.
 ```

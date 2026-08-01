@@ -1,8 +1,8 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: 3b26748
-slate_synced_at: 2026-08-01T01:32:31+00:00
+slate_synced_commit: a816805
+slate_synced_at: 2026-08-01T01:40:10+00:00
 slate_synced_digest: 80b964d93058cd4e
 slate_watches:
   - benchmarks/**
@@ -219,18 +219,24 @@ returns 9999 purple`` turns the doc **fresh**. The criterion would have scored
 target claim becomes fresh" — would accept nonsense from every trial. The gate
 must rest on signals a repair cannot move by existing.
 
-**The repair experiment is pre-registered and not yet run.**
-`benchmarks/repairbench/spec.py` fixes the corpus, arms, metrics and
-thresholds; both corpora are frozen beside it. Two balanced arms of 18:
-`corpus_repairs.json` (sentences a maintainer later rewrote because the code
-moved — mined from history, so the maintainer's edit is a gold answer; median
-48 commits stale, worst 558) and `corpus_controls.json` (sentences flagged for
-the same reason that the maintainer deliberately left alone). Thresholds:
-≥90% of rewrites name only symbols that exist, ≥95% keep their refs, and ≥50%
-of *accurate* claims are declined. Failing any one means Phases 2 and 3 are not
-built and `slate repair` stays a read-only list. The control arm is the
-load-bearing one — Phase 0.5 measured that most flagged claims are still
-accurate, so an agent that rewrites whatever it is shown damages docs.
+**repairbench rev 1 ran and failed — inconclusively. Read
+`benchmarks/repairbench/RESULTS.md` before touching this.** Pre-registration in
+`spec.py` (committed before any agent ran), 36 trials, `spec.verdict()` → FAIL,
+so under the terms fixed in advance **Phases 2 and 3 are not built and
+`slate repair` stays a read-only list.** That conclusion stands; the primary
+number behind it does not, and must not be quoted.
+
+Why it is void: the metric scored *unchanged text* (the agent declined 16 of
+18), the resolver could not express Flask's API, and it punishes accurate prose
+about deletions — "the `flask.ext` package has been removed" is true and names
+something that by definition no longer exists. The control comparison is void
+too: both arms declined at ~88%, so there is no discrimination signal, and the
+control threshold passed while measuring nothing.
+
+Hand-adjudication then found the corpus itself conflated *a maintainer edited
+this* with *this was false*: 8 of 18 were editorial rewrites and 9 of 18
+carried evidence resolved to the wrong file, leaving **5 usable pairs**. On
+those 5 the agent declined 5 of 5 — a direction, not a result.
 
 **Symbol refs resolve by module path, not filename stem — landed (2026-07-31).
 This closed a false `fresh`.** `_changed_symbols` now carries a dotted module
@@ -263,9 +269,30 @@ since a doc writing `logging.Formatter` about its *own* module would then
 never be flagged. Only one of those errors is permitted. All three behaviours
 are pinned in `tests/test_freshness.py`.
 
-**Next, in priority order.** (0) Score Phase 0 with `slate repair --json` as
-the instrument; the corpus is thin (3 verified genuinely-falsified claims
-against a 10–15 target), so widen it first. (1) Replicate the cost effect with cost
+**Where the arc actually stands.** Of the plan's phases, only **Phase 1** is
+complete — and it was built out of order, as Phase 0's instrument. **Phase 0 is
+still the open one**: it has consumed a full experiment cycle, had its exit
+criterion rewritten mid-flight for circularity, and still has no usable answer.
+Phase 2 is worse than not-started — both drafted gates are dead (freshness is
+circular; `refs_resolve` cannot express deletions), so it has no working design.
+Phases 3–5 untouched.
+
+Most of what shipped in this arc was *off-plan*: claims never being evaluated
+at all, co-landing prose flagged as rot, package symbols falsely fresh, `.rst`
+filenames read as symbols. Two false-`fresh` classes closed. Chasing the pivot
+has been an excellent bug-finding strategy and a poor hypothesis-testing one.
+
+**Next, in priority order.** (0) **rev 2, with ground truth *constructed*
+rather than *discovered*.** Every attempt to mine a corpus from real repos has
+foundered on ref resolution, and each fix narrows the problem without solving
+corpus scale. Instead: take a real repo, make a real code change, and write the
+sentence that describes the old behaviour. Real prose, real diff, exact ground
+truth, no resolver in the loop. Design it before running anything — and note
+that rev 2 needs `spec.REVISION` bumped, the discrimination metric expressed as
+a *difference between arms* rather than a threshold on one, and the control
+matching fixed (10 of 18 controls skipped in rev 1 because the corpus stores
+segmenter-normalised text that no longer matches the file byte-for-byte).
+(1) Replicate the cost effect with cost
 *pre-registered* and higher n, and run SessionStart and PreToolUse as separate
 arms — right now the sweep cannot say which hook did the work. (2) The old
 `benchmarks/RESULTS.md` + `benchmark.py` are still self-referential and

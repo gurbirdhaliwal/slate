@@ -42,6 +42,11 @@ ROOT = HERE.parents[1]
 RUNS = HERE / "runs"
 WORK = HERE / ".work"
 
+# A trial that never completes is reported void, not counted. Three is enough
+# for a dropped connection without letting a systematically failing item spend
+# the whole quota.
+ATTEMPTS = 3
+
 sys.path.insert(0, str(ROOT))
 from slate import refs as slate_refs  # noqa: E402
 
@@ -98,6 +103,18 @@ def render_prompt(item: corpus.Item, task: dict, diff: str) -> str:
 # the agent run
 
 
+class Void(RuntimeError):
+    """The session failed, so the trial produced no evidence.
+
+    A dropped connection leaves the passage untouched, which is byte-identical
+    to a deliberate decline. Scoring it as one would quietly move the number
+    the whole experiment turns on, in the direction that favours the null —
+    the same class of defect that made revision 1 unreadable. Voided trials are
+    retried, and if they never complete they are reported as void rather than
+    counted.
+    """
+
+
 def run_agent(root: Path, prompt: str, transcript: Path) -> tuple[str, float]:
     env = dict(os.environ)
     env.pop("ANTHROPIC_MODEL", None)
@@ -112,21 +129,23 @@ def run_agent(root: Path, prompt: str, transcript: Path) -> tuple[str, float]:
         proc = subprocess.run(cmd, cwd=root, env=env, stdout=sink,
                               stderr=subprocess.PIPE, text=True,
                               stdin=subprocess.DEVNULL)
-    if proc.returncode != 0:
-        print(f"    ! claude exited {proc.returncode}: {proc.stderr[:200]}")
-    return final_text(transcript), round(time.time() - started, 1)
+    said, errored = final_text(transcript)
+    if errored:
+        raise Void(said[:200] or f"claude exited {proc.returncode}")
+    return said, round(time.time() - started, 1)
 
 
-def final_text(transcript: Path) -> str:
-    """The session's result string, from the CLI's own envelope."""
+def final_text(transcript: Path) -> tuple[str, bool]:
+    """The session's result string and whether it failed, from the CLI's own
+    envelope. A missing result event is itself a failure."""
     for line in reversed(transcript.read_text().splitlines()):
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
         if event.get("type") == "result":
-            return str(event.get("result", ""))
-    return ""
+            return str(event.get("result", "")), bool(event.get("is_error"))
+    return "", True
 
 
 # --------------------------------------------------------------------------
@@ -297,13 +316,26 @@ def main() -> int:
         items = falsified + accurate
 
     WORK.mkdir(exist_ok=True)
+    void = []
     for item in items:
         if not args.force and already_done(item):
             print(f"  {item.id:28} already recorded at revision {spec.REVISION}")
             continue
-        record = trial(item)
-        action = "rewrote" if record["edited"] else "declined"
-        print(f"  {item.id:28} {item.arm:10} {action}  ({record['wall_s']}s)")
+        for attempt in range(ATTEMPTS):
+            try:
+                record = trial(item)
+            except Void as failure:
+                print(f"  {item.id:28} session failed ({failure}), "
+                      f"attempt {attempt + 1}/{ATTEMPTS}")
+                continue
+            action = "rewrote" if record["edited"] else "declined"
+            print(f"  {item.id:28} {item.arm:10} {action}  ({record['wall_s']}s)")
+            break
+        else:
+            void.append(item.id)
+
+    if void:
+        print(f"\n  void, never completed: {', '.join(void)}")
     return report()
 
 

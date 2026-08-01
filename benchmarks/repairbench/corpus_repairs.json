@@ -10,7 +10,10 @@
   "fix_commit": "0344044",
   "fix_subject": "Pivot Slate to a repo-local context control plane CLI",
   "window_commits": 1,
-  "repo": "slate"
+  "repo": "slate",
+  "label": "editorial",
+  "evidence": "good",
+  "adjudication": "README rewritten wholesale by the repo pivot, not corrected"
  },
  {
   "doc": ".slate/read-next.md",
@@ -23,7 +26,10 @@
   "fix_commit": "bd921dc",
   "fix_subject": "Sync the layer to the authorship-narrowing commit",
   "window_commits": 1,
-  "repo": "slate"
+  "repo": "slate",
+  "label": "falsified",
+  "evidence": "good",
+  "adjudication": "'and nothing else' untrue once cochange also rendered"
  },
  {
   "doc": "docs/views.rst",
@@ -36,7 +42,10 @@
   "fix_commit": "bab5a65",
   "fix_subject": "rewrite class-based view docs",
   "window_commits": 1,
-  "repo": "flask"
+  "repo": "flask",
+  "label": "editorial",
+  "evidence": "good",
+  "adjudication": "adding View.init_every_request does not falsify the sentence"
  },
  {
   "doc": "docs/views.rst",
@@ -49,7 +58,10 @@
   "fix_commit": "bab5a65",
   "fix_subject": "rewrite class-based view docs",
   "window_commits": 1,
-  "repo": "flask"
+  "repo": "flask",
+  "label": "editorial",
+  "evidence": "good",
+  "adjudication": "same; doc fix is 'rewrite class-based view docs'"
  },
  {
   "doc": "docs/api.rst",
@@ -62,7 +74,10 @@
   "fix_commit": "c2705ff",
   "fix_subject": "merge app and request context",
   "window_commits": 48,
-  "repo": "flask"
+  "repo": "flask",
+  "label": "editorial",
+  "evidence": "misattributed",
+  "adjudication": "Sphinx ref shortened; code commit is 'update dev dependencies'"
  },
  {
   "doc": "docs/signals.rst",
@@ -75,7 +90,10 @@
   "fix_commit": "9cb1a7a",
   "fix_subject": "blinker is required, signals are always available",
   "window_commits": 558,
-  "repo": "flask"
+  "repo": "flask",
+  "label": "falsified",
+  "evidence": "misattributed",
+  "adjudication": "flask.signals.Namespace went away when blinker became required"
  },
  {
   "doc": "docs/extensions.rst",
@@ -88,7 +106,10 @@
   "fix_commit": "4462cc5",
   "fix_subject": "rewrite extension docs remove old extension patterns remove flask.ext from api docs",
   "window_commits": 142,
-  "repo": "flask"
+  "repo": "flask",
+  "label": "falsified",
+  "evidence": "misattributed",
+  "adjudication": "flask.ext removed; ref resolved to a test fixture named flask.py"
  },
  {
   "doc": "docs/extensions.rst",
@@ -101,7 +122,10 @@
   "fix_commit": "4462cc5",
   "fix_subject": "rewrite extension docs remove old extension patterns remove flask.ext from api docs",
   "window_commits": 142,
-  "repo": "flask"
+  "repo": "flask",
+  "label": "falsified",
+  "evidence": "misattributed",
+  "adjudication": "same"
  },
  {
   "doc": "docs/extensions.rst",
@@ -114,7 +138,10 @@
   "fix_commit": "4462cc5",
   "fix_subject": "rewrite extension docs remove old extension patterns remove flask.ext from api docs",
   "window_commits": 142,
-  "repo": "flask"
+  "repo": "flask",
+  "label": "falsified",
+  "evidence": "misattributed",
+  "adjudication": "same"
  },
  {
   "doc": "docs/appcontext.rst",
@@ -127,7 +154,10 @@
   "fix_commit": "2411707",
   "fix_subject": "rework context docs",
   "window_commits": 150,
-  "repo": "flask"
+  "repo": "flask",
+  "label": "editorial",
+  "evidence": "misattributed",
+  "adjudication": "'flask.request points to the current request' still true"
  },
  {
   "doc": "docs/appcontext.rst",
@@ -140,7 +170,10 @@
   "fix_commit": "2411707",
   "fix_subject": "rework context docs",
   "window_commits": 150,
-  "repo": "flask"
+  "repo": "flask",
+  "label": "falsified",
+  "evidence": "misattributed",
+  "adjudication": "flask._app_ctx_stack removed in 2.2"
  },
  {
   "doc": "docs/appcontext.rst",
@@ -153,7 +186,10 @@
   "fix_commit": "2411707",
   "fix_subject": "rework context docs",
   "window_commits": 150,
-  "repo": "flask"
+  "repo": "flask",
+  "label": "editorial",
+  "evidence": "misattributed",
+  "adjudication": "'flask.g is reserved' still true"
  },
  {
   "doc": ".github/pull_request_template.md",
@@ -166,7 +202,10 @@
   "fix_commit": "87d5f5b",
   "fix_subject": "update project files (#5457)",
   "window_commits": 2,
-  "repo": "flask"
+  "repo": "flask",
+  "label": "editorial",
+  "evidence": "good",
+  "adjudication": "backticks removed from CHANGES.rst; no factual change"
  },
  {
   "doc": "docs/reqcontext.rst",
@@ -179,7 +218,10 @@
   "fix_commit": "2411707",
   "fix_subject": "rework context docs",
   "window_commits": 150,
-  "repo": "flask"
+  "repo": "flask",
+  "label": "editorial",
+  "evidence": "misattributed",
+  "adjudication": "'request globals' -> 'request proxy' is terminology"
  },
  {
   "doc": "docs/config.rst",
@@ -192,7 +234,10 @@
   "fix_commit": "6650764",
   "fix_subject": "remove previously deprecated code",
   "window_commits": 1,
-  "repo": "flask"
+  "repo": "flask",
+  "label": "falsified",
+  "evidence": "good",
+  "adjudication": "'will be removed in 2.3' false once actually removed"
  },
  {
   "doc": "docs/config.rst",
@@ -205,7 +250,10 @@
   "fix_commit": "6650764",
   "fix_subject": "remove previously deprecated code",
   "window_commits": 1,
-  "repo": "flask"
+  "repo": "flask",
+  "label": "falsified",
+  "evidence": "good",
+  "adjudication": "same"
  },
  {
   "doc": "docs/config.rst",
@@ -218,7 +266,10 @@
   "fix_commit": "6650764",
   "fix_subject": "remove previously deprecated code",
   "window_commits": 1,
-  "repo": "flask"
+  "repo": "flask",
+  "label": "falsified",
+  "evidence": "good",
+  "adjudication": "same"
  },
  {
   "doc": "docs/config.rst",
@@ -231,6 +282,9 @@
   "fix_commit": "6650764",
   "fix_subject": "remove previously deprecated code",
   "window_commits": 1,
-  "repo": "flask"
+  "repo": "flask",
+  "label": "falsified",
+  "evidence": "good",
+  "adjudication": "same"
  }
 ]

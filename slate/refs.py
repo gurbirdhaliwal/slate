@@ -24,9 +24,18 @@ _ROOT_FILES = {"Makefile", "README.md", "pyproject.toml", "package.json", "pom.x
 # identifier, so filenames and version strings don't sneak in.
 _SYMBOL = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)`")
 # Final components that mark the token as a filename, not a symbol reference.
+# A missing extension here is not cosmetic: the token becomes a *claim about a
+# symbol*, and the doc is then measured against code nobody ever named.
+# `CHANGES.rst` read as the symbol `CHANGES.rst` is what surfaced this
+# (repairbench rev 1) — reStructuredText repos name their own files constantly.
 _FILE_EXTENSIONS = {
     "py", "js", "jsx", "ts", "tsx", "json", "md", "toml", "yml", "yaml",
     "txt", "cfg", "ini", "lock", "png", "svg", "sh", "html", "css",
+    # Documentation formats.
+    "rst", "mdx", "adoc", "org", "tex",
+    # Languages Slate does not parse, whose filenames still appear in prose.
+    "go", "rs", "java", "kt", "rb", "php", "c", "h", "cpp", "cs", "swift",
+    "sql", "xml", "csv", "proto", "gradle", "bat", "ps1", "gz", "zip",
 }
 
 

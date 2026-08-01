@@ -216,8 +216,14 @@ class Arm:
     # Install Slate's Claude Code hooks, so freshness is injected rather than
     # offered as an MCP tool the agent may decline to call.
     hooks: bool = False
-    # Throw both repair switches (`agent access full` + `agent repair on`), so
-    # the Stop hook speaks and `slate_repair_apply` exists. E3 only.
+    # `slate agent access full` — unlocks sync/mark/focus/decision. Kept
+    # separate from `repair` because granting it changes far more than repair:
+    # `slate_update_focus` rewrites a human doc's whole focus section and
+    # re-stamps its anchor, with nothing verifying the result. An arm that has
+    # it and a control that does not are not comparable on doc convergence.
+    full_access: bool = False
+    # `slate agent repair on` — additionally makes the Stop hook speak and
+    # exposes `slate_repair_apply`. Requires full_access to do anything.
     repair: bool = False
 
 
@@ -315,24 +321,40 @@ SEEDED_CLAIMS = (
 SEEDED_DOC = "read-next"
 SEEDED_SECTION = "## Current focus"
 
+# THE CONTROL CARRIES FULL ACCESS TOO, and the first attempt did not.
+#
+# `repair-off` originally ran at the default read-only access, so the arms
+# differed by two things at once: the repair switch, and everything else `full`
+# unlocks. That is not a control. Trial 5 of the first repair-on run made the
+# problem concrete — it closed its repair job without ever calling
+# `slate_repair_apply`, by calling `slate_update_focus`, which rewrites the
+# whole focus section and re-stamps the doc's anchor with nothing verifying the
+# result. A read-only control cannot do that, so the measured gap would have
+# included a mechanism that has nothing to do with repair.
+#
+# Both arms now get `full`. The only remaining difference is the repair switch:
+# whether the Stop hook speaks, and whether `slate_repair_apply` exists.
 REPAIR_ARMS: tuple[Arm, ...] = (
     Arm(
         name="repair-off",
         experiment="E3",
         context="slate",
         hooks=True,
-        blurb="Seeded layer + hooks. Repair is off, so the Stop hook is inert "
-              "and nothing can rewrite a claim. The control.",
+        full_access=True,
+        blurb="Seeded layer + hooks + full access. Repair is off, so the Stop "
+              "hook is inert and slate_repair_apply does not exist — but every "
+              "other write tool does. The control.",
     ),
     Arm(
         name="repair-on",
         experiment="E3",
         context="slate",
         hooks=True,
+        full_access=True,
         repair=True,
-        blurb="Identical, plus `slate agent access full` and `slate agent "
-              "repair on`, so the Stop hook names the suspect claims and "
-              "slate_repair_apply can land a verified rewrite.",
+        blurb="Identical, plus `slate agent repair on`, so the Stop hook names "
+              "the suspect claims and slate_repair_apply can land a verified "
+              "rewrite.",
     ),
 )
 
@@ -527,6 +549,13 @@ class Metrics:
     repair_apply_calls: int = 0
     repair_apply_accepted: int = 0
     repair_apply_rejected: int = 0
+    # `slate_update_focus` / `slate_mark`: the other way a doc stops being
+    # suspect. Both rewrite or re-stamp a human-owned doc and **nothing
+    # verifies the result** — no `verify_repair`, no check that the claims
+    # survived. Convergence reached this way is convergence by attestation,
+    # which is a different and weaker thing than convergence by repair, and
+    # the two must be reported apart. Available in both arms now.
+    reanchor_calls: int = 0
 
 
 # --- the numbers, fixed in advance -----------------------------------------

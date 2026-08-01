@@ -155,12 +155,15 @@ def build_trial(arm: spec.Arm, trial: int) -> Path:
         if arm.experiment == "E3":
             _seed_claims(root)
             _instrument_stop_hook(root)
+        # Full access goes to both E3 arms — see the note above REPAIR_ARMS.
+        # `agentcfg.repair_enabled` requires the conjunction, so the control
+        # gets every other write tool and still cannot repair.
+        if arm.full_access:
+            subprocess.run([str(SLATE_BIN), "agent", "access", "full"],
+                           cwd=root, capture_output=True, check=True)
         if arm.repair:
-            # Both switches. `agentcfg.repair_enabled` requires the
-            # conjunction, so setting one would silently produce a control.
-            for args in (("agent", "access", "full"), ("agent", "repair", "on")):
-                subprocess.run([str(SLATE_BIN), *args], cwd=root,
-                               capture_output=True, check=True)
+            subprocess.run([str(SLATE_BIN), "agent", "repair", "on"],
+                           cwd=root, capture_output=True, check=True)
 
     _bridge_to_claude_md(root)
     git(root, "add", "-A")
@@ -449,6 +452,10 @@ def parse_transcript(path: Path, m: spec.Metrics) -> None:
                 # so match on the suffix rather than equality.
                 if "slate_repair_apply" in name:
                     m.repair_apply_calls += 1
+                # The unverified route to the same outcome: both rewrite or
+                # re-stamp a human doc with nothing checking the result.
+                if "slate_update_focus" in name or "slate_mark" in name:
+                    m.reanchor_calls += 1
 
                 # Agents reach for files through Read, Grep, Glob *and* shell
                 # (`grep -rn ... src/flask/app.py`). Counting only Read's
@@ -774,6 +781,16 @@ def main() -> int:
             for key in ("grader_passed", "grader_failed", "new_suite_failures",
                         "correct", "touched_tests"):
                 setattr(metrics, key, old[key])
+            # E3's counts come from the trial *tree*, not the transcript —
+            # `slate repair` run before and after the docs are restored. A
+            # reparse cannot re-derive them (the tree may be long gone) and
+            # must not zero them, which would silently turn a converged trial
+            # into a null one.
+            for key in ("suspect_claims_start", "suspect_claims_unrepaired",
+                        "suspect_claims_end", "claims_repaired",
+                        "stop_hook_fired", "stop_hook_injected"):
+                if key in old:
+                    setattr(metrics, key, old[key])
             # Preserve the revision the trial was actually run under. A fresh
             # Metrics() defaults to the *current* revision, so without this a
             # reparse silently relabels every older record as belonging to

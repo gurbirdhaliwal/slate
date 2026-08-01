@@ -523,3 +523,53 @@ def test_module_path_shapes() -> None:
     assert freshness._qualifies("flask.views", "flask.views")
     assert not freshness._qualifies("flask.views", "flask")
     assert not freshness._qualifies("", "anything")
+
+
+# --- references to code outside this repo -----------------------------------
+
+
+def _external_ref_repo(repo: Path) -> None:
+    """A repo with its own `logging` module, as Flask has, plus a doc claim
+    that means the *standard library* `logging.Formatter`."""
+    (repo / "app").mkdir()
+    (repo / "app" / "logging.py").write_text("def setup():\n    return 1\n")
+    commit_all(repo, "a local module sharing a stdlib name")
+    init_layer(repo)
+    _claim(repo, "Subclass `logging.Formatter` to add fields.")
+    commit_all(repo, "cite the stdlib")
+
+
+def test_stdlib_reference_survives_an_unrelated_local_change(repo: Path) -> None:
+    # The false stale this was expected to produce does not happen: symbol
+    # resolution sees that the local module never defined `Formatter`, so a
+    # change to it cannot invalidate a claim about the standard library.
+    _external_ref_repo(repo)
+    (repo / "app" / "logging.py").write_text("def setup():\n    return 2\n")
+    commit_all(repo, "change the local module")
+    assert report_for(repo, "read-next").status == FRESH
+
+
+def test_opaque_local_module_keeps_a_stdlib_claim_suspect(repo: Path) -> None:
+    """Conservative on purpose, and worth stating rather than fixing.
+
+    A stdlib name could be disambiguated with `sys.stdlib_module_names`, which
+    would clear this. It would also trade a false `stale` for a possible false
+    `fresh` — a doc that writes `logging.Formatter` meaning its *own* module
+    would then never be flagged. Only one of those errors is permitted here.
+    """
+    _external_ref_repo(repo)
+    (repo / "app" / "logging.py").write_text("def setup(:\n    return 1\n")
+    commit_all(repo, "make the local module unparseable")
+    r = report_for(repo, "read-next")
+    assert r.status == STALE
+    assert [c.status for c in human_claims(r)] == ["unknowable"]
+
+
+def test_local_module_shadowing_a_stdlib_name_is_flagged(repo: Path) -> None:
+    # Genuinely ambiguous — the doc could mean either — so it is flagged.
+    _external_ref_repo(repo)
+    (repo / "app" / "logging.py").write_text("class Formatter:\n    pass\n")
+    commit_all(repo, "define our own Formatter")
+    r = report_for(repo, "read-next")
+    assert r.status == STALE
+    assert [c.status for c in human_claims(r)] == [STALE]

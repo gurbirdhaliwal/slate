@@ -106,7 +106,12 @@ TRIALS = 5
 #   3 — new task (session access tracking) chosen for a difficulty band, plus
 #       `ground_truth_touched` to measure scope discovery directly rather
 #       than relying on upstream tests to cover the secondary file.
-TASK_REVISION = 3
+#   4 — Phase 4: the repair arms. The layer's read-next now carries seeded
+#       hand-written claims (see SEEDED_CLAIMS), which changes what context
+#       every arm receives. Cost and correctness are NOT comparable to
+#       revision 3 — the doc is richer — so the revision is bumped even
+#       though the task text is untouched.
+TASK_REVISION = 4
 
 # Identical for every arm. Describes the behaviour, never the file layout or
 # the shape of the fix — naming those would hand over the very thing the
@@ -209,6 +214,9 @@ class Arm:
     # Install Slate's Claude Code hooks, so freshness is injected rather than
     # offered as an MCP tool the agent may decline to call.
     hooks: bool = False
+    # Throw both repair switches (`agent access full` + `agent repair on`), so
+    # the Stop hook speaks and `slate_repair_apply` exists. E3 only.
+    repair: bool = False
 
 
 ARMS: tuple[Arm, ...] = (
@@ -244,6 +252,94 @@ ARMS: tuple[Arm, ...] = (
 # with a broken commit: `STALE_DOC_COMMIT` has no valid value for this base
 # (see above), and an arm whose "stale" doc is actually fresh would look like
 # a null result for staleness rather than a missing experiment.
+
+
+# --------------------------------------------------------------------------
+# E3 — the repair loop (Phase 4 of docs/repair-and-resume-plan.md)
+#
+# WHY THE PLAN'S DESIGN DOES NOT WORK, MEASURED BEFORE SPENDING A SWEEP.
+#
+# The plan said the repair experiment needs no constructed stale arm because
+# "the agent's own edits during the task stale the layer naturally". That is
+# true of *generated* facts and false of the ones repair exists for. A stock
+# `slate init` layer carries no hand-written claim that names code: the prose
+# in the generated templates is orientation boilerplate with no backticked
+# refs, and `claims._emit` only emits a unit that references code. So the
+# plan's primary metric — suspect-claim count at session end — was checked
+# against a tree with the real solution applied and came back:
+#
+#     no hand-written claim is suspect — nothing to repair
+#
+# Zero, for a perfect agent. The only staleness a stock layer develops is
+# generated drift in `architecture.md`, which `slate sync` rewrites for zero
+# tokens and which `repair.py` deliberately refuses to route to a model.
+# Running the sweep as drafted would have measured 0 vs 0 and called it a null
+# result for the pivot.
+#
+# THE FIX, and it is the same one that made Phase 0 work: construct the ground
+# truth instead of hoping to find it. `read-next` is seeded with good-faith
+# orientation prose that is *true at BASE_COMMIT* and that a *correct solution
+# falsifies*. The agent's own work then creates real repair jobs, which is what
+# the plan wanted and what a stock layer cannot supply.
+#
+# Every claim below is: true at the base commit, falsified by the real PR,
+# structural rather than prescriptive (it describes what is, never what to
+# build), and identical in both arms. The last point is what matters for the
+# comparison — the seeded doc makes the task easier than revision 3, and that
+# is fine, because it is the same doc on both sides. It is NOT fine to compare
+# these arms' cost or correctness against revision 3, hence the bump.
+
+SEEDED_CLAIMS = (
+    # Falsified by: `session` becomes a property that sets `accessed`, and the
+    # attribute moves to `_session`.
+    "`flask.ctx.RequestContext` holds the session on a plain `session` "
+    "attribute, assigned once when the context is pushed. Reading it is an "
+    "ordinary attribute access with no side effect.",
+    # Falsified by: `SessionMixin` gains `accessed`.
+    "`flask.sessions.SessionMixin` records whether a session was changed, via "
+    "`modified`. Nothing records whether it was merely read.",
+    # Falsified by: the processor stops injecting `session`.
+    "`flask.templating._default_template_ctx_processor` injects `request`, "
+    "`session` and `g` into every template context.",
+)
+
+# Where the seeded prose lands. read-next is watch-based (`context.
+# default_watches`), human-owned, and the doc `slate repair` reads — the three
+# properties this needs.
+SEEDED_DOC = "read-next"
+SEEDED_SECTION = "## Current focus"
+
+REPAIR_ARMS: tuple[Arm, ...] = (
+    Arm(
+        name="repair-off",
+        experiment="E3",
+        context="slate",
+        hooks=True,
+        blurb="Seeded layer + hooks. Repair is off, so the Stop hook is inert "
+              "and nothing can rewrite a claim. The control.",
+    ),
+    Arm(
+        name="repair-on",
+        experiment="E3",
+        context="slate",
+        hooks=True,
+        repair=True,
+        blurb="Identical, plus `slate agent access full` and `slate agent "
+              "repair on`, so the Stop hook names the suspect claims and "
+              "slate_repair_apply can land a verified rewrite.",
+    ),
+)
+
+# Emitted only by `claudehook.session_end_text`. Delivery is measured, never
+# assumed — but NOT from the transcript this time. `hook_injections` is already
+# known to be a floor (Claude Code records SessionStart's injected context and
+# not PreToolUse's), and whether it records Stop's is unknown. So the Stop hook
+# command is wrapped to tee its stdin to a log inside the trial, and delivery is
+# read off that file. Identical wrapper in both arms; it only adds logging.
+STOP_MARKER = "finished this turn with"
+HOOK_LOG = ".slate-hook-log"
+
+TRIALS_PER_REPAIR_ARM = 10
 
 # Text only Slate's hooks emit. Used to measure delivery from the transcript
 # itself rather than assuming the hook fired — the same discipline that caught
@@ -389,3 +485,80 @@ class Metrics:
     new_suite_failures: list[str] = field(default_factory=list)
     correct: bool = False          # all grader tests pass, no new failures
     touched_tests: bool = False    # tried to edit the grader's own tests
+
+    # --- E3: the repair loop ------------------------------------------------
+    # Suspect hand-written claims at session start. Zero by construction — the
+    # layer is committed at BASE_COMMIT and the code is at BASE_COMMIT — and
+    # recorded anyway, because a non-zero value means the trial was not the
+    # experiment it claims to be.
+    suspect_claims_start: int = 0
+    # Suspect claims the trial's *code* edits created, counted against the
+    # docs as they were committed. This is the denominator, and it is measured
+    # rather than assumed: two arms make different edits, so "claims left at
+    # the end" alone conflates "did not repair" with "did not break anything".
+    suspect_claims_unrepaired: int = 0
+    # Suspect claims left in the tree the agent actually produced.
+    suspect_claims_end: int = 0
+    # unrepaired - end. How many of the jobs its own work created it closed.
+    claims_repaired: int = 0
+    # Did the Stop hook actually deliver? Read from the tee'd hook log, not the
+    # transcript. A repair-on trial with zero here says nothing about repair.
+    stop_hook_fired: int = 0
+    # `slate_repair_apply` calls and how they came back. Rejections are not
+    # failures of the agent — they are the gate doing its job — but a high rate
+    # means the agent is producing edits the verifier has to catch.
+    repair_apply_calls: int = 0
+    repair_apply_accepted: int = 0
+    repair_apply_rejected: int = 0
+
+
+# --- the numbers, fixed in advance -----------------------------------------
+
+# PRIMARY. Convergence: of the repair jobs a session's own edits created, the
+# fraction it closed. Compared *between arms* — repair-off is structurally
+# incapable of repairing, so it is the floor, and anything at or below it means
+# the delivery did not change behaviour. A threshold on repair-on alone would
+# repeat repairbench revision 1's mistake of scoring one arm against nothing.
+MIN_CONVERGENCE_GAP = 0.30
+
+# PRIMARY, and the plan's kill criterion stated in its own words: "if verified
+# repairs do not exceed rejections ... the pivot failed". A loop that produces
+# more refused edits than accepted ones is a loop that costs the gate more than
+# it returns.
+REPAIRS_MUST_EXCEED_REJECTIONS = True
+
+# GATE, not a result. If the Stop hook did not fire, the trial measured the
+# harness. Below this the sweep is void rather than negative — the same rule
+# that voided repairbench revision 1.
+MIN_DELIVERY = 0.90
+
+
+def repair_verdict(
+    convergence_on: float,
+    convergence_off: float,
+    accepted: int,
+    rejected: int,
+    delivery: float,
+) -> tuple[bool, list[str]]:
+    """Pass/fail for Phase 4, with the reasons.
+
+    Failing means the pivot did not pay off and gets reported the way
+    `decoy_hits` was — as a pre-registered metric that did not move.
+    """
+    failures = []
+    if delivery < MIN_DELIVERY:
+        failures.append(
+            f"VOID, not negative: the Stop hook fired in {delivery:.0%} of "
+            f"repair-on trials, need {MIN_DELIVERY:.0%}. This measured the "
+            f"harness, not the pivot.")
+    gap = convergence_on - convergence_off
+    if gap < MIN_CONVERGENCE_GAP:
+        failures.append(
+            f"no convergence: repaired {convergence_on:.0%} of self-created "
+            f"repair jobs with repair on vs {convergence_off:.0%} with it off, "
+            f"a gap of {gap:.0%}, need {MIN_CONVERGENCE_GAP:.0%}")
+    if accepted <= rejected:
+        failures.append(
+            f"the gate costs more than it returns: {accepted} verified "
+            f"repair(s) against {rejected} rejection(s)")
+    return not failures, failures

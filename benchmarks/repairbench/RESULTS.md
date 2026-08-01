@@ -89,16 +89,47 @@ from this data.
   extracted as a *symbol reference* rather than a filename. A real product bug
   for any repo documenting in reStructuredText, not just a harness artifact.
 
+## Adjudication (2026-07-31, by hand)
+
+Every pair was labelled after the run. The corpus is worse than the write-up
+above assumed, and in a way that changes the reading of the decline rate:
+
+| | count |
+|---|---|
+| genuinely falsified | 10/18 |
+| editorial rewrite — the sentence was true | **8/18** |
+| evidence misattributed — the diff shown does not bear on the sentence | **9/18** |
+| **falsified *and* correctly evidenced** | **5/18** |
+
+The misattribution category was not anticipated and is the more damaging of
+the two. Ref resolution picked the wrong file — `flask.ext` and `flask.request`
+resolve to a *test fixture* named `flask.py`, `ctx._AppCtxGlobals` to a commit
+titled "update dev dependencies" — so half the trials handed the agent a diff
+that had nothing to do with the sentence in front of it. Declining an
+irrelevant diff is correct behaviour, not a miss.
+
+So the 16/18 decline rate is mostly defensible: 8 of those declines were on
+sentences that were true, and several more on sentences whose evidence was
+noise.
+
+**On the 5 pairs that were both falsified and correctly evidenced, the agent
+declined 5 of 5.** That is the only clean measurement in the run, and four of
+the five are the same `docs/config.rst` deprecation pattern, so it is really
+about two independent cases. It is a direction, not a result.
+
 ## What revision 2 needs
 
-1. **Label the corpus by falsification, not by edit.** Every pair adjudicated
-   by hand as *falsified* / *editorially rewritten*, and only the first kept.
-   This is the blocker; nothing else is worth doing first.
-2. **Drop `refs_resolve` as a primary.** It cannot survive deletions. If a
+1. ~~Label the corpus by falsification, not by edit.~~ **Done** — see the
+   adjudication above. It left 5 usable pairs out of 18, which is not a corpus.
+2. **Fix ref resolution first.** It is now the blocker: misattribution is what
+   destroyed 9 of the 18, and no amount of re-labelling recovers them. A
+   corpus cannot be built from a resolver that maps `flask.request` to a test
+   fixture.
+3. **Drop `refs_resolve` as a primary.** It cannot survive deletions. If a
    mechanical gate is wanted, it has to be able to say "gone".
-3. **Measure discrimination as a difference between arms**, not a threshold on
+4. **Measure discrimination as a difference between arms**, not a threshold on
    one. Identical decline rates must read as failure, not as a pass.
-4. **Fix the control matching** so the arm runs at full n.
+5. **Fix the control matching** so the arm runs at full n.
 
 ## What stands from revision 1
 

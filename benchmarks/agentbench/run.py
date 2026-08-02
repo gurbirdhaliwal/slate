@@ -378,7 +378,13 @@ def _already_done(arm: spec.Arm, trial: int) -> bool:
         record = json.loads(sidecar.read_text())
     except (json.JSONDecodeError, OSError):
         return False
-    return record.get("task_revision", 1) == spec.TASK_REVISION
+    if record.get("task_revision", 1) != spec.TASK_REVISION:
+        return False
+    # An E3 record from an older measurement answers a different question, so
+    # `--resume` must not treat it as already done.
+    if arm.experiment == "E3":
+        return record.get("e3_revision", 1) == spec.E3_REVISION
+    return True
 
 
 def _current_transcripts() -> list[Path]:
@@ -693,6 +699,8 @@ def trial_tag(m: spec.Metrics) -> int:
 
 def run_trial(arm: spec.Arm, trial: int, keep: bool) -> spec.Metrics:
     metrics = spec.Metrics(arm=arm.name, trial=trial)
+    if arm.experiment == "E3":
+        metrics.e3_revision = spec.E3_REVISION
     root = build_trial(arm, trial)
     transcript = RUNS / f"{arm.name}-{trial}.jsonl"
     print(f"  {arm.name} trial {trial} ... ", end="", flush=True)

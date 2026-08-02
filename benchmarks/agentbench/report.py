@@ -563,9 +563,15 @@ def e3_report(by_arm: dict[str, list[dict]]) -> str:
     and one table over both would invite averaging them.
     """
     names = [a.name for a in spec.REPAIR_ARMS]
-    arms = {n: by_arm.get(n, []) for n in names}
+    # Never mix two E3 measurements. Revision 1's records are archived under
+    # runs/e3-rev1/, but a stray sidecar left in place would otherwise be
+    # averaged in silently — the same failure `task_revision` guards for E1.
+    arms = {n: [r for r in by_arm.get(n, [])
+                if r.get("e3_revision", 1) == spec.E3_REVISION]
+            for n in names}
     if not any(arms.values()):
-        return "no E3 records at this task revision — run the repair arms first\n"
+        return (f"no E3 records at measurement revision {spec.E3_REVISION} — "
+                "run the repair arms first\n")
 
     def conv(records: list[dict]) -> float:
         """Of the repair jobs a session's own edits created, the fraction closed.
@@ -605,7 +611,12 @@ def e3_report(by_arm: dict[str, list[dict]]) -> str:
     row("median context", lambda rs: f"{med([r['fresh_input'] + r['cache_creation'] for r in rs]):,.0f}")
 
     on, off = arms.get("repair-on", []), arms.get("repair-off", [])
-    delivery = (sum(1 for r in on if r["stop_hook_injected"]) / len(on)) if on else 0.0
+    delivery, delivered, relevant = spec.delivery_rate(on)
+    lines.append(
+        f"\nDelivery (the gate): the hook injected in {delivered} of the "
+        f"{relevant} repair-on trial(s) that still had a suspect claim when "
+        f"`Stop` fired. The other {len(on) - relevant} had already been closed, "
+        f"so silence there is correct and is not counted against delivery.")
     passed, failures = spec.repair_verdict(
         conv(on), conv(off),
         sum(r["repair_apply_accepted"] for r in on),

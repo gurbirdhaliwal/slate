@@ -122,3 +122,43 @@ def test_repair_verdict_keeps_the_plans_kill_criterion() -> None:
     passed, failures = spec.repair_verdict(1.0, 0.0, 2, 2, 1.0)
     assert not passed
     assert any("costs more than it returns" in f for f in failures)
+
+
+def test_delivery_gate_ignores_correct_silence() -> None:
+    """A hook that stays quiet on an already-clean layer is working, not broken.
+
+    Revision 1 of the E3 gate counted injections over every repair-on trial,
+    read 50%, and voided a sweep in which the hook had spoken every time it had
+    anything to speak about.
+    """
+    spec = _agentbench_spec()
+    records = [
+        {"stop_hook_injected": 1, "suspect_claims_end": 0},  # spoke, then fixed
+        {"stop_hook_injected": 0, "suspect_claims_end": 0},  # nothing to say
+        {"stop_hook_injected": 0, "suspect_claims_end": 0},  # nothing to say
+    ]
+    rate, delivered, relevant = spec.delivery_rate(records)
+    assert (delivered, relevant) == (1, 1)
+    assert rate == 1.0
+
+
+def test_delivery_gate_still_catches_a_silent_hook_with_work_pending() -> None:
+    """The case revision 1 could not see: silence *and* a claim left suspect."""
+    spec = _agentbench_spec()
+    records = [
+        {"stop_hook_injected": 1, "suspect_claims_end": 0},
+        {"stop_hook_injected": 0, "suspect_claims_end": 2},  # genuinely failed
+    ]
+    rate, delivered, relevant = spec.delivery_rate(records)
+    assert (delivered, relevant) == (1, 2)
+    assert rate == 0.5
+    passed, failures = spec.repair_verdict(1.0, 0.0, 5, 0, rate)
+    assert not passed and any("VOID" in f for f in failures)
+
+
+def test_e3_delivery_threshold_did_not_move() -> None:
+    """Revision 2 fixed the denominator. Moving the bar as well would be
+    choosing the criterion to fit the result."""
+    spec = _agentbench_spec()
+    assert spec.MIN_DELIVERY == 0.90
+    assert spec.MIN_CONVERGENCE_GAP == 0.30

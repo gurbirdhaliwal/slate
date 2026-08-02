@@ -373,6 +373,18 @@ STOP_MARKER = "finished this turn with"
 HOOK_LOG_IN = ".slate-hook-in"     # every Stop invocation
 HOOK_LOG_OUT = ".slate-hook-out"   # only the ones that injected something
 
+# Bumped when the E3 measurement changes in a way that makes older E3 records
+# incomparable. Separate from TASK_REVISION because E1 and E3 move
+# independently — E3 revision 1 ran against an unchanged revision-3 task.
+#   1 — first repair sweep. Verdict VOID: MIN_DELIVERY counted injections over
+#       *all* repair-on trials, and the hook is supposed to be silent when the
+#       layer is already clean. Five of ten silent trials had nothing to say,
+#       and the gate could not tell them from a broken hook.
+#   2 — delivery is measured over the trials that still had a suspect claim
+#       when Stop fired. Threshold unchanged at 90%; only the denominator is
+#       corrected. Records from revision 1 are archived, not re-scored.
+E3_REVISION = 2
+
 TRIALS_PER_REPAIR_ARM = 10
 
 # Text only Slate's hooks emit. Used to measure delivery from the transcript
@@ -462,6 +474,10 @@ class Metrics:
 
     arm: str = ""
     trial: int = 0
+    # Which E3 measurement produced this record. 0 for E1 arms, which do not
+    # participate. Kept apart from `task_revision` because E1 and E3 move
+    # independently, and mixing two E3 revisions is the failure this prevents.
+    e3_revision: int = 0
     # Which task revision produced this record. Records written before the
     # field existed are revision 1 by absence.
     task_revision: int = TASK_REVISION
@@ -577,10 +593,44 @@ MIN_CONVERGENCE_GAP = 0.30
 # it returns.
 REPAIRS_MUST_EXCEED_REJECTIONS = True
 
-# GATE, not a result. If the Stop hook did not fire, the trial measured the
+# GATE, not a result. If the Stop hook did not deliver, the trial measured the
 # harness. Below this the sweep is void rather than negative — the same rule
 # that voided repairbench revision 1.
+#
+# Revision 2 fixes the denominator, not the bar. The question a delivery gate
+# has to ask is "when there was something to say, did the hook say it?" —
+# revision 1 asked "did the hook say something?", which scores correct silence
+# on an already-clean layer as a delivery failure. It read 50% and voided a
+# sweep in which the hook had in fact spoken every time it had anything to
+# speak about.
 MIN_DELIVERY = 0.90
+
+
+def had_something_to_say(injected: int, suspect_at_end: int) -> bool:
+    """Was there a suspect claim when this trial's Stop hook fired?
+
+    Inferred from what is recorded, and the inference is tight because the
+    session is over by the time the count is taken: a trial that ends with a
+    suspect claim had one at Stop, and a trial where the hook injected plainly
+    had one. What is left — silent hook, clean tree — is the agent having
+    closed the job before finishing, which is correct silence and not a
+    delivery failure.
+
+    The case this is built to catch is the one revision 1 could not see:
+    silent hook *and* a suspect claim still sitting there, which is a hook that
+    genuinely failed to deliver.
+    """
+    return injected > 0 or suspect_at_end > 0
+
+
+def delivery_rate(records: list) -> tuple[float, int, int]:
+    """(rate, delivered, had-something-to-say) over the treatment arm."""
+    relevant = [r for r in records
+                if had_something_to_say(r["stop_hook_injected"],
+                                        r["suspect_claims_end"])]
+    delivered = sum(1 for r in relevant if r["stop_hook_injected"] > 0)
+    return (delivered / len(relevant) if relevant else 0.0,
+            delivered, len(relevant))
 
 
 def repair_verdict(

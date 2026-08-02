@@ -1,6 +1,6 @@
 # Execution plan — the repair-and-resume pivot
 
-**Status:** Phases 0–4 done (2026-08-02) · **Drafted:** 2026-07-30
+**Status:** Complete — phases 0–5 done (2026-08-02) · **Drafted:** 2026-07-30
 
 Phase 0 took two experiment cycles and three revisions. It is answered:
 `benchmarks/repairbench/RESULTS.md` records 12/12 falsified passages repaired
@@ -379,18 +379,29 @@ report it the way `decoy_hits` was reported.
 
 ## Phase 5 — Ledger and pitch
 
-- **`slate/value.py`** — count claims repaired, and sessions that started fresh
-  *because* a prior session repaired them. Same best-effort contract: a ledger
-  failure can never break a command.
+**Shipped 2026-08-02, and both halves ship narrower than drafted here. Phase 4
+is the reason; the drafts below were written before the experiment.**
 
-  This matters more than it looks. HyperProbe closes its loop inside one
-  session, so the user feels the value immediately. Slate's repaired doc is
-  consumed by a future session or a human, so the feedback is delayed and
-  invisible. The ledger is what makes a delayed benefit legible.
+- **`slate/value.py`** — ~~count claims repaired, and sessions that started
+  fresh *because* a prior session repaired them~~. `value.record_repair` counts
+  repairs the gate **verified** and repairs the gate **refused**. It does not
+  count sessions that started fresh because of a repair: Phase 4 measured that
+  counterfactual and it fails — an unattended control converged its own layer in
+  36–69% of trials — so the attribution is not available. `refused` is the one
+  causally clean event in the whole loop: the edit did not land *because* the
+  check said no. Same best-effort contract; `slate value` prints the control
+  range inline so a count cannot be misread as "the layer stayed fresh because
+  of Slate".
 
-- **Docs** — reframe from context delivery to memory consolidation. Update
-  `.slate/read-next.md`, append the pivot to `.slate/decisions.md`, run
-  `slate sync`.
+  The delayed-benefit problem this was meant to solve is therefore only half
+  solved, and that is the honest outcome of having measured it.
+
+- **Docs** — ~~reframe from context delivery to memory consolidation~~. The
+  consolidation framing claims the whole of an effect that is partly the agent
+  tidying up unprompted. README ships the measured claim instead: *the layer
+  often converges either way; repair makes about half of that convergence
+  verified rather than asserted* — with the absent correctness effect and the
+  `slate mark` hole stated at the point of the claim.
 
 ---
 

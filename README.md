@@ -175,6 +175,7 @@ slate agent hooks install     # writes .claude/settings.json (also done by `agen
 |------|------|-----------------|
 | `SessionStart` | every session, including after compaction | the whole layer's trust state — which docs are fresh, which aren't, and why |
 | `PreToolUse` | `Read`/`Edit`/`Write`/`NotebookEdit` | a warning **only** when that specific file is covered by a non-fresh doc's watches |
+| `Stop` | the agent finishes a turn | the hand-written claims its own session left suspect — off by default, see below |
 
 Verified end-to-end, not assumed: in a repo with two deliberately stale docs, a
 headless session named both docs, their suspect-claim counts, the anchor commit
@@ -196,6 +197,42 @@ normally — you lose the signal, never the session. Opt out with
 > Delivery into the context window is proven. Whether it changes *task
 > outcomes* is not yet measured — the 0/25-correct benchmark has not been
 > re-run against this path.
+
+## Repairing the docs your session just invalidated
+
+When your work moves the code a doc describes, `slate repair` names the exact
+sentences at risk — the claim, the refs that put it at risk, the commits behind
+them, and a file line to open. That much is read-only and always available.
+
+Optionally, the agent can fix them and have the fix **checked before it lands**:
+
+```bash
+slate agent access full       # the write ceiling
+slate agent repair on         # a second switch, off by default
+```
+
+Both are required. `slate_repair_apply` puts a rewrite through
+`repair.verify_repair`, which refuses an edit that deletes the claim's code
+references (that would drop it out of the trust surface entirely and turn the
+doc green), that changes any other claim, or that moves the claim to a
+different section. Leaving an accurate claim alone is an accepted outcome, not
+a failure — most flagged claims on real history are still correct. A repair is
+left unstaged and the doc is **not** re-anchored: freshness cannot score a
+repair, because a repair is newer prose by definition.
+
+**What this is measured to do, and what it isn't.** Two 20-trial sweeps
+([E3-RESULTS.md](benchmarks/agentbench/E3-RESULTS.md)) found that turning the
+switch on takes the layer from converging in 3/10 sessions to 10/10. But a
+control with no repair loop still converged its own layer in 36–69% of trials —
+the agent rewrites the docs by hand — and roughly half the treatment's
+convergence never touched the gate either. So the honest claim is narrow:
+
+> The layer often converges either way. What the repair loop buys is that about
+> half of that convergence is **verified** rather than asserted.
+
+No correctness effect was found in either direction (1/20 vs 1/20). And note
+the hole: `verify_repair` guards the MCP path only. An agent with shell access
+can edit a doc and run `slate mark` without any of this.
 
 ## Working in a team
 
@@ -305,6 +342,13 @@ pre-push hook, watch inference, opt-in LLM prose, the PR bot action, the
 VS Code extension, and `fleet`. Dogfooded on this repo (see
 [AGENTS.md](AGENTS.md) and [.slate/](.slate/)); CI runs the tests, the
 freshness gate, and the PR bot.
+
+The repair loop — `slate repair`, the verification gate, the `Stop` hook and
+`slate agent repair` — is built and measured end to end
+([docs/repair-and-resume-plan.md](docs/repair-and-resume-plan.md), plan phases
+0–5, which are numbered separately from the product phases here). Read the
+measured limits above before pitching it: the layer converges with or without
+it, and what it adds is verification of about half that convergence.
 
 Remaining one-time setup (needs account owner): create the `slate-context`
 project + trusted publisher on pypi.org, then push a `v0.2.0` tag; publish

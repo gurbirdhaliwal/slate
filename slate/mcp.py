@@ -499,6 +499,12 @@ class SlateMCPServer:
         verdict = repair.verify_repair(before, after, target)
         payload = verdict.as_dict()
         payload["doc"] = spec.rel_path
+        # Best-effort receipt, on both outcomes: a refusal is the gate doing
+        # the job, and it is the one event with no counterfactual to argue
+        # about — the edit did not land *because* the check said no.
+        event = value.record_repair(self.root, verdict.outcome)
+        if event:
+            payload["value"] = event
         if not verdict.ok:
             payload["note"] = (
                 "Nothing was written. Fix the rewrite or leave the claim alone — "

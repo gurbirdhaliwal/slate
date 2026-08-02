@@ -101,6 +101,7 @@ def _empty_ledger() -> dict:
         "syncs": {"count": 0, "healed_docs": 0, "measured_ms": 0.0,
                   "manual_input_tokens": 0, "manual_output_tokens": 0},
         "catches": {"count": 0, "seen": []},
+        "repairs": {"verified": 0, "refused": 0},
     }
 
 
@@ -113,7 +114,7 @@ def _load(root: Path) -> dict:
         return _empty_ledger()
     # Missing sections (older/hand-edited ledgers) heal to empty rather than crash.
     empty = _empty_ledger()
-    for key in ("sessions", "syncs", "catches"):
+    for key in ("sessions", "syncs", "catches", "repairs"):
         section = data.get(key)
         data[key] = {**empty[key], **section} if isinstance(section, dict) else empty[key]
     return data
@@ -285,10 +286,56 @@ class timer:
 
 # --- totals + rendering ------------------------------------------------------
 
+# --- repairs -----------------------------------------------------------------
+# What this counts, and what it deliberately does not.
+#
+# The plan for this phase asked for "sessions that started fresh *because* a
+# prior session repaired them". That number is not available honestly. Phase 4
+# measured the counterfactual directly and it does not hold: a control with no
+# repair loop at all converged its layer in 36% of trials in one sweep and 69%
+# in another, by the agent rewriting the docs by hand. Attributing a fresh
+# session to repair would credit the loop for something that happens anyway
+# between a third and two thirds of the time.
+#
+# So the ledger records the two things that *are* facts about what the gate did:
+#
+#   verified  a rewrite that passed `repair.verify_repair` and was written.
+#   refused   a rewrite the gate rejected, so it never landed. This is the
+#             causally clean one — the edit did not happen *because* the check
+#             said no, and there is no counterfactual to argue about.
+#
+# Neither is a claim that the layer would have rotted otherwise.
+
+
+@_best_effort
+def record_repair(root: Path, outcome: str) -> dict | None:
+    """Note one pass through the repair gate. Best-effort, like everything here."""
+    from .repair import REJECTED, REPAIRED
+
+    if outcome not in (REPAIRED, REJECTED):
+        return None  # `unchanged` is a correct decline, not a gate event
+    data = _load(root)
+    key = "verified" if outcome == REPAIRED else "refused"
+    data["repairs"][key] += 1
+    _save(root, data)
+    return dict(data["repairs"])
+
+
+def repair_footer(event: dict | None) -> str | None:
+    if not event:
+        return None
+    verified, refused = event["verified"], event["refused"]
+    if refused:
+        return (f"value: {verified} verified repair(s), {refused} refused "
+                f"before landing — all-time in this clone")
+    return f"value: {verified} verified repair(s) all-time in this clone"
+
+
 def totals(root: Path) -> dict:
     """Cumulative ledger, split into measured facts and labeled estimates."""
     data = _load(root)
-    s, y, c = data["sessions"], data["syncs"], data["catches"]
+    s, y, c, r = (data["sessions"], data["syncs"], data["catches"],
+                  data["repairs"])
     session_delta = s["baseline_tokens"] - s["context_tokens"]
     session_usd = cost_in(session_delta)
     maint_usd = cost_in(y["manual_input_tokens"]) + cost_out(y["manual_output_tokens"])
@@ -302,6 +349,8 @@ def totals(root: Path) -> dict:
             "stale_docs_healed": y["healed_docs"],
             "sync_wall_clock_ms": y["measured_ms"],
             "sync_tokens_spent": 0,
+            "repairs_verified": r["verified"],
+            "repairs_refused": r["refused"],
         },
         "estimated": {
             "session_input_tokens_avoided": session_delta,
@@ -377,6 +426,8 @@ def render_report(t: dict) -> str:
         f"  deterministic syncs run                  {m['syncs_run']:,} "
         f"({m['stale_docs_healed']:,} stale doc(s) healed in "
         f"{m['sync_wall_clock_ms']:.0f} ms total, {m['sync_tokens_spent']} tokens)",
+        f"  claim repairs verified and written       {m['repairs_verified']:,}",
+        f"  claim repairs refused before landing     {m['repairs_refused']:,}",
         "",
         "estimated — arithmetic over the measured sizes above, at the stated assumptions:",
         f"  session-start input tokens avoided       ~{e['session_input_tokens_avoided']:,}"
@@ -392,6 +443,10 @@ def render_report(t: dict) -> str:
         f"${a['price_per_mtok_out_usd']}/M output tokens (Claude Sonnet list price)",
         "  · stale catches are deduped per (doc, sync anchor) — re-checking the same",
         "    staleness never inflates the count",
+        "  · repairs count passes through the verification gate, not layer freshness.",
+        "    A measured control with no repair loop converged its own layer in 36-69%",
+        "    of trials, so 'the docs are fresh' is not credited to repair here",
+        "    (benchmarks/agentbench/E3-RESULTS.md)",
         f"  · ledger: {a['ledger']} (per-clone; delete it to reset)",
         "  · deep-dive on this methodology: python benchmarks/benchmark.py",
     ]

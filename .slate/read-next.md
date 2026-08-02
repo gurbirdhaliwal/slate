@@ -1,9 +1,9 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: 2119b4e
-slate_synced_at: 2026-08-02T19:55:10+00:00
-slate_synced_digest: bcff1d9451ce9583
+slate_synced_commit: 89d03e5
+slate_synced_at: 2026-08-02T23:26:57+00:00
+slate_synced_digest: 414066970691629c
 slate_watches:
   - benchmarks/**
   - slate/**
@@ -60,7 +60,10 @@ wall-clock, 0 tokens, vs. the measured size of a manual AI rewrite of the
 non-fresh docs). One-line `value:` footers on read/status/sync (human output
 only — `--json` shapes gained only additive fields), a `slate value [--json]`
 cumulative report with assumptions disclosed, additive `value` fields on MCP
-`slate_read`/`slate_sync`, and `SLATE_NO_VALUE=1` to opt out. Methodology is
+`slate_read`/`slate_sync`, and `SLATE_NO_VALUE=1` to opt out. Phase 5 added a
+`repairs` section via `value.record_repair` — verified and refused passes
+through the gate, and deliberately not "sessions that started fresh because of
+a repair"; see the Phase 5 note below. Methodology is
 `benchmarks/benchmark.py`'s: stored numbers are measured; dollars are
 display-time arithmetic at labeled list prices. Every record path is
 best-effort — a ledger failure can never break a command
@@ -393,15 +396,25 @@ reached a green layer with the ordinary `Edit` tool — sometimes plus `slate
 mark` in a shell, sometimes needing nothing else, because rewriting the prose is
 enough and the claim count never drops so the guard never fires.
 
-**Where the arc stands.** Phases 0–4 complete. Phase 5 (ledger and pitch) is
-next, and its framing must follow the finding above rather than the plan's
-original one — 'memory consolidation' overstates what two sweeps support.
+**Phase 5 — ledger and pitch — landed (2026-08-02).** `value.record_repair`
+counts two things and refuses a third. It counts repairs the gate verified and
+wrote, and repairs the gate **refused** — the second is the causally clean one,
+since the edit did not land *because* the check said no. It does **not** count
+"sessions that started fresh because a prior session repaired them", which is
+what the plan asked for: Phase 4 measured that counterfactual and it fails, so
+crediting repair for a fresh layer would claim something that happens anyway in
+36–69% of unattended sessions. `slate value` prints that range inline so the
+count cannot be misread, pinned by a test. Same best-effort contract as the rest
+of the ledger — a failure here can never break a command.
 
-Most of what shipped in this arc was still *off-plan*: claims never being
-evaluated at all, co-landing prose flagged as rot, package symbols falsely
-fresh, `.rst` filenames read as symbols. Two false-`fresh` classes closed.
-Chasing the pivot has been an excellent bug-finding strategy, and it took three
-revisions of instrument before it was also a hypothesis test.
+The README reframe ships narrower than drafted: not "Slate becomes a
+memory-consolidation layer" but "repair makes about half of the layer's
+convergence verified rather than asserted", with the measured limits and the
+`slate mark` hole stated at the point of the claim.
+
+**Where the arc stands.** Phases 0–5 complete; the repair-and-resume pivot is
+built and measured end to end. Note the plan's phase numbers are separate from
+the product roadmap's in README.
 
 **Next, in priority order.** (0) **E3 revision 2 — re-run Phase 4 with a
 delivery gate that works.** Measure delivery against the trials that still had

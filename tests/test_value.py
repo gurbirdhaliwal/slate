@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from slate import value
+from slate import repair, value
 from slate.cli import main
 from slate.mcp import SlateMCPServer
 
@@ -207,3 +207,50 @@ def test_mcp_sync_carries_value_receipt(repo: Path, capsys) -> None:
     assert payload["value"]["healed_stale_docs"]
     assert payload["value"]["manual_rewrite_tokens_measured"]["input"] > 0
     assert _ledger(repo)["syncs"]["healed_docs"] >= 1
+
+
+# --- repairs (Phase 5) ------------------------------------------------------
+
+
+def test_repair_ledger_counts_both_outcomes(repo: Path) -> None:
+    value.record_repair(repo, repair.REPAIRED)
+    value.record_repair(repo, repair.REPAIRED)
+    value.record_repair(repo, repair.REJECTED)
+    measured = value.totals(repo)["measured"]
+    assert measured["repairs_verified"] == 2
+    assert measured["repairs_refused"] == 1
+
+
+def test_an_accurate_claim_left_alone_is_not_a_gate_event(repo: Path) -> None:
+    # `unchanged` is the correct outcome on a flagged-but-accurate claim, and
+    # it was the right answer in half of repairbench rev 3's trials. Counting
+    # it as a repair would inflate the ledger with non-events.
+    value.record_repair(repo, repair.UNCHANGED)
+    assert value.totals(repo)["measured"]["repairs_verified"] == 0
+    assert value.totals(repo)["measured"]["repairs_refused"] == 0
+
+
+def test_repair_ledger_never_breaks_the_caller(repo: Path, monkeypatch) -> None:
+    monkeypatch.setattr(value, "_load", lambda *_: (_ for _ in ()).throw(RuntimeError))
+    assert value.record_repair(repo, repair.REPAIRED) is None
+
+
+def test_repair_ledger_survives_an_older_ledger_without_the_section(repo: Path) -> None:
+    value.record_repair(repo, repair.REPAIRED)
+    path = value.ledger_path(repo)
+    data = json.loads(path.read_text())
+    del data["repairs"]                    # a ledger written before Phase 5
+    path.write_text(json.dumps(data))
+    # Heals to an empty section instead of raising — the same contract the
+    # other sections have had since the ledger shipped.
+    assert value.record_repair(repo, repair.REPAIRED) == {"verified": 1, "refused": 0}
+
+
+def test_value_report_states_what_repairs_do_not_prove(repo: Path) -> None:
+    """The report must not let a repair count read as 'the layer stayed fresh
+    because of Slate' — a control with no repair loop converged 36-69% of the
+    time, so that attribution is not available."""
+    value.record_repair(repo, repair.REPAIRED)
+    report = value.render_report(value.totals(repo))
+    assert "repairs verified" in report.lower()
+    assert "36-69%" in report

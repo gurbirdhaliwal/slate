@@ -1004,3 +1004,51 @@ Safety:    Both directions pinned in `tests/test_benchmark.py` —
 Revisit trigger: Any future gate on a component whose correct behaviour
           includes doing nothing. The same mistake is available every time.
 ```
+
+```
+Date: 2026-08-02
+Decision: The value ledger counts repairs that passed the gate and repairs the
+          gate refused. It does not count "sessions that started fresh because
+          a prior session repaired them", which is what the plan asked for.
+Rationale: That number is not available honestly. Phase 4 measured the
+          counterfactual directly and it fails: a control with no repair loop
+          converged its own layer in 36% of trials in one sweep and 69% in the
+          other, by the agent rewriting the docs by hand. Crediting repair for
+          a fresh session would claim something that happens anyway between a
+          third and two thirds of the time. `refused` is the causally clean
+          event — the edit did not land *because* the check said no, and there
+          is no counterfactual to argue about.
+Trade-off: The ledger therefore cannot show the compounding benefit the pivot
+          was pitched on. That is the correct outcome of having measured it:
+          the delayed benefit is real for the half that goes through the gate
+          and unproven for the rest, and a ledger that implied otherwise would
+          be the most damaging place in the product to overstate.
+Safety:    `slate value` states the 36-69% control range inline, so the number
+          cannot be read as "the layer stayed fresh because of Slate" without
+          also reading what a layer does unattended. Pinned by a test.
+Revisit trigger: A design that can attribute freshness to repair — a held-out
+          arm where the same session is replayed with and without the loop.
+```
+
+```
+Date: 2026-08-02
+Decision: The docs reframe promised in Phase 5 ships as a *narrower* claim than
+          the plan drafted. "Slate becomes a memory-consolidation layer" is not
+          supported; "repair makes about half of the layer's convergence
+          verified rather than asserted" is.
+Rationale: The plan wrote the pitch before the experiment. Two sweeps put the
+          control's unattended convergence at 36-69% and the treatment's
+          gate-verified share at roughly half of its closures, so the
+          consolidation framing would claim the whole of an effect that is
+          partly the agent tidying up on its own. README now states the
+          measured limits — including that no correctness effect was found in
+          either direction, and that `verify_repair` guards the MCP path only.
+Trade-off: It is a weaker headline than the pivot was launched on, and it is
+          the one the evidence carries. Shipping the stronger version would
+          have made the README the least reliable document in a repo whose
+          entire product is document reliability.
+Safety:    The README links E3-RESULTS.md at the point of the claim, so the
+          number and its threats to validity travel together.
+Revisit trigger: A sweep that isolates the gate route from the attestation
+          route — if the verified share grows, the claim can grow with it.
+```

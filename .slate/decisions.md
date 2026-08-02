@@ -953,3 +953,54 @@ Safety:    Cost is recorded beside it: ~8 turns and ~12K context per session,
 Revisit trigger: The re-run. If the gate route does not grow as a share of
           closures, the loop is an expensive way to prompt an attestation.
 ```
+
+```
+Date: 2026-08-02
+Decision: Phase 4 passes at E3 revision 2, and the pitch it licenses is the
+          narrow one: the layer converges either way, and repair makes about
+          half of that convergence verified rather than asserted.
+Rationale: All three pre-registered criteria cleared on fresh sessions —
+          delivery 6/6 over the trials that still had a job when Stop fired,
+          convergence 100% vs 36% (a 64pp gap against a 30pp bar), and 7
+          verified repairs against 0 rejections. But the mechanism split
+          replicated across both sweeps: 7 of 14 treatment closures went
+          through `slate_repair_apply` in revision 1, 7 of 13 in revision 2.
+          The rest were the agent tidying by hand, which is exactly what the
+          control does when it converges at all.
+Trade-off: The convergence *gap* should not be quoted precisely. The control is
+          bimodal — it either tidies thoroughly or ignores the docs entirely —
+          and its pooled rate swung 69% to 36% between identical designs. The
+          direction is stable across two runs; the magnitude is not estimated
+          well by either.
+Safety:    Revision 1's records are archived under runs/e3-rev1/ rather than
+          re-scored, and `e3_revision` stops the two measurements being
+          averaged. MIN_DELIVERY and MIN_CONVERGENCE_GAP are pinned by a test
+          so a later revision cannot move the bar while claiming to fix an
+          instrument.
+Revisit trigger: The share of closures going through the gate. At roughly half,
+          the loop is partly an expensive way to prompt an attestation; if that
+          share does not grow, the honest framing narrows further.
+```
+
+```
+Date: 2026-08-02
+Decision: A delivery gate measures "when there was something to say, did the
+          hook say it" — never "did the hook say something".
+Rationale: Revision 1 asked the second question, read 50%, and voided a sweep
+          in which the hook had spoken every time it had anything to speak
+          about. Slate's hooks are built to be silent when there is nothing to
+          report, so a gate that counts silence as failure penalises the
+          module for working. Revision 2 counts only trials that still had a
+          suspect claim when Stop fired; the case the old gate could not see —
+          silence *and* a claim left suspect — is the one that now fails it.
+Trade-off: The denominator is inferred from the end-of-session count rather
+          than observed at Stop time. The inference is tight, because the
+          session is over when the count is taken, but it is an inference and
+          is labelled as one.
+Safety:    Both directions pinned in `tests/test_benchmark.py` —
+          correct silence must not count against delivery, and a silent hook
+          with work pending must still void the run — plus a test asserting the
+          thresholds did not move when the denominator was corrected.
+Revisit trigger: Any future gate on a component whose correct behaviour
+          includes doing nothing. The same mistake is available every time.
+```

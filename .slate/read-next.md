@@ -1,9 +1,9 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: 0e4a3b8
-slate_synced_at: 2026-08-02T08:20:00+00:00
-slate_synced_digest: 22d75d6ef3f3fa11
+slate_synced_commit: 2119b4e
+slate_synced_at: 2026-08-02T19:55:10+00:00
+slate_synced_digest: bcff1d9451ce9583
 slate_watches:
   - benchmarks/**
   - slate/**
@@ -362,39 +362,40 @@ would then be zero by construction. Four consents replace it (off by default,
 full access, the client's per-call prompt, and the verifier), and a repair
 leaves the doc **unstaged and un-re-anchored**, so a human still decides.
 
-**Phase 4 ran and is VOID — read `benchmarks/agentbench/E3-RESULTS.md` before
-touching this.** 20 trials, `spec.repair_verdict()` → FAIL, and the failure is
-mine: `MIN_DELIVERY` asked what fraction of repair-on trials saw the Stop hook
-inject, read 50%, and could not tell "broken" from "nothing to say". All five
-silent trials had `suspect_claims_end` of 0 — the agent had already closed the
-jobs. Of the trials that still had one when `Stop` fired, the hook injected 5 of
-5. The corrected reading is post-hoc and licenses nothing; a revision 2 needs
-fresh sessions, because a gate rewritten after seeing the data it failed is not
-a gate.
+**Phase 4 passed at E3 revision 2 (2026-08-02) — read
+`benchmarks/agentbench/E3-RESULTS.md` before touching this.** Revision 1 was
+VOID on a delivery gate I specified badly: it counted injections over every
+repair-on trial, and the hook is built to stay silent when the layer is clean,
+so correct silence scored as failure. Revision 2 counts only the trials that
+still had a suspect claim when `Stop` fired, threshold untouched at 90%. Fresh
+sweep, all three criteria clear: delivery 6/6, convergence 100% vs 36% (a 64pp
+gap against a 30pp bar), 7 verified repairs against 0 rejections. Revision 1's
+records are archived under `runs/e3-rev1/`, never re-scored.
 
-Two things the sweep found anyway, both of which change the pitch:
+**What it licenses is narrower than the PASS suggests, and it replicated across
+both sweeps.** Roughly half the treatment's convergence never touches the gate —
+7 of 14 closures went through `slate_repair_apply` in revision 1, 7 of 13 in
+revision 2; the rest are the agent tidying by hand. And the control converges
+too, by rewriting the seeded claims into new accurate prose, sometimes without
+running any Slate command at all. So the claim is *not* "repair converges the
+layer". It is: **the layer converges either way, and repair makes about half of
+that convergence verified rather than asserted.**
 
-**Convergence is bought by attestation, not by repair.** Calling a re-anchor
-tool predicted convergence perfectly in both arms — the 5 control trials that
-called one closed 11 of 11 jobs, the 5 that did not closed 0 of 5, and all 10
-repair-on trials called one and closed 14 of 14. The switch doubled the rate of
-touching the docs at all (10/10 vs 5/10, Fisher one-sided p=0.0163), the same
-shape as the 2026-07-27 result. But only 7 of the treatment's 14 closures went
-through `slate_repair_apply`; the rest took the control's route. So the honest
-claim is not "repair converges the layer" — it is that repair makes convergence
-*verified* rather than asserted. Cost: ~8 turns and ~12K context per session,
-correctness 1/10 against the control's 2/10.
+Do not quote the gap precisely. The control is bimodal — it either tidies
+thoroughly or ignores the docs — and its pooled rate swung 69% to 36% between
+identical designs. Direction stable across two runs, magnitude not.
 
-**`slate mark` is an ungated door.** Every control closure went around Phase 2's
-verifier entirely: edit `read-next.md` with the ordinary `Edit` tool, then run
-`slate mark` in a shell. `verify_repair` governs the MCP path only, and an agent
-with shell access — which any real user grants — needs neither it nor full MCP
-access to re-stamp an anchor. Recorded, not fixed: patching the product
-mid-experiment is how instruments stop measuring what they claim.
+No correctness effect: 1/20 control, 1/20 treatment across both sweeps.
 
-**Where the arc stands.** Phases 0–3 complete, Phase 4 ran and is void. Phase 5
-(ledger and pitch) untouched, and its framing should now follow the finding
-above rather than the plan's original one.
+**`slate mark` is still an ungated door**, unchanged from revision 1.
+`verify_repair` governs the MCP path only, and across both sweeps the control
+reached a green layer with the ordinary `Edit` tool — sometimes plus `slate
+mark` in a shell, sometimes needing nothing else, because rewriting the prose is
+enough and the claim count never drops so the guard never fires.
+
+**Where the arc stands.** Phases 0–4 complete. Phase 5 (ledger and pitch) is
+next, and its framing must follow the finding above rather than the plan's
+original one — 'memory consolidation' overstates what two sweeps support.
 
 Most of what shipped in this arc was still *off-plan*: claims never being
 evaluated at all, co-landing prose flagged as rot, package symbols falsely

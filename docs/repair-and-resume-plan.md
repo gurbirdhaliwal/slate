@@ -1,6 +1,6 @@
 # Execution plan — the repair-and-resume pivot
 
-**Status:** Phases 0–3 done; Phase 4 ran and is VOID (2026-08-02) · **Drafted:** 2026-07-30
+**Status:** Phases 0–4 done (2026-08-02) · **Drafted:** 2026-07-30
 
 Phase 0 took two experiment cycles and three revisions. It is answered:
 `benchmarks/repairbench/RESULTS.md` records 12/12 falsified passages repaired
@@ -325,12 +325,23 @@ converge on its own.
 
 ## Phase 4 — Measure the thing that is now measurable
 
-**Ran 2026-08-02, 20 trials. `spec.repair_verdict()` → FAIL, and the failure is
-VOID: the delivery gate could not tell "the hook broke" from "the hook had
-nothing to say". Full write-up in `benchmarks/agentbench/E3-RESULTS.md`; read it
-before acting on anything below.**
+**Ran twice, 20 trials each. Revision 1 was VOID — the delivery gate could not
+tell "the hook broke" from "the hook had nothing to say". Revision 2 corrected
+that denominator, left the thresholds alone, and PASSED all three criteria on
+fresh sessions: delivery 6/6, convergence 100% vs 36%, 7 verified repairs
+against 0 rejections. Full write-up in `benchmarks/agentbench/E3-RESULTS.md`;
+read it before acting on anything below.**
 
-Three corrections the run forced on the design as drafted here:
+**What the PASS licenses is narrower than it sounds**, and it replicated across
+both sweeps: roughly half the treatment's convergence never touches the gate
+(7 of 14 closures, then 7 of 13), and the control converges too — by rewriting
+the seeded claims into new accurate prose, sometimes without running any Slate
+command. The claim is not "repair converges the layer". It is that the layer
+converges either way and repair makes about half of that convergence *verified*
+rather than asserted. The gap magnitude is unstable (control 69% then 36% on an
+identical design) and should not be quoted precisely.
+
+Three corrections the runs forced on the design as drafted here:
 
 - **"The agent's own edits stale the layer naturally" is false** for the claims
   repair exists for. A stock layer has no hand-written claim naming code, so a

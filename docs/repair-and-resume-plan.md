@@ -1,6 +1,6 @@
 # Execution plan — the repair-and-resume pivot
 
-**Status:** Phases 0–3 done (2026-08-01) · **Drafted:** 2026-07-30
+**Status:** Phases 0–3 done; Phase 4 ran and is VOID (2026-08-02) · **Drafted:** 2026-07-30
 
 Phase 0 took two experiment cycles and three revisions. It is answered:
 `benchmarks/repairbench/RESULTS.md` records 12/12 falsified passages repaired
@@ -324,6 +324,23 @@ converge on its own.
 ---
 
 ## Phase 4 — Measure the thing that is now measurable
+
+**Ran 2026-08-02, 20 trials. `spec.repair_verdict()` → FAIL, and the failure is
+VOID: the delivery gate could not tell "the hook broke" from "the hook had
+nothing to say". Full write-up in `benchmarks/agentbench/E3-RESULTS.md`; read it
+before acting on anything below.**
+
+Three corrections the run forced on the design as drafted here:
+
+- **"The agent's own edits stale the layer naturally" is false** for the claims
+  repair exists for. A stock layer has no hand-written claim naming code, so a
+  *perfect* solution produced "nothing to repair". The corpus had to be seeded.
+- **The control needed full access too.** As first built it ran read-only, so
+  the arms differed by the repair switch *and* everything else `full` unlocks.
+- **Convergence is bought by attestation, not repair.** Both arms converge; the
+  measured effect of the switch is on whether the agent touches the docs at all
+  (10/10 vs 5/10, p=0.0163), and only 7 of 14 treatment closures went through
+  the verified gate.
 
 **Pre-register in `benchmarks/agentbench/spec.py` before running.**
 Non-negotiable, given the last two cycles.

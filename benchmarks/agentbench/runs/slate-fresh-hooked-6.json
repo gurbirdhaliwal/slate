@@ -37,5 +37,6 @@
   "repair_apply_calls": 0,
   "repair_apply_accepted": 0,
   "repair_apply_rejected": 0,
-  "reanchor_calls": 0
+  "reanchor_calls": 0,
+  "direct_doc_edits": 0
 }

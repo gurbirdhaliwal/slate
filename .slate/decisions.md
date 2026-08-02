@@ -879,3 +879,77 @@ Revisit trigger: Phase 4 data on rejection rate. A high rejection rate means
           the agent is producing edits the gate has to catch, and the answer
           then is propose-only after all.
 ```
+
+```
+Date: 2026-08-02
+Decision: Phase 4's E3 sweep is reported VOID, not negative. The convergence
+          and kill-criterion numbers stand in the write-up but license nothing
+          until a re-run with a corrected delivery gate.
+Rationale: `MIN_DELIVERY` asked what fraction of repair-on trials saw the Stop
+          hook inject. It read 50%. But the hook is meant to be silent when the
+          layer is clean, and all five silent trials had `suspect_claims_end`
+          of 0 — the agent had already closed the jobs. Of the trials that
+          still had a job when Stop fired, the hook injected in 5 of 5. The
+          gate could not tell "broken" from "nothing to say", which is my
+          specification error, not a product failure.
+Trade-off: The corrected reading is stated in E3-RESULTS.md and clearly marked
+          post-hoc. Filing "delivery 50%" unexplained would be more misleading
+          than explaining it; declaring PASS on a gate rewritten after it
+          failed would be worse than either.
+Safety:    The quantity needed for the corrected gate was already recorded
+          during the run, so a revision 2 needs no new judgement — only fresh
+          sessions, because a gate rewritten after seeing the data it failed is
+          not a gate.
+Revisit trigger: A re-run at E3 revision 2 measuring delivery against trials
+          that still had a suspect claim at Stop time.
+```
+
+```
+Date: 2026-08-02
+Decision: `slate mark` is an ungated door into the trust layer, and it is
+          recorded as such rather than closed mid-experiment.
+Rationale: Phase 2's `repair.verify_repair` stops a repair manufacturing a
+          false `fresh` — but it governs the MCP path only. Every one of the
+          E3 control's convergences went around it: edit `read-next.md` with
+          the ordinary Edit tool, then run `slate mark` in a shell. An agent
+          with shell access needs neither `slate_repair_apply` nor full MCP
+          access to re-stamp a doc's anchor, and `slate mark` verifies nothing
+          about whether the prose is still true.
+Trade-off: `slate mark` is the documented, intended command for a human who
+          has actually reviewed a doc; the landmine about marking a doc you
+          have not read has been in read-next since the layer was built. What
+          is new is that an agent will now do it unprompted — 5 of 10 control
+          trials did. Making `mark` refuse when claims disappeared would help
+          the agent case and annoy the human one.
+Safety:    Measured, not inferred: `direct_doc_edits` and the Bash-route
+          `reanchor_calls` were added to the harness after the first metric
+          reported zero for a trial that had plainly re-anchored.
+Revisit trigger: Deciding whether `slate mark` should refuse to re-anchor when
+          the claim count dropped since the last anchor — the same guard
+          `verify_repair` applies, at the other door.
+```
+
+```
+Date: 2026-08-02
+Decision: Convergence of the context layer is bought by attestation, not by
+          repair, and the repair loop's measured effect is on whether the agent
+          touches the docs at all.
+Rationale: Calling a re-anchor tool predicted convergence perfectly in both E3
+          arms: the 5 control trials that called one closed 11 of 11 jobs, the
+          5 that did not closed 0 of 5, and all 10 repair-on trials called one
+          and closed 14 of 14. The switch doubled the rate of doing anything
+          (10/10 vs 5/10, Fisher one-sided p=0.0163) — the same shape as the
+          2026-07-27 finding that offering an action gets 3 calls in 687 while
+          injecting it reaches every session. But only 7 of the treatment's 14
+          closures went through `slate_repair_apply`; the other 7 took the
+          control's unverified route.
+Trade-off: The honest pitch is therefore not "repair converges the layer" —
+          the layer often converges anyway. It is that the repair loop makes
+          convergence *verified* rather than asserted, and that is a narrower
+          claim than Phase 4 set out to test.
+Safety:    Cost is recorded beside it: ~8 turns and ~12K context per session,
+          with correctness 1/10 against the control's 2/10. Nothing here
+          supports a correctness claim in either direction.
+Revisit trigger: The re-run. If the gate route does not grow as a share of
+          closures, the loop is an expensive way to prompt an attestation.
+```

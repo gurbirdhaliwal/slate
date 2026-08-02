@@ -1,9 +1,9 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: f5b574f
-slate_synced_at: 2026-08-01T17:49:08+00:00
-slate_synced_digest: 8e32443f6c6377c6
+slate_synced_commit: 0e4a3b8
+slate_synced_at: 2026-08-02T08:20:00+00:00
+slate_synced_digest: 22d75d6ef3f3fa11
 slate_watches:
   - benchmarks/**
   - slate/**
@@ -362,11 +362,39 @@ would then be zero by construction. Four consents replace it (off by default,
 full access, the client's per-call prompt, and the verifier), and a repair
 leaves the doc **unstaged and un-re-anchored**, so a human still decides.
 
-**Where the arc stands.** Phases 0–3 complete. Phase 4 is next: `repair-off` vs
-`repair-on`, pre-registered in `benchmarks/agentbench/spec.py` before running,
-n ≥ 10. It needs no constructed stale arm — the agent's own edits stale the
-layer naturally, which is what unblocks `STALE_DOC_COMMIT` being `None` at
-revision 3. Phase 5 (ledger and pitch) untouched.
+**Phase 4 ran and is VOID — read `benchmarks/agentbench/E3-RESULTS.md` before
+touching this.** 20 trials, `spec.repair_verdict()` → FAIL, and the failure is
+mine: `MIN_DELIVERY` asked what fraction of repair-on trials saw the Stop hook
+inject, read 50%, and could not tell "broken" from "nothing to say". All five
+silent trials had `suspect_claims_end` of 0 — the agent had already closed the
+jobs. Of the trials that still had one when `Stop` fired, the hook injected 5 of
+5. The corrected reading is post-hoc and licenses nothing; a revision 2 needs
+fresh sessions, because a gate rewritten after seeing the data it failed is not
+a gate.
+
+Two things the sweep found anyway, both of which change the pitch:
+
+**Convergence is bought by attestation, not by repair.** Calling a re-anchor
+tool predicted convergence perfectly in both arms — the 5 control trials that
+called one closed 11 of 11 jobs, the 5 that did not closed 0 of 5, and all 10
+repair-on trials called one and closed 14 of 14. The switch doubled the rate of
+touching the docs at all (10/10 vs 5/10, Fisher one-sided p=0.0163), the same
+shape as the 2026-07-27 result. But only 7 of the treatment's 14 closures went
+through `slate_repair_apply`; the rest took the control's route. So the honest
+claim is not "repair converges the layer" — it is that repair makes convergence
+*verified* rather than asserted. Cost: ~8 turns and ~12K context per session,
+correctness 1/10 against the control's 2/10.
+
+**`slate mark` is an ungated door.** Every control closure went around Phase 2's
+verifier entirely: edit `read-next.md` with the ordinary `Edit` tool, then run
+`slate mark` in a shell. `verify_repair` governs the MCP path only, and an agent
+with shell access — which any real user grants — needs neither it nor full MCP
+access to re-stamp an anchor. Recorded, not fixed: patching the product
+mid-experiment is how instruments stop measuring what they claim.
+
+**Where the arc stands.** Phases 0–3 complete, Phase 4 ran and is void. Phase 5
+(ledger and pitch) untouched, and its framing should now follow the finding
+above rather than the plan's original one.
 
 Most of what shipped in this arc was still *off-plan*: claims never being
 evaluated at all, co-landing prose flagged as rot, package symbols falsely
@@ -374,20 +402,17 @@ fresh, `.rst` filenames read as symbols. Two false-`fresh` classes closed.
 Chasing the pivot has been an excellent bug-finding strategy, and it took three
 revisions of instrument before it was also a hypothesis test.
 
-**Next, in priority order.** (0) **Phase 4 — measure the thing that is now
-measurable.** Arms `repair-off` vs `repair-on` at revision 3, n ≥ 10,
-pre-registered in `benchmarks/agentbench/spec.py` *before* running — the
-discipline repairbench had to learn twice. Primary: suspect-claim count at
-session end versus session start. Secondary: verified-repair rate, rejection
-rate, cost delta. Kill criterion, stated in advance: if verified repairs do not
-exceed rejections, or the layer does not measurably converge, the pivot failed
-and gets reported the way `decoy_hits` was. **The live question is uptake, not
-capability.** Phase 0 measured an agent handed a scoped task and asked for a
-decision — 12/12 repaired, 12/12 correctly declined. It says nothing about
-whether an agent picks up a repair job it was not asked about, and the
-3-calls-in-687 MCP finding says the default is no. The `Stop` hook is the bet
-that injecting the job beats offering it. Do not report Phase 3 as a win before
-that number exists. (1) Replicate the cost effect with cost
+**Next, in priority order.** (0) **E3 revision 2 — re-run Phase 4 with a
+delivery gate that works.** Measure delivery against the trials that still had
+a suspect claim when `Stop` fired, not against all of them; the quantity is
+already recorded, so no new judgement enters, but the verdict has to come from
+fresh sessions. Worth adding while re-running: whether the *share* of closures
+going through `slate_repair_apply` grows, because at 7 of 14 the loop is an
+expensive way to prompt an attestation. (1) **Decide whether `slate mark` should
+refuse to re-anchor when the claim count dropped** — the guard `verify_repair`
+already applies, at the door the agents actually used. It cuts against the
+human case, where `mark` is exactly the right command, so it is a real trade-off
+and not an obvious fix. (2) Replicate the cost effect with cost
 *pre-registered* and higher n, and run SessionStart and PreToolUse as separate
 arms — right now the sweep cannot say which hook did the work. (2) The old
 `benchmarks/RESULTS.md` + `benchmark.py` are still self-referential and

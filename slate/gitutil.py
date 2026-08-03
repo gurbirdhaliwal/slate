@@ -272,6 +272,21 @@ def last_change_commit(root: Path, path: str, since: str) -> str | None:
     return out.strip() or None
 
 
+def file_at_commit(root: Path, path: str, commit: str) -> str | None:
+    """A tracked file's contents at `commit`, or None if it wasn't there.
+
+    None is the answer for "added since", "deleted", and "not a git repo"
+    alike; every caller here treats an unanswerable question as no evidence
+    rather than guessing, so they do not need to be told apart.
+    """
+    if not _is_sha(commit) and not commit:
+        return None
+    try:
+        return _git(root, "show", f"{commit}:{path}")
+    except Exception:
+        return None
+
+
 def blame_lines(root: Path, path: str) -> dict[int, str] | None:
     """Map every 1-based line of `path` to the commit that last wrote it.
 

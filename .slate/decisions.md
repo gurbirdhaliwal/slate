@@ -1052,3 +1052,75 @@ Safety:    The README links E3-RESULTS.md at the point of the claim, so the
 Revisit trigger: A sweep that isolates the gate route from the attestation
           route — if the verified share grows, the claim can grow with it.
 ```
+
+```
+Date: 2026-08-03
+Decision: `slate mark` refuses to attest a doc that has fewer claims than at
+          its last anchor. A human overrides with `--allow-claim-loss`; an
+          agent cannot override at all.
+Rationale: `repair.verify_repair` guards the MCP repair path, and the E3 sweep
+          measured that agents reach a green layer through the other door —
+          edit `read-next.md` with an ordinary file tool, then `slate mark`.
+          Attestation is the one moment a doc's trust is renewed by assertion
+          rather than evidence, so it is the one moment a deleted claim would
+          never be noticed again. `repair.claim_loss` compares against the
+          doc's content at its anchor via `gitutil.file_at_commit`.
+Trade-off: Counted, not matched by text. A repair *changes* a claim's wording —
+          that is what repairing is — so refusing on "this exact sentence is
+          gone" would block every honest repair from being attested and make
+          the guard a reason to stop using the feature it protects. The cost is
+          that deleting claim A while adding unrelated claim B passes, which is
+          the same bound `verify_repair` accepts.
+Safety:    Six tests, including that a repaired claim still marks cleanly, that
+          the human override works, and that an unanswerable comparison (no
+          anchor, doc absent at the anchor) is not treated as loss so `mark`
+          stays usable in a fresh repo. `slate_mark` and `slate_update_focus`
+          both refuse over MCP; update_focus is the tool measured doing this.
+Revisit trigger: A repo where legitimate claim deletion is frequent enough that
+          the override becomes routine — at which point the guard is noise.
+```
+
+```
+Date: 2026-08-03
+Decision: Hook delivery is agent-agnostic via `slate/agenthooks.py`, which
+          reuses `claudehook`'s renderers and varies only the envelope. Claude
+          Code keeps its own entry point.
+Rationale: What to say about freshness is not Claude-specific; only the
+          lifecycle event, the config file and the JSON shape are. Codex turns
+          out to be near drop-in — same event names, same stdin fields,
+          `additionalContext` at the top level instead of nested. Claude keeps
+          its own path because that one is canary-verified against a live
+          session and pinned by 47 tests; routing it through a new adapter
+          would trade measured behaviour for tidiness.
+Trade-off: **Delivery is verified for Claude Code only.** Codex and Cursor are
+          built from published contracts and have not been observed end to end,
+          and Cursor's hooks are beta. `slate agent hooks install` says so at
+          install time. Do not quote a Codex/Cursor install as delivery
+          evidence the way the Claude sweep can be quoted.
+Safety:    Cursor's `beforeReadFile` cannot inject context — it returns a
+          permission decision only — so the file warning rides `preToolUse`,
+          and Slate never sends a `permission` field on any path. Returning
+          "allow" would let a freshness note widen the user's own permissions.
+          Pinned by a test.
+Revisit trigger: A canary run against real Codex and Cursor sessions. Until
+          then the Claude path is the only one with evidence behind it.
+```
+
+```
+Date: 2026-08-03
+Decision: `cli.cmd_agent_hook` catches every exception itself, rather than
+          relying on the handlers below it to be exception-proof.
+Rationale: `claudehook.run` and `agenthooks.run` each swallow their own
+          failures, which made the wrapper above them look like it did not need
+          to. It did: a typo'd variable name raised a NameError before either
+          handler was reached, and the client saw a crashing hook. The unit
+          tests missed it because they call the handlers directly; an
+          end-to-end run through the real CLI found it immediately.
+Trade-off: A bare `except Exception: pass` at an entry point hides bugs from
+          whoever is developing the hook. That is the correct trade here — the
+          landmine is that a hook must never be the reason a session breaks,
+          and losing one freshness note is strictly cheaper than a traceback.
+Safety:    `test_the_cli_hook_entry_point_never_raises` drives the real CLI for
+          every client against valid, malformed and empty payloads.
+Revisit trigger: None. This is the module's oldest invariant.
+```

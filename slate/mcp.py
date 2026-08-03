@@ -531,6 +531,26 @@ class SlateMCPServer:
         missing = [n for n in names if n not in by_name]
         if missing:
             return f"unknown docs: {', '.join(missing)}", True
+        # No `--allow-claim-loss` here, deliberately. A human can decide a
+        # claim is obsolete and say so on the command line; an agent that has
+        # just deleted one and is now attesting the doc is accurate is the
+        # exact sequence this guard exists for, and it has no way to tell the
+        # two apart.
+        losses = {n: repair.claim_loss(self.root, by_name[n]) for n in names}
+        refused = {n: loss.vanished for n, loss in losses.items() if loss.dropped}
+        if refused:
+            return json.dumps({
+                "marked": [],
+                "refused": refused,
+                "note": (
+                    "Claims present at the last anchor are gone from these "
+                    "docs, so marking them verified would retire those claims "
+                    "with nothing having checked them. Restore the prose, or "
+                    "ask the user to run `slate mark --allow-claim-loss` if it "
+                    "is genuinely obsolete."
+                ),
+            }, indent=2), True
+
         commit = gitutil.head_commit(self.root)
         for name in names:
             doc = by_name[name]
@@ -550,6 +570,24 @@ class SlateMCPServer:
         landmines = (args.get("landmines") or "").strip()
         if landmines:
             doc.body = replace_section(doc.body, "## Landmines", landmines)
+
+        # Same guard as `slate_mark`, and this is the tool that trips it: it
+        # replaces a whole section and re-anchors in one call, so a focus
+        # rewrite that drops the claims the old focus made would retire them
+        # silently. Measured doing exactly that in the E3 sweep.
+        loss = repair.claim_loss(self.root, doc)
+        if loss.dropped:
+            return json.dumps({
+                "updated": None,
+                "refused": loss.vanished,
+                "note": (
+                    "This focus drops claims the previous one made. Carry them "
+                    "over (repaired if the code moved), or ask the user to "
+                    "retire them deliberately with `slate mark "
+                    "--allow-claim-loss`."
+                ),
+            }, indent=2), True
+
         commit = gitutil.head_commit(self.root)
         context.stamp(self.root, doc, commit)
         context.save(self.root, doc)

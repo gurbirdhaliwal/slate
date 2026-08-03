@@ -14,6 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from slate import context, freshness, generator, repair, scanner
+from slate.cli import main
 
 from .conftest import commit_all
 
@@ -284,3 +285,83 @@ def test_replace_claim_leaves_the_body_alone_when_the_target_is_absent() -> None
     # was meant would be the unsafe direction.
     body = "# Notes\n\n## Engine\n\n`engine.run` returns 42.\n"
     assert repair.replace_claim(body, "`engine.run` returns 7.", "anything") == body
+
+
+# --------------------------------------------------------------------------
+# the attestation door: `slate mark`
+
+
+def anchored_claim(repo: Path) -> Path:
+    """A layer whose read-next carries one committed, anchored claim."""
+    init_layer(repo)
+    claim(repo, "`engine.run` returns 42.")
+    commit_all(repo, "describe run")
+    main(["-C", str(repo), "mark", "read-next"])
+    commit_all(repo, "anchor read-next")
+    return repo
+
+
+def read_next(repo: Path) -> Path:
+    return repo / ".slate" / "read-next.md"
+
+
+def test_mark_refuses_when_a_claim_disappeared(repo: Path, capsys) -> None:
+    """The door the E3 control walked through: edit the doc, then attest.
+
+    `verify_repair` guards the MCP repair path; nothing guarded this one, and
+    marking is the moment trust is renewed by assertion rather than evidence.
+    """
+    anchored_claim(repo)
+    doc = read_next(repo)
+    doc.write_text(doc.read_text().replace(
+        "`engine.run` returns 42.", "The engine works fine now."))
+
+    assert main(["-C", str(repo), "mark", "read-next"]) == 2
+    err = capsys.readouterr().err
+    assert "1 fewer claim(s)" in err
+    assert "engine.run" in err
+
+
+def test_mark_still_works_when_nothing_was_lost(repo: Path, capsys) -> None:
+    anchored_claim(repo)
+    doc = read_next(repo)
+    doc.write_text(doc.read_text() + "\n`engine.run` also logs.\n")
+    assert main(["-C", str(repo), "mark", "read-next"]) == 0
+    assert "marked" in capsys.readouterr().out
+
+
+def test_a_repaired_claim_is_not_a_loss(repo: Path, capsys) -> None:
+    """Repairing changes a claim's wording — that is what repairing is.
+
+    Counting "this exact sentence is gone" would refuse `mark` after every
+    honest repair, making the guard a reason to stop using the feature it
+    protects. The count is what decides.
+    """
+    anchored_claim(repo)
+    doc = read_next(repo)
+    doc.write_text(doc.read_text().replace(
+        "`engine.run` returns 42.", "`engine.run` returns 43."))
+
+    loss = repair.claim_loss(repo, context.load(repo, context.spec_by_name("read-next")))
+    assert loss.dropped == 0
+    assert loss.vanished            # the old wording is gone, and that is fine
+    assert main(["-C", str(repo), "mark", "read-next"]) == 0
+    assert "marked" in capsys.readouterr().out
+
+
+def test_a_human_can_retire_a_claim_deliberately(repo: Path, capsys) -> None:
+    anchored_claim(repo)
+    doc = read_next(repo)
+    doc.write_text(doc.read_text().replace("`engine.run` returns 42.", ""))
+    assert main(["-C", str(repo), "mark", "read-next", "--allow-claim-loss"]) == 0
+    assert "marked" in capsys.readouterr().out
+
+
+def test_claim_loss_is_empty_without_an_anchor_to_compare(repo: Path) -> None:
+    """An unanswerable question is not evidence of loss — `mark` must stay
+    usable in a repo with no history for the doc yet."""
+    init_layer(repo)
+    doc = context.load(repo, context.spec_by_name("read-next"))
+    doc.meta["slate_synced_commit"] = None
+    assert repair.claim_loss(repo, doc).dropped == 0
+    assert repair.claim_loss(repo, doc, anchor="0" * 40).dropped == 0

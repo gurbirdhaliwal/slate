@@ -36,6 +36,7 @@ from pathlib import Path
 from . import (
     __version__,
     agentcfg,
+    agenthooks,
     banner,
     claudehook,
     context,
@@ -150,6 +151,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("mark", help="attest a doc is accurate at HEAD (human-owned docs)", description="attest a doc is accurate at HEAD (human-owned docs)")
     p.add_argument("docs", nargs="+", help="doc names, e.g. read-next decisions")
+    p.add_argument("--allow-claim-loss", action="store_true",
+                   help="attest even though claims present at the last anchor "
+                        "are gone (they are named first; use when the prose is "
+                        "genuinely obsolete)")
     p.set_defaults(func=cmd_mark)
 
     p = sub.add_parser("verify", help="verification score (0.00-1.00) per doc", description="verification score (0.00-1.00) per doc")
@@ -257,14 +262,21 @@ def _build_parser() -> argparse.ArgumentParser:
                     "a doc that is not fresh. Always exits 0 — a hook must never be "
                     "the reason a session breaks.",
     )
+    q.add_argument("--client", choices=sorted(agenthooks.AGENTS),
+                   default="claude",
+                   help="which agent's payload shape to speak (default claude)")
     q.set_defaults(func=cmd_agent_hook)
     q = agent_sub.add_parser(
         "hooks",
-        help="install/uninstall the Claude Code freshness hooks",
-        description=f"manage slate's hook entries in {claudehook.SETTINGS_FILE} "
-                    f"(committed and shared with the team)",
+        help="install/uninstall the freshness hooks for a coding agent",
+        description="manage slate's hook entries in the agent's own config "
+                    "(committed and shared with the team). Claude Code, Codex "
+                    "and Cursor deliver the same freshness; only the envelope "
+                    "differs. Delivery is canary-verified for Claude Code only.",
     )
     q.add_argument("action", choices=["install", "uninstall", "status"])
+    q.add_argument("--client", choices=[*sorted(agenthooks.AGENTS), "all"],
+                   default="claude")
     q.set_defaults(func=cmd_agent_hooks)
 
     p = sub.add_parser("fleet", help="freshness roll-up across multiple repos", description="freshness roll-up across multiple repos")
@@ -427,6 +439,33 @@ def cmd_mark(root: Path, args: argparse.Namespace) -> int:
     selected = _select(docs, args.docs)
     if selected is None:
         return 2
+
+    # Attesting is the one moment a doc's trust is renewed by assertion rather
+    # than by evidence, so it is the one moment a silently deleted claim would
+    # never be noticed again. Refuse and name them; a human who meant it says
+    # so with --allow-claim-loss.
+    if not getattr(args, "allow_claim_loss", False):
+        blocked = False
+        for doc in selected:
+            loss = repair.claim_loss(root, doc)
+            if not loss.dropped:
+                continue
+            blocked = True
+            print(
+                f"error: {doc.spec.rel_path} has {loss.dropped} fewer claim(s) "
+                f"than at {doc.synced_commit} ({loss.before} → {loss.after}), "
+                f"so marking it verified would retire them with nothing having "
+                f"checked. No longer present:", file=sys.stderr)
+            for text in loss.vanished[:5]:
+                trimmed = text if len(text) <= 100 else text[:99] + "…"
+                print(f"  - {trimmed}", file=sys.stderr)
+            if len(loss.vanished) > 5:
+                print(f"  … and {len(loss.vanished) - 5} more", file=sys.stderr)
+        if blocked:
+            print("\nRestore them, or re-run with --allow-claim-loss if the "
+                  "prose is genuinely obsolete.", file=sys.stderr)
+            return 2
+
     commit = gitutil.head_commit(root)
     for doc in selected:
         context.stamp(root, doc, commit)
@@ -823,39 +862,92 @@ def cmd_agent_status(root: Path, args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_agent_hook(root: Path, _args: argparse.Namespace) -> int:
-    """The hook body Claude Code invokes. Always exits 0.
+def cmd_agent_hook(root: Path, args: argparse.Namespace) -> int:
+    """The hook body an agent invokes. Always exits 0, and never raises.
 
-    `root` is the repo containing the cwd; Claude Code also passes `cwd` in
-    the payload, but trusting our own resolution keeps the hook working when
-    the agent has cd'd into a subdirectory.
+    `root` is the repo containing the cwd; the clients also pass `cwd` in the
+    payload, but trusting our own resolution keeps the hook working when the
+    agent has cd'd into a subdirectory.
+
+    The try/except is not belt-and-braces. `claudehook.run` and
+    `agenthooks.run` each swallow their own failures, but *this* function sits
+    above them and a bug here reaches the client as a crashing hook — which is
+    exactly what happened: a typo'd variable name raised a NameError before
+    either handler was reached, and the unit tests missed it because they call
+    the handlers directly. Silence costs a signal; a traceback costs the
+    session.
     """
-    output = claudehook.run(root, sys.stdin.read())
-    if output:
-        print(output)
+    try:
+        # Claude Code keeps its own entry point: that path is canary-verified
+        # and pinned by 47 tests, and routing it through the generic adapter
+        # would trade measured behaviour for tidiness.
+        client = getattr(args, "client", "claude")
+        if client == "claude":
+            output = claudehook.run(root, sys.stdin.read())
+        else:
+            output = agenthooks.run(agenthooks.AGENTS[client], root,
+                                    sys.stdin.read())
+        if output:
+            print(output)
+    except Exception:
+        pass
     return 0
 
 
+def _claude_hooks(root: Path, action: str) -> None:
+    if action == "install":
+        path = claudehook.install(root)
+        print(f"claude: installed freshness hooks in {path.relative_to(root)}")
+        print(f"  {claudehook.SESSION_START}: layer freshness at session start "
+              f"(and after compaction)")
+        print(f"  {claudehook.PRE_TOOL_USE}: warns on {claudehook.TOOL_MATCHER} "
+              f"when the target file is covered by a non-fresh doc")
+        print(f"  {claudehook.STOP}: names the claims this session left suspect "
+              f"(inert until `slate agent repair on`)")
+    elif action == "uninstall":
+        print("claude: " + ("removed slate's hook entries"
+                            if claudehook.uninstall(root)
+                            else "no slate hooks installed"))
+    else:
+        events = claudehook.installed_events(root)
+        print("claude: " + (", ".join(events) if events
+                            else "no slate hooks installed"))
+
+
 def cmd_agent_hooks(root: Path, args: argparse.Namespace) -> int:
+    clients = sorted(agenthooks.AGENTS) if args.client == "all" else [args.client]
     try:
-        if args.action == "install":
-            path = claudehook.install(root)
-            print(f"installed freshness hooks in {path.relative_to(root)}")
-            print(f"  {claudehook.SESSION_START}: layer freshness at session start "
-                  f"(and after compaction)")
-            print(f"  {claudehook.PRE_TOOL_USE}: warns on {claudehook.TOOL_MATCHER} "
-                  f"when the target file is covered by a non-fresh doc")
-            print("\nCommit this file to share the hooks with the team.")
-            print("Restart the Claude Code session to pick them up.")
-        elif args.action == "uninstall":
-            if claudehook.uninstall(root):
-                print("removed slate's hook entries")
+        for client in clients:
+            if client == "claude":
+                _claude_hooks(root, args.action)
+                continue
+            agent = agenthooks.AGENTS[client]
+            if args.action == "install":
+                path = agenthooks.install(agent, root)
+                native = ", ".join(agent.events.values())
+                print(f"installed freshness hooks in {path.relative_to(root)} "
+                      f"({native})")
+                if agent.beta:
+                    print(f"  note: {client} hooks are beta, and Slate's "
+                          f"delivery there is built from the published contract "
+                          f"rather than observed end to end")
+                if client == "cursor":
+                    print("  note: cursor's beforeReadFile cannot inject "
+                          "context, so the file warning rides preToolUse; "
+                          "slate never sends a permission decision")
+            elif args.action == "uninstall":
+                print(f"{client}: "
+                      + ("removed slate's hook entries"
+                         if agenthooks.uninstall(agent, root)
+                         else "no slate hooks installed"))
             else:
-                print("no slate hooks installed")
-        else:
-            events = claudehook.installed_events(root)
-            print(", ".join(events) if events else "no slate hooks installed")
-    except claudehook.HookConfigError as exc:
+                events = agenthooks.installed_events(agent, root)
+                print(f"{client}: " + (", ".join(events) if events
+                                       else "no slate hooks installed"))
+        if args.action == "install":
+            print("\nCommit these files to share the hooks with the team.")
+            print("Restart the agent session to pick them up.")
+    except (claudehook.HookConfigError, agenthooks.HookConfigError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     return 0

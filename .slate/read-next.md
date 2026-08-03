@@ -112,7 +112,7 @@ calls in 320 tool calls across 25 sessions. Hooks are not offered to the model,
 so there is no choice to decline. The module computes **no trust math** (it
 calls `freshness.evaluate_all` and renders, like `cli` and `mcp`), and every
 entry point fails to *silence* — never to a false `fresh`, never to a broken
-session. Pinned by `tests/test_claude_hook.py` (47 tests; 317 total).
+session. Pinned by `tests/test_claude_hook.py` (47 tests; 348 total).
 
 **Measured (2026-07-27 sweep, 4 arms × 5 trials, all same-day).** Delivery
 works and is verified end-to-end. What it buys is less settled:
@@ -412,8 +412,34 @@ memory-consolidation layer" but "repair makes about half of the layer's
 convergence verified rather than asserted", with the measured limits and the
 `slate mark` hole stated at the point of the claim.
 
+**The `slate mark` door is closed (2026-08-03).** `repair.claim_loss`
+compares a doc's claims against its content at its anchor, and `slate mark`
+refuses to attest when the count dropped — the guard `verify_repair` applies,
+at the door the E3 control actually walked through. A human overrides with
+`--allow-claim-loss`; over MCP, `slate_mark` and `slate_update_focus` both
+refuse and there is no override, because an agent that just deleted a claim and
+is now attesting the doc is accurate is the exact sequence this exists for.
+Counted, not text-matched: a repair changes a claim's wording, so refusing on
+"this sentence is gone" would block every honest repair from being attested.
+
+**Hook delivery is agent-agnostic (2026-08-03).** New `slate/agenthooks.py`
+reuses `claudehook`'s renderers and varies only the envelope, so Claude Code,
+Codex and Cursor deliver identical freshness. `slate agent hooks install
+--client all`. Codex is near drop-in — same event names, same stdin fields,
+`additionalContext` at the top level rather than nested. Cursor needs two real
+adaptations: `beforeReadFile` **cannot inject context** (it returns a permission
+decision only) so the file warning rides `preToolUse`, and Slate never sends a
+`permission` field anywhere — returning "allow" would let a freshness note widen
+the user's own permissions.
+
+**Delivery is canary-verified for Claude Code only.** Codex and Cursor are built
+from published contracts and have not been observed end to end; Cursor's hooks
+are beta. `install` says so. Do not quote a Codex/Cursor install as delivery
+evidence the way the Claude sweep can be.
+
 **Where the arc stands.** Phases 0–5 complete; the repair-and-resume pivot is
-built and measured end to end. Note the plan's phase numbers are separate from
+built and measured end to end, and both of its measured gaps — the ungated
+`mark` door and Claude-only hook delivery — are now closed in code. Note the plan's phase numbers are separate from
 the product roadmap's in README.
 
 **Next, in priority order.** (0) **E3 revision 2 — re-run Phase 4 with a

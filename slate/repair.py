@@ -226,6 +226,64 @@ def _abbreviate(text: str, width: int = 60) -> str:
     return text if len(text) <= width else text[: width - 1] + "…"
 
 
+# --------------------------------------------------------------------------
+# the other door: attestation
+#
+# `verify_repair` stops a *repair* deleting a claim's refs. It governs one
+# path. `slate mark` re-anchors a human-owned doc directly, and measured over
+# 20 benchmark sessions that is the door agents actually walked through: edit
+# `read-next.md` with an ordinary file tool, then run `slate mark`, and the doc
+# is green with nothing having checked the prose.
+#
+# The guard is the same invariant, asked at attestation time: a claim that was
+# in the doc at its last anchor should still be there. Losing one is not
+# forbidden — prose gets deleted for good reasons — but it is not something to
+# do by accident while attesting that the doc is accurate.
+
+
+@dataclass
+class ClaimLoss:
+    before: int              # claims in the doc at its anchor
+    after: int               # claims in it now
+    vanished: list[str] = field(default_factory=list)
+
+    @property
+    def dropped(self) -> int:
+        """How many claims the doc no longer has. The thing to refuse on.
+
+        Counted, not matched by text, because a *repair* changes a claim's
+        wording — that is what repairing is. Refusing on "this exact sentence
+        is gone" would block every honest repair from being attested, which
+        would make the guard a reason to stop using the feature it protects.
+        `verify_repair` draws the same line for the same reason.
+        """
+        return max(0, self.before - self.after)
+
+
+def claim_loss(root: Path, doc, anchor: str | None = None) -> ClaimLoss:
+    """Compare a doc's claims against the version at its anchor.
+
+    A zero-loss result when there is nothing to compare against — no anchor,
+    no commit, a doc that did not exist there. An unanswerable question is not
+    evidence of loss, and `mark` must stay usable in a fresh repo.
+    """
+    from . import frontmatter
+
+    anchor = anchor or doc.synced_commit
+    if not anchor:
+        return ClaimLoss(0, 0)
+    previous = gitutil.file_at_commit(root, doc.spec.rel_path, anchor)
+    if previous is None:
+        return ClaimLoss(0, 0)
+    _, before_body = frontmatter.parse(previous)
+    before = [c.text for c in human_claims(before_body)]
+    now = {c.text for c in human_claims(doc.body)}
+    # Named for the error message only. A rewritten claim shows up here and is
+    # *not* counted as a loss — the count above is what decides.
+    return ClaimLoss(len(before), len(now),
+                     sorted(t for t in set(before) - now))
+
+
 def replace_claim(body: str, target: str, replacement: str) -> str:
     """Swap one claim's lines for new text, by span rather than by string.
 

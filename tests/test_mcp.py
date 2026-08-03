@@ -311,3 +311,71 @@ def test_repair_apply_on_a_missing_target_writes_nothing(repo: Path) -> None:
     })
     assert is_error and payload["outcome"] == "rejected"
     assert (repo / ".slate" / "read-next.md").read_text() == original
+
+
+def seed_focus_claim(repo: Path) -> Path:
+    """An anchored layer whose *Current focus* section carries one claim.
+
+    It has to sit inside that section: `slate_update_focus` replaces the focus
+    and nothing else, so a claim parked below Landmines would survive the
+    rewrite and the guard would never be exercised.
+    """
+    init_layer(repo)
+    read_next = repo / ".slate" / "read-next.md"
+    body = read_next.read_text()
+    head, marker, tail = body.partition("## Current focus")
+    read_next.write_text(f"{head}{marker}\n\n`engine.run` returns 42.\n{tail}")
+    commit_all(repo, "describe run")
+    agentcfg.set_access(repo, agentcfg.FULL)
+    call(SlateMCPServer(repo, access=agentcfg.FULL), "slate_mark", {"docs": ["read-next"]})
+    commit_all(repo, "anchor")
+    return read_next
+
+
+def test_slate_mark_refuses_to_retire_a_claim(repo: Path) -> None:
+    """The agent gets no `--allow-claim-loss`.
+
+    A human can decide prose is obsolete and say so on the command line. An
+    agent that just deleted a claim and is now attesting the doc is accurate is
+    the exact sequence the guard exists for, and nothing here can tell the two
+    apart.
+    """
+    init_layer(repo)
+    read_next = repo / ".slate" / "read-next.md"
+    read_next.write_text(read_next.read_text() + "\n`engine.run` returns 42.\n")
+    commit_all(repo, "describe run")
+    agentcfg.set_access(repo, agentcfg.FULL)
+    call(SlateMCPServer(repo, access=agentcfg.FULL), "slate_mark", {"docs": ["read-next"]})
+    commit_all(repo, "anchor")
+
+    read_next.write_text(read_next.read_text().replace(
+        "`engine.run` returns 42.", "The engine is fine."))
+    before = context.load(repo, context.spec_by_name("read-next")).synced_commit
+
+    payload, is_error = call(SlateMCPServer(repo, access=agentcfg.FULL),
+                             "slate_mark", {"docs": ["read-next"]})
+    assert is_error and payload["marked"] == []
+    assert "engine.run" in json.dumps(payload["refused"])
+    # and the anchor did not move
+    assert context.load(repo, context.spec_by_name("read-next")).synced_commit == before
+
+
+def test_update_focus_refuses_to_drop_the_claims_it_replaces(repo: Path) -> None:
+    # Measured doing exactly this in the E3 sweep: rewrite the whole focus
+    # section, re-anchor in the same call, and the claims the old focus made
+    # are retired with nothing having checked them.
+    read_next = seed_focus_claim(repo)
+
+    payload, is_error = call(SlateMCPServer(repo, access=agentcfg.FULL),
+                             "slate_update_focus", {"current_focus": "All done here."})
+    assert is_error and payload["updated"] is None
+    assert "`engine.run` returns 42." in read_next.read_text()
+
+
+def test_update_focus_still_works_when_it_carries_the_claims_over(repo: Path) -> None:
+    seed_focus_claim(repo)
+
+    payload, is_error = call(SlateMCPServer(repo, access=agentcfg.FULL),
+                             "slate_update_focus",
+                             {"current_focus": "`engine.run` returns 43 now."})
+    assert not is_error and payload["updated"]

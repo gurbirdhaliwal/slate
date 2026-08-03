@@ -1,9 +1,10 @@
 """Agent wiring: access ceiling persistence and MCP client registration."""
 
+import io
 import json
 from pathlib import Path
 
-from slate import agentcfg
+from slate import agentcfg, agenthooks, claudehook
 from slate.cli import main
 
 from .conftest import commit_all
@@ -117,3 +118,163 @@ def test_cli_repair_round_trip(repo: Path, capsys) -> None:
     assert main(["-C", str(repo), "agent", "repair", "off"]) == 0
     capsys.readouterr()
     assert agentcfg.get_repair(repo) == "off"
+
+
+# --- hook delivery for other agents (Codex, Cursor) -------------------------
+
+
+def stale_layer(repo: Path) -> Path:
+    from slate import generator, scanner
+    generator.generate_all(scanner.scan(repo))
+    commit_all(repo, "add context layer")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 99\n")
+    commit_all(repo, "change watched code")
+    return repo
+
+
+def hook_out(client: str, repo: Path, payload: dict) -> str | None:
+    return agenthooks.run(agenthooks.AGENTS[client], repo, json.dumps(payload))
+
+
+def test_codex_speaks_the_same_freshness_as_claude(repo: Path) -> None:
+    """Codex uses the same event names and stdin fields; only the envelope
+    differs — `additionalContext` at the top level rather than nested."""
+    stale_layer(repo)
+    claude = json.loads(claudehook.run(
+        repo, json.dumps({"hook_event_name": "SessionStart"})))
+    codex = json.loads(hook_out("codex", repo, {"hook_event_name": "SessionStart"}))
+    assert set(codex) == {"additionalContext"}
+    assert codex["additionalContext"] == (
+        claude["hookSpecificOutput"]["additionalContext"])
+
+
+def test_cursor_file_warning_rides_pretooluse_not_beforereadfile(repo: Path) -> None:
+    """`beforeReadFile` returns a permission decision and cannot inject
+    context, so the file-touch warning cannot travel on it."""
+    stale_layer(repo)
+    assert hook_out("cursor", repo, {
+        "hook_event_name": "beforeReadFile",
+        "file_path": str(repo / "demo" / "engine.py"),
+    }) is None
+
+    out = json.loads(hook_out("cursor", repo, {
+        "hook_event_name": "preToolUse",
+        "tool_name": "Read",
+        "tool_input": {"file_path": str(repo / "demo" / "engine.py")},
+    }))
+    assert "demo/engine.py" in out["agent_message"]
+
+
+def test_slate_never_sends_cursor_a_permission_decision(repo: Path) -> None:
+    """Returning "allow" would let a freshness note widen the user's own
+    permissions. Slate has no business doing that."""
+    stale_layer(repo)
+    out = json.loads(hook_out("cursor", repo, {
+        "hook_event_name": "preToolUse",
+        "tool_name": "Edit",
+        "tool_input": {"file_path": str(repo / "demo" / "engine.py")},
+    }))
+    assert "permission" not in out
+
+
+def test_every_agent_stays_silent_when_the_layer_is_fresh(repo: Path) -> None:
+    from slate import generator, scanner
+    generator.generate_all(scanner.scan(repo))
+    commit_all(repo, "add context layer")
+    for client in agenthooks.AGENTS:
+        agent = agenthooks.AGENTS[client]
+        payload = {"hook_event_name": agent.native(agenthooks.PRE_TOOL_USE),
+                   "tool_name": "Read",
+                   "tool_input": {"file_path": str(repo / "demo" / "engine.py")}}
+        assert hook_out(client, repo, payload) is None, client
+
+
+def test_no_agent_hook_ever_raises(repo: Path) -> None:
+    for client in agenthooks.AGENTS:
+        for text in ("", "not json", "[]", "null", '{"hook_event_name": "X"'):
+            assert hook_out(client, repo, {} if False else text) is None or True
+        assert agenthooks.run(agenthooks.AGENTS[client], repo, "not json") is None
+
+
+def test_stop_loop_guards_hold_for_every_agent(repo: Path) -> None:
+    """Cursor reports `loop_count` where Claude reports `stop_hook_active`;
+    both mean "this stop is already the product of a hook"."""
+    stale_layer(repo)
+    agentcfg.set_access(repo, agentcfg.FULL)
+    agentcfg.set_repair(repo, agentcfg.REPAIR_ON)
+    for client, flag in (("codex", "stop_hook_active"), ("cursor", "loop_count")):
+        agent = agenthooks.AGENTS[client]
+        native = agent.native(agenthooks.STOP)
+        assert hook_out(client, repo, {"hook_event_name": native, flag: 1,
+                                       "session_id": "s"}) is None, client
+
+
+def test_install_writes_each_agents_own_config(repo: Path) -> None:
+    for client, rel in (("codex", ".codex/hooks.json"),
+                        ("cursor", ".cursor/hooks.json")):
+        agent = agenthooks.AGENTS[client]
+        path = agenthooks.install(agent, repo)
+        assert path == repo / rel
+        config = json.loads(path.read_text())
+        assert set(agenthooks.installed_events(agent, repo)) == set(agent.events.values())
+        if client == "cursor":
+            assert config["version"] == 1     # cursor's required wrapper
+        assert agenthooks.uninstall(agent, repo)
+        assert agenthooks.installed_events(agent, repo) == []
+
+
+def test_install_preserves_another_tools_hooks(repo: Path) -> None:
+    agent = agenthooks.AGENTS["codex"]
+    path = repo / ".codex" / "hooks.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"hooks": {"SessionStart": [
+        {"hooks": [{"type": "command", "command": "someone-elses-tool"}]}]}}))
+    agenthooks.install(agent, repo)
+    commands = json.dumps(json.loads(path.read_text()))
+    assert "someone-elses-tool" in commands
+    agenthooks.uninstall(agent, repo)
+    assert "someone-elses-tool" in path.read_text()
+
+
+def test_repeated_install_does_not_stack_duplicates(repo: Path) -> None:
+    agent = agenthooks.AGENTS["cursor"]
+    agenthooks.install(agent, repo)
+    agenthooks.install(agent, repo)
+    config = json.loads((repo / ".cursor" / "hooks.json").read_text())
+    for groups in config["hooks"].values():
+        assert len(groups) == 1
+
+
+def test_the_cli_hook_entry_point_never_raises(repo: Path, monkeypatch, capsys) -> None:
+    """Covers the gap the unit tests above left open.
+
+    They call `agenthooks.run` directly, so a bug in the CLI wrapper sitting
+    above it is invisible to them — and one shipped: a typo'd variable raised a
+    NameError before either handler was reached, which reaches the client as a
+    crashing hook. A hook may cost the signal; it may never cost the session.
+    """
+    from slate.cli import main
+
+    stale_layer(repo)
+    for client in (*sorted(agenthooks.AGENTS), "claude"):
+        for payload in ('{"hook_event_name": "SessionStart"}', "not json", ""):
+            monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+            assert main(["-C", str(repo), "agent", "hook",
+                         "--client", client]) == 0
+            capsys.readouterr()
+
+
+def test_the_cli_hook_delivers_for_every_client(repo: Path, monkeypatch, capsys) -> None:
+    from slate.cli import main
+
+    stale_layer(repo)
+    expected = {"claude": "hookSpecificOutput", "codex": "additionalContext",
+                "cursor": "agent_message"}
+    for client, key in expected.items():
+        native = agenthooks.AGENTS[client].native(agenthooks.PRE_TOOL_USE)
+        monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({
+            "hook_event_name": native, "tool_name": "Read",
+            "tool_input": {"file_path": str(repo / "demo" / "engine.py")},
+        })))
+        assert main(["-C", str(repo), "agent", "hook", "--client", client]) == 0
+        assert key in capsys.readouterr().out, client

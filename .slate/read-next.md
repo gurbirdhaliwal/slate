@@ -448,24 +448,24 @@ a suspect claim when `Stop` fired, not against all of them; the quantity is
 already recorded, so no new judgement enters, but the verdict has to come from
 fresh sessions. Worth adding while re-running: whether the *share* of closures
 going through `slate_repair_apply` grows, because at 7 of 14 the loop is an
-expensive way to prompt an attestation. (1) **Decide whether `slate mark` should
-refuse to re-anchor when the claim count dropped** — the guard `verify_repair`
-already applies, at the door the agents actually used. It cuts against the
-human case, where `mark` is exactly the right command, so it is a real trade-off
-and not an obvious fix. (2) Replicate the cost effect with cost
+expensive way to prompt an attestation. Note this is no longer the same
+experiment it was when it was written: closing the `mark` door gated part of
+the attestation route, so a re-run measures the system as it is now.
+(1) Replicate the cost effect with cost
 *pre-registered* and higher n, and run SessionStart and PreToolUse as separate
 arms — right now the sweep cannot say which hook did the work. (2) The old
 `benchmarks/RESULTS.md` + `benchmark.py` are still self-referential and
 estimate-based, and its numbers predate the package-granularity scanner —
 re-run or retire it; the repo ships two RESULTS.md files making different
-kinds of claim. (3) Portability: `claudehook.py` splits cleanly into
-agent-neutral rendering (`session_start_text`, `pre_tool_use_text`,
-`_covering`) and a Claude-specific surface (`_rel_target`, `_output`, the
-settings writer). Codex uses the same event names via `hooks.json` /
-`[hooks]` in `config.toml`; Cursor uses `.cursor/hooks.json` with different
-names (`beforeReadFile`, `afterFileEdit`) and is still beta. Only worth
-porting once the effect replicates. (4) `InstructionsLoaded` (no decision
-control, side effects only) would turn "the layer loaded" into a logged fact.
+kinds of claim. (3) `InstructionsLoaded` (no decision control, side effects
+only) would turn "the layer loaded" into a logged fact.
+
+**Two items left this list without their preconditions being met, and the
+record should say which.** The `mark` gate was built (2026-08-03) — that one
+was simply done. Portability was *not* gated on a decision; it was gated on
+"only worth porting once the effect replicates", and the effect has not
+replicated. It was ported anyway on a direct instruction. That is a legitimate
+call by whoever asked, and it is not evidence the sequencing was satisfied.
 
 ## Landmines
 
@@ -476,6 +476,7 @@ control, side effects only) would turn "the layer loaded" into a logged fact.
 - Claude Code reads `CLAUDE.md`, not `AGENTS.md`. Project `.claude/settings.json` hooks *do* load under `claude -p`; project `.mcp.json` does **not** without `--mcp-config`. Verify delivery with a canary before trusting any agent-behaviour measurement.
 - `slate sync` cannot clear `read-next`. It has `generated: false`, so there is no auto-block to regenerate — only `slate mark read-next` re-anchors it, and only after someone has actually rewritten the focus text. Marking a doc you have not read is the one way to turn this whole layer back into a rumor.
 - Authorship narrowing may only ever narrow. `freshness._prose_supersedes` must return False for every question it cannot answer — no blame, no anchor, no file. A `git` call that starts *assuming* recency is a false `fresh` with extra steps.
+- **Slate detects moved code, not contradicted prose, and no guard in the product closes that gap.** A claim goes stale two ways: the code it names moves (caught), or the sentence simply becomes untrue while every ref it names sits untouched (invisible). `repair.claim_loss` does not help — it counts claims, so it catches *deletion*, not *falsity*. Observed here on 2026-08-03: this doc said porting to Codex/Cursor was "only worth porting once the effect replicates" **after** the port had shipped, `slate status` stayed green throughout, and `slate mark` re-anchored the doc without complaint. A structural check cannot verify truth; that is what the human reading before `mark` is for, and it is why marking a doc you have not actually re-read is the one move that turns this layer back into a rumor.
 - `repair.verify_repair` must stay pure and must never consult freshness. It answers "is this edit admissible", not "is this doc now accurate" — freshness cannot answer the second about a repair, because a repair is newer prose by definition and authorship narrowing reads a timestamp the repair just updated. Measured: replacing a stale sentence with "`engine.run` returns 9999 purple" turns the doc `fresh`. Re-anchoring stays with `freshness.evaluate` and `slate mark`.
 - `additionalContext` on a `Stop` hook **continues the conversation**. A Stop path that speaks unconditionally is an infinite session: the agent finishes, the hook speaks, it finishes again. Both brakes have to stay — `stop_hook_active` from the client, and the per-session note via `_already_announced`. And never emit `decision: "block"` from any hook: that is how Slate becomes the reason a session will not end.
 - `SessionEnd` cannot inject context. No decision control, no `additionalContext` — it fires after the session is over and shows stderr to the user only. Anything that must reach the model at the end of a turn goes on `Stop`. Verified with a canary, not read off a doc.

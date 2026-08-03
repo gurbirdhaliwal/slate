@@ -1124,3 +1124,53 @@ Safety:    `test_the_cli_hook_entry_point_never_raises` drives the real CLI for
           every client against valid, malformed and empty payloads.
 Revisit trigger: None. This is the module's oldest invariant.
 ```
+
+```
+Date: 2026-08-03
+Decision: Record — do not try to close — the gap between "the code a claim
+          names moved" and "the claim became untrue". Slate detects the first.
+          Nothing in the product detects the second, and `repair.claim_loss`
+          does not help because it counts claims rather than reading them.
+Rationale: Found by walking into it. On 2026-08-03 this repo's `read-next` said
+          porting the hooks to Codex and Cursor was "only worth porting once
+          the effect replicates" *after* the port had shipped. Every reference
+          in that paragraph still resolved, so `slate status` stayed green, the
+          freshness engine had nothing to flag, and `slate mark` re-anchored
+          the doc without complaint — attesting a sentence that had just been
+          made false. The new `mark` guard did not fire either: no claim was
+          deleted, one was simply contradicted.
+Trade-off: Closing it means judging whether prose is *true*, which needs a model
+          in the trust path. §10 and the whole repairbench arc say no: freshness
+          cannot score a repair, a verifier that reasons is a verifier that can
+          be wrong confidently, and the one failure this product forbids is a
+          false `fresh`. A gap that is honestly documented is safer than a
+          check that guesses.
+Safety:    Written as a landmine in read-next, next to the existing warning
+          that marking a doc you have not read turns the layer back into a
+          rumor. That warning is now backed by an incident rather than a
+          worry.
+Revisit trigger: A deterministic signal for contradiction that does not require
+          reading the prose — for example a claim that names a symbol whose
+          *docstring* asserts the opposite. Narrow, but it would not need a
+          model.
+```
+
+```
+Date: 2026-08-03
+Decision: When work lands whose stated precondition was never met, the record
+          says so rather than quietly marking the item done.
+Rationale: The carry-over list gated porting hooks to Codex/Cursor on "only
+          worth porting once the effect replicates". The effect has not
+          replicated; the port shipped on a direct instruction. That is a
+          legitimate call by the person asking, and it is not the same thing as
+          the sequencing having been satisfied. Silently ticking it off would
+          leave a future reader believing a measurement exists that does not —
+          the same failure as quoting a void sweep's numbers.
+Trade-off: The list is noisier: it now carries why an item left it, not just
+          that it did. Worth it in a repo whose product is document
+          reliability.
+Safety:    read-next names both items that left the list and distinguishes the
+          one that was simply completed (the `mark` gate) from the one whose
+          precondition was bypassed.
+Revisit trigger: None. This is a documentation habit, not a mechanism.
+```

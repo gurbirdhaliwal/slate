@@ -432,22 +432,26 @@ decision only) so the file warning rides `preToolUse`, and Slate never sends a
 `permission` field anywhere — returning "allow" would let a freshness note widen
 the user's own permissions.
 
-**Codex: envelope bug found and fixed; delivery still unobserved
-(2026-08-05).** Two canary rounds separated two problems. Round 1 found a real
-bug — `_codex_envelope` put `additionalContext` at the top level instead of
-nesting it under `hookSpecificOutput`, which is what Codex's spec actually
-requires (identical to Claude's). Fixed, and a test pins the two envelopes as
-equal so they cannot drift. Round 2 isolated the rest away from Slate: a
-**minimal spec-shaped `hooks.json` with no Slate involvement** — one `echo` —
-also never fired, across repo-local and global locations, the `plugin_hooks`
-flag, and `enabled: true` at both levels, all with
-`--dangerously-bypass-hook-trust` confirmed active by its own warning. Zero
-invocations throughout. So Slate's config is not the problem: either `codex
-exec` does not run hooks, or the feature is incomplete in 0.137.0 (0.146.1 is
-available). Cursor was never tried — no CLI. `HookAgent.verified` records
-observation, not intent; only Claude is True, pinned by a test. Next step is a
-Codex upgrade and re-running the *minimal* hook first — if that does not fire,
-nothing about Slate's config matters.
+**Codex delivery is canary-verified (2026-08-05, `codex-cli 0.146.1`).** All
+three events fire and Slate's SessionStart freshness arrives in the right
+envelope. Three rounds, three distinct bugs: (1) `_codex_envelope` flattened
+`additionalContext` instead of nesting it under `hookSpecificOutput` — a hook
+that fires and whose output is discarded; (2) nothing fired on 0.137.0, and a
+minimal no-Slate hook did not either, which pointed away from Slate; (3) on
+0.146.1 the minimal hook fired from `~/.codex/` but not from the repo. That was
+the real bug — **Codex reads hooks only from the user's home**, and Slate was
+writing `<repo>/.codex/hooks.json`, which it silently ignores. Proven, not
+guessed: malformed JSON at the global path warns "failed to parse hooks config";
+the identical file in a repo produces nothing.
+
+Consequences worth carrying: Codex's config is per-user, so it cannot be
+committed the way Claude's can — each developer runs install once — and it is
+the only thing Slate writes outside the repo. **`PreToolUse` fires on Codex but
+rarely names a file**, because Codex reads through shell (`tool_name: "Bash"`)
+rather than a structured read tool, so there is no path to resolve. Parsing
+paths out of arbitrary shell is refused: a warning about the wrong file is worse
+than none. SessionStart and Stop are the working signals there. Cursor remains
+untried — no CLI on the machine — and `verified` is False for it alone.
 
 **Where the arc stands.** Phases 0–5 complete; the repair-and-resume pivot is
 built and measured end to end, and both of its measured gaps — the ungated

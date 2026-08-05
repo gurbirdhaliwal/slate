@@ -1272,3 +1272,48 @@ Revisit trigger: Upgrade Codex and re-run the isolation canary — the minimal
           no-Slate hook first, because if that does not fire nothing about
           Slate's config matters.
 ```
+
+```
+Date: 2026-08-05
+Decision: Codex hooks are written to `~/.codex/hooks.json`, and Codex delivery
+          is now canary-verified. Cursor stays unverified.
+Rationale: The port failed for three different reasons, found in order. (1) The
+          envelope was flattened — `additionalContext` at the top level rather
+          than nested under `hookSpecificOutput` — which produces a hook that
+          fires and whose output Codex discards. (2) On 0.137.0 nothing fired at
+          all, and a minimal no-Slate hook did not fire either, which pointed
+          away from Slate. (3) On 0.146.1 the minimal hook fired from
+          `~/.codex/` but not from the repo. That was the real bug: Slate wrote
+          `<repo>/.codex/hooks.json`, which Codex silently ignores. Proven
+          rather than guessed — malformed JSON at the global path warns "failed
+          to parse hooks config"; the identical file in a repo produces nothing.
+          Re-run end to end: all three events fire and Slate's SessionStart
+          freshness arrives correctly.
+Trade-off: Codex's config is per-user, so unlike Claude's it cannot be committed
+          and shared — each developer runs install once. It is also the only
+          thing Slate writes outside the repo, which SECURITY.md now states.
+Safety:    `HookAgent.verified` is True only for the two that were observed
+          working, pinned by a test. Tests that touch Codex config redirect
+          HOME, because the first run of that test edited the developer's real
+          `~/.codex/hooks.json`.
+Revisit trigger: Cursor, when a CLI is available to canary against.
+```
+
+```
+Date: 2026-08-05
+Decision: Do not parse file paths out of shell commands to make PreToolUse work
+          on Codex.
+Rationale: Codex reads files by running shell — the observed payload is
+          `tool_name: "Bash"`, `tool_input: {"command": "sed -n '1,200p'
+          demo/engine.py"}` — so there is no `file_path` and `_rel_target`
+          correctly returns None. Recovering the path would mean parsing
+          arbitrary shell, where a wrong guess produces a freshness warning
+          about a file the agent never touched. A warning that fires on the
+          wrong file is worse than no warning: it is the alarm-fatigue failure
+          the PreToolUse design already goes out of its way to avoid.
+Trade-off: The file-touch warning is effectively Claude-specific in practice.
+          On Codex the working signals are SessionStart and Stop, and the
+          install output says so rather than leaving the user to notice.
+Revisit trigger: Codex exposing a structured read tool, or a hook payload
+          carrying resolved paths alongside the command.
+```

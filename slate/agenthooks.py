@@ -16,12 +16,17 @@ What the clients actually do, checked against their docs rather than assumed:
                 `Stop`. Output nests under `hookSpecificOutput`. Canary-verified
                 against a real session — see `claudehook`.
 
-  Codex         `.codex/hooks.json` (or `[hooks]` in `config.toml`; also
-                `~/.codex/`, which takes precedence). Same event names, same
-                stdin fields, and the *same* `hookSpecificOutput.
-                additionalContext` envelope — a genuine drop-in. Hooks require
-                explicit user trust, tracked against the config's hash, and
-                reviewed with the `/hooks` command.
+  Codex         **`~/.codex/hooks.json` — the user's home, not the repo.**
+                A repo-local `.codex/hooks.json` is silently ignored; that is
+                measured, not inferred (malformed JSON at the global path warns
+                "failed to parse hooks config", the identical file inside a repo
+                produces nothing). Same event names, same stdin fields, same
+                `hookSpecificOutput.additionalContext` envelope as Claude.
+                Because the config is per-user it cannot be committed, so it is
+                per-developer setup rather than team policy. Hooks also require
+                trust, tracked against the config hash and reviewed via
+                `/hooks`; `--dangerously-bypass-hook-trust` skips it for
+                automation.
 
   Cursor        `.cursor/hooks.json`, `{"version": 1, "hooks": {...}}`, and
                 camelCase event names. Two things differ in kind:
@@ -35,35 +40,33 @@ What the clients actually do, checked against their docs rather than assumed:
                   might have stopped — a freshness note has no business
                   widening anyone's permissions.
 
-**Delivery is verified for Claude Code only. The Codex config is now known to
-match the spec, and hooks still do not fire on the version tested.**
+**Delivery is verified for Claude Code and Codex. Cursor is untried.**
 
-Two rounds of canary, 2026-08-05, against `codex-cli 0.137.0`:
+Codex canary, 2026-08-05, `codex-cli 0.146.1`: a repo with a stale layer, hooks
+installed by `slate agent hooks install --client codex`, the command tee'd on
+both ends. All three events fired — `SessionStart`, `PreToolUse`, `Stop` — and
+Slate's SessionStart freshness text arrived in the correct envelope.
 
-*Round 1* found a real bug: the envelope put `additionalContext` at the top
-level instead of nesting it under `hookSpecificOutput`. That is fixed — the
-published contract specifies the same nesting Claude uses, and a test pins the
-two envelopes as identical.
+Getting there took three rounds and each found a different thing:
 
-*Round 2* isolated the remaining failure away from Slate entirely. A **minimal,
-spec-shaped `hooks.json` with no Slate involvement** — one `echo` appending to a
-file — also never fired. Tried, all with `--dangerously-bypass-hook-trust`
-confirmed active by its own warning: repo-local `.codex/hooks.json`, global
-`~/.codex/hooks.json` (documented as higher precedence), the `plugin_hooks`
-feature flag, and `enabled: true` at both the group and handler level. Zero
-invocations in every case.
+1. The envelope was wrong (`additionalContext` at the top level instead of
+   nested under `hookSpecificOutput`) — a hook that fires and whose output is
+   discarded.
+2. Hooks did not fire at all on 0.137.0, and a minimal no-Slate hook did not
+   either, which pointed away from Slate.
+3. On 0.146.1 the minimal hook still did not fire *from the repo* but did from
+   `~/.codex/`. That was the real bug: Slate was writing to a path Codex never
+   reads.
 
-So the config Slate writes is not the problem. Either `codex exec`
-(non-interactive) does not run hooks, or the feature is incomplete in 0.137.0 —
-`codex doctor` offers 0.146.1, and the published docs describe the newer
-behaviour. Verifying this needs a Codex upgrade and one more canary run; the
-code here is believed correct and remains unobserved.
+**Known limit — `PreToolUse` rarely says anything useful on Codex.** It fires,
+but Codex reads files by running shell (`tool_name: "Bash"`, `tool_input:
+{"command": "sed -n ... demo/engine.py"}`) rather than through a structured
+read tool, so there is no `file_path` to resolve and `_rel_target` correctly
+returns None. Parsing paths out of arbitrary shell would be guesswork with a
+false-warning cost, so it is not attempted. On Codex the working signals are
+SessionStart and Stop.
 
 Cursor has not been tried at all — no CLI available on the machine.
-
-`install` says all of this out loud. Do not describe either as supported.
-`HookAgent.verified` records observation, not intent, and nothing flips it to
-True without a passing canary behind it.
 """
 
 from __future__ import annotations
@@ -91,9 +94,16 @@ class HookConfigError(RuntimeError):
 @dataclass(frozen=True)
 class HookAgent:
     name: str
-    settings: str                       # repo-relative config path
+    settings: str                       # config path, repo-relative or ~-rooted
     events: dict[str, str]              # neutral -> native event name
     envelope: Callable[[str, str], dict]  # (native event, text) -> client JSON
+    # Codex reads hooks from `~/.codex/hooks.json` only — a repo-local
+    # `.codex/hooks.json` is silently ignored, which is exactly how the first
+    # port failed. Measured: malformed JSON at the global path produces
+    # "failed to parse hooks config"; the same file inside a repo produces
+    # nothing at all. That makes the config per-user rather than per-repo, so
+    # it cannot be committed and shared the way Claude's can.
+    user_global: bool = False
     # Cursor wraps its hook map in {"version": 1, "hooks": {...}}; the others
     # nest under a bare "hooks" key.
     wrapper: dict = field(default_factory=dict)
@@ -154,11 +164,13 @@ AGENTS: dict[str, HookAgent] = {
     ),
     "codex": HookAgent(
         name="codex",
-        settings=".codex/hooks.json",
+        settings="~/.codex/hooks.json",
+        user_global=True,
         events={SESSION_START: "SessionStart",
                 PRE_TOOL_USE: "PreToolUse",
                 STOP: "Stop"},
         envelope=_codex_envelope,
+        verified=True,
     ),
     "cursor": HookAgent(
         name="cursor",
@@ -239,6 +251,15 @@ def run(agent: HookAgent, root: Path, stdin_text: str) -> str | None:
 # --- config writing ----------------------------------------------------------
 
 def settings_path(agent: HookAgent, root: Path) -> Path:
+    """Where this agent actually reads its hooks from.
+
+    Codex's is outside the repo, in the user's home. That is a real difference
+    in kind, not a detail: it cannot be committed, so it is per-developer setup
+    rather than team policy, and installing it touches a file Slate does not
+    otherwise own.
+    """
+    if agent.user_global:
+        return Path(agent.settings).expanduser()
     return root / agent.settings
 
 

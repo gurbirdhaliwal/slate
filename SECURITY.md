@@ -48,8 +48,9 @@ and "a first-time contributor's PR did".
 ## 2. Committed hook configs execute commands on clone
 
 `slate agent hooks install` writes `.claude/settings.json` (and, if asked,
-`.codex/hooks.json` / `.cursor/hooks.json`), and the docs tell you to **commit
-them** so the team shares the same setup.
+`.cursor/hooks.json` in the repo, or `~/.codex/hooks.json` in your home — Codex
+only reads hooks from there), and the docs tell you to **commit** the repo-local
+ones so the team shares the same setup.
 
 That means: cloning a Slate-enabled repo and opening it in a coding agent can
 run a command on your machine, because that is how agent hooks work. Slate's
@@ -129,5 +130,8 @@ If your repo is sensitive, simply never pass `--prose`.
   never `shell=True`. No `eval`, no `exec`, no dynamic import of repo content.
 - Never executes code it finds in your repo. The scanner parses Python with
   `ast` and other languages with regex — it never imports them.
-- Never writes outside the repo root, except the clone-local ledger under
-  `.git/slate/`.
+- Never writes outside the repo root, with two exceptions, both explicit: the
+  clone-local ledger under `.git/slate/`, and `~/.codex/hooks.json` if you run
+  `slate agent hooks install --client codex` (Codex only reads hooks from your
+  home directory, so there is nowhere else to put them; the command prints the
+  absolute path it wrote).

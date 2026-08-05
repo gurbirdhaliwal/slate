@@ -925,19 +925,22 @@ def cmd_agent_hooks(root: Path, args: argparse.Namespace) -> int:
             if args.action == "install":
                 path = agenthooks.install(agent, root)
                 native = ", ".join(agent.events.values())
-                print(f"installed freshness hooks in {path.relative_to(root)} "
-                      f"({native})")
+                shown = path if agent.user_global else path.relative_to(root)
+                print(f"installed freshness hooks in {shown} ({native})")
+                if agent.user_global:
+                    print(f"  note: {client} reads hooks only from your home "
+                          f"directory, so this is per-developer setup and "
+                          f"cannot be committed. Teammates each run it once.")
                 if not agent.verified:
                     print(f"  ! delivery to {client} has NOT been observed "
                           f"working. This writes the config; whether {client} "
                           f"executes it is unverified.")
-                    if client == "codex":
-                        print("    The config matches Codex's published spec, "
-                              "but a canary against codex-cli 0.137.0 saw zero "
-                              "invocations — including for a minimal hook with "
-                              "no Slate involvement, so this is not Slate's "
-                              "config. Try a newer Codex. Note hooks also "
-                              "require trust: review them with `/hooks`.")
+                if client == "codex":
+                    print("    Codex requires trusting a hook config before it "
+                          "runs — review with `/hooks`.")
+                    print("    PreToolUse fires but usually cannot name a file: "
+                          "Codex reads via shell, so there is no file path to "
+                          "resolve. SessionStart and Stop are the useful ones.")
                 if agent.beta:
                     print(f"  note: {client} hooks are beta upstream")
                 if client == "cursor":

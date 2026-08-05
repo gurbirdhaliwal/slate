@@ -210,13 +210,19 @@ def test_stop_loop_guards_hold_for_every_agent(repo: Path) -> None:
                                        "session_id": "s"}) is None, client
 
 
-def test_install_writes_each_agents_own_config(repo: Path) -> None:
-    for client, rel in (("codex", ".codex/hooks.json"),
-                        ("cursor", ".cursor/hooks.json")):
+def test_install_writes_each_agents_own_config(repo: Path, tmp_path, monkeypatch) -> None:
+    # HOME is redirected because Codex's hooks live in the *user's* home, not
+    # the repo. A test that writes there for real would edit the developer's
+    # own Codex setup — which is exactly what happened the first time this ran.
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    for client in ("codex", "cursor"):
         agent = agenthooks.AGENTS[client]
         path = agenthooks.install(agent, repo)
-        assert path == repo / rel
-        config = json.loads(path.read_text())
+        expected = (tmp_path / ".codex/hooks.json" if agent.user_global
+                    else repo / agent.settings)
+        assert path == expected
+        config = json.loads(path.read_text(encoding="utf-8"))
         assert set(agenthooks.installed_events(agent, repo)) == set(agent.events.values())
         if client == "cursor":
             assert config["version"] == 1     # cursor's required wrapper
@@ -224,9 +230,19 @@ def test_install_writes_each_agents_own_config(repo: Path) -> None:
         assert agenthooks.installed_events(agent, repo) == []
 
 
-def test_install_preserves_another_tools_hooks(repo: Path) -> None:
+def test_codex_config_is_user_global_and_claude_is_not() -> None:
+    """Measured, not assumed: Codex ignores a repo-local `.codex/hooks.json`
+    entirely — malformed JSON there produces no error, while the same file at
+    `~/.codex/hooks.json` produces "failed to parse hooks config"."""
+    assert agenthooks.AGENTS["codex"].user_global
+    assert not agenthooks.AGENTS["cursor"].user_global
+    assert not agenthooks.AGENTS["claude"].user_global
+
+
+def test_install_preserves_another_tools_hooks(repo: Path, tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
     agent = agenthooks.AGENTS["codex"]
-    path = repo / ".codex" / "hooks.json"
+    path = tmp_path / ".codex" / "hooks.json"
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps({"hooks": {"SessionStart": [
         {"hooks": [{"type": "command", "command": "someone-elses-tool"}]}]}}))
@@ -299,12 +315,13 @@ def test_codex_uses_the_same_nested_envelope_as_claude(repo: Path) -> None:
     assert codex == claude, "codex and claude share an envelope; only the config differs"
 
 
-def test_only_claude_is_marked_verified() -> None:
+def test_verified_records_an_observed_canary(agent_name="cursor") -> None:
     """`verified` records observation, not intent.
 
-    Codex delivery has been canaried and does not work on the version tested,
-    so nothing may flip this to True without a passing canary behind it.
+    Claude and Codex have both been canaried against live sessions — all three
+    events firing, Slate's text arriving in the right envelope. Cursor has not
+    been tried at all, and must not be flipped without a passing canary.
     """
     assert agenthooks.AGENTS["claude"].verified
-    assert not agenthooks.AGENTS["codex"].verified
+    assert agenthooks.AGENTS["codex"].verified
     assert not agenthooks.AGENTS["cursor"].verified

@@ -16,10 +16,12 @@ What the clients actually do, checked against their docs rather than assumed:
                 `Stop`. Output nests under `hookSpecificOutput`. Canary-verified
                 against a real session — see `claudehook`.
 
-  Codex         `.codex/hooks.json`. Same event names, same stdin fields
-                (`hook_event_name`, `tool_name`, `tool_input`, `cwd`), and
-                `additionalContext` at the top level rather than nested. The
-                closest thing to a drop-in of the three.
+  Codex         `.codex/hooks.json` (or `[hooks]` in `config.toml`; also
+                `~/.codex/`, which takes precedence). Same event names, same
+                stdin fields, and the *same* `hookSpecificOutput.
+                additionalContext` envelope — a genuine drop-in. Hooks require
+                explicit user trust, tracked against the config's hash, and
+                reviewed with the `/hooks` command.
 
   Cursor        `.cursor/hooks.json`, `{"version": 1, "hooks": {...}}`, and
                 camelCase event names. Two things differ in kind:
@@ -33,27 +35,35 @@ What the clients actually do, checked against their docs rather than assumed:
                   might have stopped — a freshness note has no business
                   widening anyone's permissions.
 
-**Delivery is verified for Claude Code only, and the Codex canary FAILED.**
+**Delivery is verified for Claude Code only. The Codex config is now known to
+match the spec, and hooks still do not fire on the version tested.**
 
-Measured 2026-08-05 against `codex-cli 0.137.0`: a repo with the layer stale, a
-`.codex/hooks.json` written by `install`, and the hook command tee'd on both
-ends produced **zero invocations** — with hook trust bypassed
-(`--dangerously-bypass-hook-trust`) and across three config shapes. The binary
-plainly implements hooks (it carries `PreToolUse`, `SessionStart`,
-`HookHandlerConfig::Command`, `trusted_hash` and a schema of
-`event`/`enabled`/`matcher`/`timeout`/`command`), so the feature exists and
-Slate is writing the wrong thing, or writing it to the wrong place, or missing
-a trust step. The published contract this module was built from describes a
-map-of-events shape that this version does not appear to accept.
+Two rounds of canary, 2026-08-05, against `codex-cli 0.137.0`:
+
+*Round 1* found a real bug: the envelope put `additionalContext` at the top
+level instead of nesting it under `hookSpecificOutput`. That is fixed — the
+published contract specifies the same nesting Claude uses, and a test pins the
+two envelopes as identical.
+
+*Round 2* isolated the remaining failure away from Slate entirely. A **minimal,
+spec-shaped `hooks.json` with no Slate involvement** — one `echo` appending to a
+file — also never fired. Tried, all with `--dangerously-bypass-hook-trust`
+confirmed active by its own warning: repo-local `.codex/hooks.json`, global
+`~/.codex/hooks.json` (documented as higher precedence), the `plugin_hooks`
+feature flag, and `enabled: true` at both the group and handler level. Zero
+invocations in every case.
+
+So the config Slate writes is not the problem. Either `codex exec`
+(non-interactive) does not run hooks, or the feature is incomplete in 0.137.0 —
+`codex doctor` offers 0.146.1, and the published docs describe the newer
+behaviour. Verifying this needs a Codex upgrade and one more canary run; the
+code here is believed correct and remains unobserved.
 
 Cursor has not been tried at all — no CLI available on the machine.
 
-So: the envelope logic below is tested and the rendering is shared and correct,
-but **nothing here is known to reach a Codex or Cursor model.** `install` says
-so out loud. Do not describe these as supported; describe them as written
-against a published contract and not yet observed working. Fixing this needs
-the schema for a specific Codex version, and then the same canary re-run — the
-canary is the deliverable, not the config file.
+`install` says all of this out loud. Do not describe either as supported.
+`HookAgent.verified` records observation, not intent, and nothing flips it to
+True without a passing canary behind it.
 """
 
 from __future__ import annotations
@@ -112,8 +122,14 @@ def _claude_envelope(event: str, text: str) -> dict:
                                    "additionalContext": text}}
 
 
-def _codex_envelope(_event: str, text: str) -> dict:
-    return {"additionalContext": text}
+def _codex_envelope(event: str, text: str) -> dict:
+    # Identical to Claude's, and that is not a guess: Codex's published contract
+    # specifies `hookSpecificOutput.additionalContext`, the same nesting and the
+    # same event names. The first port put `additionalContext` at the top level
+    # — read off a summary rather than the spec — which would have produced a
+    # hook that fires and whose output Codex ignores.
+    return {"hookSpecificOutput": {"hookEventName": event,
+                                   "additionalContext": text}}
 
 
 def _cursor_envelope(event: str, text: str) -> dict:

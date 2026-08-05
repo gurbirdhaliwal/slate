@@ -932,10 +932,12 @@ def cmd_agent_hooks(root: Path, args: argparse.Namespace) -> int:
                           f"working. This writes the config; whether {client} "
                           f"executes it is unverified.")
                     if client == "codex":
-                        print("    A canary against codex-cli 0.137.0 saw zero "
-                              "hook invocations, even with hook trust bypassed. "
-                              "Codex also requires trusting a hook config before "
-                              "it runs. Treat this as experimental.")
+                        print("    The config matches Codex's published spec, "
+                              "but a canary against codex-cli 0.137.0 saw zero "
+                              "invocations — including for a minimal hook with "
+                              "no Slate involvement, so this is not Slate's "
+                              "config. Try a newer Codex. Note hooks also "
+                              "require trust: review them with `/hooks`.")
                 if agent.beta:
                     print(f"  note: {client} hooks are beta upstream")
                 if client == "cursor":

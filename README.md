@@ -200,10 +200,14 @@ slate agent hooks install     # writes .claude/settings.json (also done by `agen
 
 `slate agent hooks install --client codex|cursor|all` writes the equivalent
 config for those agents, and the same freshness text is rendered for all three.
-**Only the Claude Code path is verified to actually deliver.** A canary against
-`codex-cli 0.137.0` saw zero hook invocations from a Slate-written
-`.codex/hooks.json`, and Cursor has not been tried at all — treat both as
-experimental. `install` says so when you run it.
+**Only the Claude Code path is verified to actually deliver.** Slate's Codex
+config matches Codex's published spec (same events, same
+`hookSpecificOutput.additionalContext` envelope), but a canary against
+`codex-cli 0.137.0` saw zero hook invocations — including for a minimal hook
+with no Slate involvement, so the gap is in that Codex build or in `codex exec`,
+not in what Slate writes. Codex also requires trusting a hook config (`/hooks`).
+Cursor has not been tried at all. Treat both as experimental; `install` says so
+when you run it.
 
 Verified end-to-end, not assumed: in a repo with two deliberately stale docs, a
 headless session named both docs, their suspect-claim counts, the anchor commit

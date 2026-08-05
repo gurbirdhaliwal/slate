@@ -112,7 +112,7 @@ calls in 320 tool calls across 25 sessions. Hooks are not offered to the model,
 so there is no choice to decline. The module computes **no trust math** (it
 calls `freshness.evaluate_all` and renders, like `cli` and `mcp`), and every
 entry point fails to *silence* — never to a false `fresh`, never to a broken
-session. Pinned by `tests/test_claude_hook.py` (47 tests; 350 total).
+session. Pinned by `tests/test_claude_hook.py` (47 tests; 352 total).
 
 **Measured (2026-07-27 sweep, 4 arms × 5 trials, all same-day).** Delivery
 works and is verified end-to-end. What it buys is less settled:
@@ -432,16 +432,22 @@ decision only) so the file warning rides `preToolUse`, and Slate never sends a
 `permission` field anywhere — returning "allow" would let a freshness note widen
 the user's own permissions.
 
-**The Codex canary FAILED (2026-08-05), and the port is marked unverified.**
-Against `codex-cli 0.137.0` — stale layer, Slate-written `.codex/hooks.json`,
-hook command tee'd on both ends — there were **zero invocations**, with hook
-trust bypassed and across three config shapes. The binary does implement hooks
-(`HookHandlerConfig::Command`, `trusted_hash`, schema keys
-`event`/`enabled`/`matcher`/`timeout`), so Slate is writing the wrong shape or
-to the wrong place; the published contract this was built from describes a
-map-of-events shape 0.137.0 seems not to accept. Cursor was never tried — no
-CLI on the machine. `HookAgent.verified` is False for both and `install` prints
-the negative result. Do not call these supported.
+**Codex: envelope bug found and fixed; delivery still unobserved
+(2026-08-05).** Two canary rounds separated two problems. Round 1 found a real
+bug — `_codex_envelope` put `additionalContext` at the top level instead of
+nesting it under `hookSpecificOutput`, which is what Codex's spec actually
+requires (identical to Claude's). Fixed, and a test pins the two envelopes as
+equal so they cannot drift. Round 2 isolated the rest away from Slate: a
+**minimal spec-shaped `hooks.json` with no Slate involvement** — one `echo` —
+also never fired, across repo-local and global locations, the `plugin_hooks`
+flag, and `enabled: true` at both levels, all with
+`--dangerously-bypass-hook-trust` confirmed active by its own warning. Zero
+invocations throughout. So Slate's config is not the problem: either `codex
+exec` does not run hooks, or the feature is incomplete in 0.137.0 (0.146.1 is
+available). Cursor was never tried — no CLI. `HookAgent.verified` records
+observation, not intent; only Claude is True, pinned by a test. Next step is a
+Codex upgrade and re-running the *minimal* hook first — if that does not fire,
+nothing about Slate's config matters.
 
 **Where the arc stands.** Phases 0–5 complete; the repair-and-resume pivot is
 built and measured end to end, and both of its measured gaps — the ungated

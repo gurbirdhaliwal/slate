@@ -137,14 +137,15 @@ def hook_out(client: str, repo: Path, payload: dict) -> str | None:
 
 
 def test_codex_speaks_the_same_freshness_as_claude(repo: Path) -> None:
-    """Codex uses the same event names and stdin fields; only the envelope
-    differs — `additionalContext` at the top level rather than nested."""
+    """Codex uses the same event names, stdin fields *and* output envelope.
+
+    The config file location and format differ; nothing else does.
+    """
     stale_layer(repo)
     claude = json.loads(claudehook.run(
         repo, json.dumps({"hook_event_name": "SessionStart"})))
     codex = json.loads(hook_out("codex", repo, {"hook_event_name": "SessionStart"}))
-    assert set(codex) == {"additionalContext"}
-    assert codex["additionalContext"] == (
+    assert codex["hookSpecificOutput"]["additionalContext"] == (
         claude["hookSpecificOutput"]["additionalContext"])
 
 
@@ -278,3 +279,32 @@ def test_the_cli_hook_delivers_for_every_client(repo: Path, monkeypatch, capsys)
         })))
         assert main(["-C", str(repo), "agent", "hook", "--client", client]) == 0
         assert key in capsys.readouterr().out, client
+
+
+def test_codex_uses_the_same_nested_envelope_as_claude(repo: Path) -> None:
+    """Codex's published contract specifies `hookSpecificOutput.additionalContext`.
+
+    The first port put `additionalContext` at the *top level*, taken from a
+    summary rather than the spec. That produces a hook which fires and whose
+    output Codex silently ignores — the worst shape of bug for this module,
+    because everything looks wired up.
+    """
+    stale_layer(repo)
+    claude = json.loads(claudehook.run(
+        repo, json.dumps({"hook_event_name": "SessionStart"})))
+    codex = json.loads(hook_out("codex", repo, {"hook_event_name": "SessionStart"}))
+
+    assert set(codex) == {"hookSpecificOutput"}
+    assert codex["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+    assert codex == claude, "codex and claude share an envelope; only the config differs"
+
+
+def test_only_claude_is_marked_verified() -> None:
+    """`verified` records observation, not intent.
+
+    Codex delivery has been canaried and does not work on the version tested,
+    so nothing may flip this to True without a passing canary behind it.
+    """
+    assert agenthooks.AGENTS["claude"].verified
+    assert not agenthooks.AGENTS["codex"].verified
+    assert not agenthooks.AGENTS["cursor"].verified

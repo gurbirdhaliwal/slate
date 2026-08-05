@@ -1242,3 +1242,33 @@ Revisit trigger: Nothing in Slate prunes the human-owned docs. If read-next
           keeps growing, the session-start cost keeps rising — a cap, or a
           `slate prune`, is the obvious follow-up.
 ```
+
+```
+Date: 2026-08-05
+Decision: Fix the Codex output envelope to the nested
+          `hookSpecificOutput.additionalContext` the spec requires, and keep
+          `verified=False` because hooks still do not fire on the version
+          tested.
+Rationale: Two rounds of canary separated two different problems. Round 1 found
+          a real bug — the envelope put `additionalContext` at the top level,
+          taken from a summary rather than the spec, which would produce a hook
+          that fires and whose output Codex ignores. Round 2 isolated the rest
+          away from Slate: a minimal spec-shaped `hooks.json` with no Slate
+          involvement, one `echo` appending to a file, also never fired. Tried
+          repo-local and global locations, the `plugin_hooks` flag, and
+          `enabled: true` at both levels, all with
+          `--dangerously-bypass-hook-trust` confirmed active by its own warning.
+          Zero invocations throughout. So the config Slate writes is not the
+          problem; either `codex exec` does not run hooks or the feature is
+          incomplete in 0.137.0 (0.146.1 is available).
+Trade-off: The envelope fix is unverifiable end to end on this machine — it
+          rests on the published contract, which is exactly the evidence
+          standard that was wrong the first time. It is nonetheless strictly
+          better than what it replaced, and a test pins the Codex and Claude
+          envelopes as identical so they cannot drift apart again.
+Safety:    `verified` records observation, not intent, and a test asserts only
+          Claude is True. Nothing flips the others without a passing canary.
+Revisit trigger: Upgrade Codex and re-run the isolation canary — the minimal
+          no-Slate hook first, because if that does not fire nothing about
+          Slate's config matters.
+```

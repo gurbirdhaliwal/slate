@@ -1,9 +1,9 @@
 ---
 slate_doc: architecture
 slate_generated: true
-slate_synced_commit: d3a3b5c
-slate_synced_at: 2026-08-05T18:30:23+00:00
-slate_synced_digest: 678590d426dce6ef
+slate_synced_commit: 7580cd7
+slate_synced_at: 2026-08-05T19:40:18+00:00
+slate_synced_digest: d45815dc2f10967b
 slate_watches:
   - slate/**
   - tests/**

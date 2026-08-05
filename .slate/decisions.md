@@ -1174,3 +1174,71 @@ Safety:    read-next names both items that left the list and distinguishes the
           precondition was bypassed.
 Revisit trigger: None. This is a documentation habit, not a mechanism.
 ```
+
+```
+Date: 2026-08-05
+Decision: All file I/O in `slate/` declares `encoding="utf-8"`, pinned by a
+          test that scans the source for unencoded `read_text`/`write_text`.
+Rationale: `Path.read_text()`/`write_text()` without `encoding=` use the
+          *locale* encoding — UTF-8 on Linux and macOS, typically cp1252 on
+          Windows. Slate writes status glyphs (● ○ ◐ ✗), arrows (→ ↳) and
+          verify bars (█ ░) into its own output and docs, and cp1252 cannot
+          encode any of them. Demonstrated rather than assumed: encoding
+          '● fresh ○ stale' as cp1252 raises UnicodeEncodeError. 43 call sites
+          were affected.
+Trade-off: None worth the name. The cost is verbosity at every call site.
+Safety:    `tests/test_encoding.py` fails on any new unencoded call, and a
+          second test asserts the glyphs really are outside cp1252 — so if
+          Slate ever stops using them, the first test is revealed as no longer
+          load-bearing rather than the bug being silently gone.
+Revisit trigger: Python making UTF-8 the default everywhere (PEP 686). Until
+          the minimum supported version has it, the explicit encoding stays.
+```
+
+```
+Date: 2026-08-05
+Decision: The Codex hook port is marked **unverified** rather than supported,
+          and `slate agent hooks install` says so out loud. Cursor likewise.
+Rationale: The canary failed. Against `codex-cli 0.137.0`, a repo with a stale
+          layer and a Slate-written `.codex/hooks.json`, with the hook command
+          tee'd on both ends, produced **zero invocations** — with hook trust
+          bypassed and across three config shapes. The binary clearly
+          implements hooks (`PreToolUse`, `SessionStart`,
+          `HookHandlerConfig::Command`, `trusted_hash`, and a schema of
+          `event`/`enabled`/`matcher`/`timeout`/`command`), so Slate is writing
+          the wrong shape or to the wrong place. The published contract this
+          was built from describes a map-of-events shape that this version does
+          not appear to accept.
+Trade-off: Shipping an installer that writes a config which silently does
+          nothing is worse than shipping no installer, so the alternative was
+          removal. The adapter is kept because the rendering and envelope logic
+          are tested and correct, and the remaining work is one schema — but it
+          must not be described as working until a canary says it does.
+Safety:    `HookAgent.verified` is False for codex and cursor; install prints
+          the negative canary result. README states it at the point of the
+          claim.
+Revisit trigger: The hooks schema for a specific Codex version, then the same
+          canary re-run. The canary is the deliverable, not the config file.
+```
+
+```
+Date: 2026-08-05
+Decision: `benchmarks/RESULTS.md` is re-run rather than retired, and now leads
+          with the fact that its headline ratio collapsed.
+Rationale: The old file was stale (commit `a43a2f7`) and README linked it
+          twice, so deleting it would have broken the docs. Re-running was
+          cheap and deterministic — and the result is the finding: session-start
+          advantage fell from 10.0x/26.5x to 2.0x/9.6x, not because Slate
+          regressed but because *this repo's own layer bloated*. `read-next.md`
+          is 34 KB and `decisions.md` is 74 KB against ~2 KB per generated doc,
+          so "the smallest useful context" is now 28,210 tokens.
+Trade-off: The headline number is far less flattering, and it is the true one.
+          It also exposes that the ratio measures the layer owner's discipline
+          as much as the tool.
+Safety:    The caveat block sits above the tables, and README carries the same
+          correction where it quotes them. The self-referential limitation is
+          stated: for agent *behaviour* claims, agentbench is the file to read.
+Revisit trigger: Nothing in Slate prunes the human-owned docs. If read-next
+          keeps growing, the session-start cost keeps rising — a cap, or a
+          `slate prune`, is the obvious follow-up.
+```

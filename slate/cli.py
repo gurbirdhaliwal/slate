@@ -927,10 +927,17 @@ def cmd_agent_hooks(root: Path, args: argparse.Namespace) -> int:
                 native = ", ".join(agent.events.values())
                 print(f"installed freshness hooks in {path.relative_to(root)} "
                       f"({native})")
+                if not agent.verified:
+                    print(f"  ! delivery to {client} has NOT been observed "
+                          f"working. This writes the config; whether {client} "
+                          f"executes it is unverified.")
+                    if client == "codex":
+                        print("    A canary against codex-cli 0.137.0 saw zero "
+                              "hook invocations, even with hook trust bypassed. "
+                              "Codex also requires trusting a hook config before "
+                              "it runs. Treat this as experimental.")
                 if agent.beta:
-                    print(f"  note: {client} hooks are beta, and Slate's "
-                          f"delivery there is built from the published contract "
-                          f"rather than observed end to end")
+                    print(f"  note: {client} hooks are beta upstream")
                 if client == "cursor":
                     print("  note: cursor's beforeReadFile cannot inject "
                           "context, so the file warning rides preToolUse; "

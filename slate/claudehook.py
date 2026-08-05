@@ -241,14 +241,14 @@ def _already_announced(path: Path | None, pair: tuple[str, str]) -> bool:
         return False
     key = "|".join(pair)
     try:
-        seen = set(json.loads(path.read_text())) if path.exists() else set()
+        seen = set(json.loads(path.read_text(encoding="utf-8"))) if path.exists() else set()
     except (OSError, json.JSONDecodeError, TypeError):
         seen = set()
     if key in seen:
         return True
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(sorted(seen | {key})))
+        path.write_text(json.dumps(sorted(seen | {key})), encoding="utf-8")
     except OSError:
         pass  # a lost note costs a repeat warning, never the hook
     return False
@@ -483,7 +483,7 @@ def _load_settings(root: Path) -> dict:
     if not path.exists():
         return {}
     try:
-        config = json.loads(path.read_text())
+        config = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise HookConfigError(f"{SETTINGS_FILE} exists but is not valid JSON: {exc}") from exc
     if not isinstance(config, dict):
@@ -526,7 +526,7 @@ def install(root: Path) -> Path:
 
     path = settings_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(config, indent=2) + "\n")
+    path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     return path
 
 
@@ -552,7 +552,7 @@ def uninstall(root: Path) -> bool:
         config.pop("hooks", None)
 
     if removed:
-        settings_path(root).write_text(json.dumps(config, indent=2) + "\n")
+        settings_path(root).write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     return removed
 
 

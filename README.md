@@ -116,17 +116,38 @@ Requires a git repository — Slate anchors freshness to git history.
 Measured on this repo itself ([benchmarks/RESULTS.md](benchmarks/RESULTS.md),
 reproduce with `python benchmarks/benchmark.py`):
 
-- **Session start:** an agent ingests **2,066 tokens** via `slate_read` vs
-  ~20,600 rediscovering the repo by hand (**10×**) or ~54,700 for a full
-  repo dump (**26.5×**) — with trust labels attached, which the baselines
+- **Session start:** an agent ingests **28,210 tokens** via `slate_read` vs
+  ~56,100 rediscovering the repo by hand (**2.0×**) or ~271,000 for a full
+  repo dump (**9.6×**) — with trust labels attached, which the baselines
   can't provide at any price.
-- **Staying true:** replaying this repo's real history, **50% of commits
+- **Staying true:** replaying this repo's real history, **69% of commits
   invalidated at least one context doc**. Manually maintained .md files rot
   silently on every one of those; Slate flagged each and healed it with a
-  **~45 ms, 0-token** deterministic sync (vs an estimated ~111K tokens of
-  model traffic to do the same maintenance by prompting).
+  **~110 ms, 0-token** deterministic sync (vs an estimated ~8.5M input tokens
+  of model traffic to do the same maintenance by prompting).
 - **Every Slate operation is sub-second, local, and free** — status, scores,
   scan, sync, and the full MCP round-trip.
+
+> **The session-start ratio used to be 10× and 26.5×, and it fell to 2.0× and
+> 9.6× — because this repo's own layer bloated.** `read-next.md` is 34 KB and
+> `decisions.md` is 74 KB here, against ~2 KB per generated doc. Nothing in
+> Slate prunes the human-owned docs: `read-next` is meant to be *rewritten*
+> when the focus changes rather than appended to, and `decisions` is
+> append-only by design. Budget for that, because the session-start cost is
+> paid every session. It is also a caution about the ratio itself — it says as
+> much about how disciplined the layer's owner is as about the tool.
+
+## Security
+
+Slate has no server, no telemetry, and zero runtime dependencies. It does change
+your threat model in one specific way: its purpose is to make agents *trust*
+`.slate/**`, so a docs-only PR can put text into every future session's context
+window, and `slate status` stays green as long as the referenced code has not
+moved. Review context-doc diffs like code, and consider `CODEOWNERS` on them.
+
+Full threat model — including committed hook configs, `PATH` as a trust
+boundary, and the limits of the agent write gates:
+[SECURITY.md](SECURITY.md).
 
 ## Wire it into your coding agent (MCP)
 
@@ -176,6 +197,13 @@ slate agent hooks install     # writes .claude/settings.json (also done by `agen
 | `SessionStart` | every session, including after compaction | the whole layer's trust state — which docs are fresh, which aren't, and why |
 | `PreToolUse` | `Read`/`Edit`/`Write`/`NotebookEdit` | a warning **only** when that specific file is covered by a non-fresh doc's watches |
 | `Stop` | the agent finishes a turn | the hand-written claims its own session left suspect — off by default, see below |
+
+`slate agent hooks install --client codex|cursor|all` writes the equivalent
+config for those agents, and the same freshness text is rendered for all three.
+**Only the Claude Code path is verified to actually deliver.** A canary against
+`codex-cli 0.137.0` saw zero hook invocations from a Slate-written
+`.codex/hooks.json`, and Cursor has not been tried at all — treat both as
+experimental. `install` says so when you run it.
 
 Verified end-to-end, not assumed: in a repo with two deliberately stale docs, a
 headless session named both docs, their suspect-claim counts, the anchor commit

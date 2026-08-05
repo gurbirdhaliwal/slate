@@ -33,11 +33,27 @@ What the clients actually do, checked against their docs rather than assumed:
                   might have stopped — a freshness note has no business
                   widening anyone's permissions.
 
-**Delivery is verified for Claude Code only.** The Claude path was checked with
-a canary against a live session; Codex and Cursor are built from their published
-contracts and have not been observed end to end. Cursor's hooks are beta. Treat
-a working Codex/Cursor install as plausible, not measured, and do not quote it
-as delivery evidence the way the Claude sweep can be quoted.
+**Delivery is verified for Claude Code only, and the Codex canary FAILED.**
+
+Measured 2026-08-05 against `codex-cli 0.137.0`: a repo with the layer stale, a
+`.codex/hooks.json` written by `install`, and the hook command tee'd on both
+ends produced **zero invocations** — with hook trust bypassed
+(`--dangerously-bypass-hook-trust`) and across three config shapes. The binary
+plainly implements hooks (it carries `PreToolUse`, `SessionStart`,
+`HookHandlerConfig::Command`, `trusted_hash` and a schema of
+`event`/`enabled`/`matcher`/`timeout`/`command`), so the feature exists and
+Slate is writing the wrong thing, or writing it to the wrong place, or missing
+a trust step. The published contract this module was built from describes a
+map-of-events shape that this version does not appear to accept.
+
+Cursor has not been tried at all — no CLI available on the machine.
+
+So: the envelope logic below is tested and the rendering is shared and correct,
+but **nothing here is known to reach a Codex or Cursor model.** `install` says
+so out loud. Do not describe these as supported; describe them as written
+against a published contract and not yet observed working. Fixing this needs
+the schema for a specific Codex version, and then the same canary re-run — the
+canary is the deliverable, not the config file.
 """
 
 from __future__ import annotations
@@ -75,6 +91,11 @@ class HookAgent:
     # Cursor take the event without one.
     matcher: bool = False
     beta: bool = False
+    # Has a hook from this adapter been *observed* reaching a live session?
+    # Only Claude Code has. Codex was canaried and produced zero invocations;
+    # Cursor has not been tried. Anything False here is a config file we
+    # believe in, not a delivery path we have seen work.
+    verified: bool = False
 
     def native(self, event: str) -> str | None:
         return self.events.get(event)
@@ -113,6 +134,7 @@ AGENTS: dict[str, HookAgent] = {
                 STOP: "Stop"},
         envelope=_claude_envelope,
         matcher=True,
+        verified=True,
     ),
     "codex": HookAgent(
         name="codex",
@@ -209,7 +231,7 @@ def _load(agent: HookAgent, root: Path) -> dict:
     if not path.exists():
         return dict(agent.wrapper)
     try:
-        config = json.loads(path.read_text())
+        config = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise HookConfigError(
             f"{agent.settings} exists but is not valid JSON: {exc}") from exc
@@ -268,7 +290,7 @@ def install(agent: HookAgent, root: Path) -> Path:
 
     path = settings_path(agent, root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(config, indent=2) + "\n")
+    path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     return path
 
 
@@ -289,7 +311,7 @@ def uninstall(agent: HookAgent, root: Path) -> bool:
         if not groups:
             del hooks[native]
     if removed:
-        settings_path(agent, root).write_text(json.dumps(config, indent=2) + "\n")
+        settings_path(agent, root).write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     return removed
 
 

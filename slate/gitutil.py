@@ -116,7 +116,7 @@ def changed_hunks(root: Path, since: str | None) -> dict[str, list[tuple[int, in
         if not rel or not (root / rel).exists():
             continue
         try:
-            line_count = (root / rel).read_text(errors="ignore").count("\n") + 1
+            line_count = (root / rel).read_text(encoding="utf-8", errors="ignore").count("\n") + 1
         except OSError:
             line_count = 1
         hunks.setdefault(rel, []).append((1, max(line_count, 1)))

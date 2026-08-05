@@ -112,7 +112,7 @@ calls in 320 tool calls across 25 sessions. Hooks are not offered to the model,
 so there is no choice to decline. The module computes **no trust math** (it
 calls `freshness.evaluate_all` and renders, like `cli` and `mcp`), and every
 entry point fails to *silence* — never to a false `fresh`, never to a broken
-session. Pinned by `tests/test_claude_hook.py` (47 tests; 348 total).
+session. Pinned by `tests/test_claude_hook.py` (47 tests; 350 total).
 
 **Measured (2026-07-27 sweep, 4 arms × 5 trials, all same-day).** Delivery
 works and is verified end-to-end. What it buys is less settled:
@@ -432,10 +432,16 @@ decision only) so the file warning rides `preToolUse`, and Slate never sends a
 `permission` field anywhere — returning "allow" would let a freshness note widen
 the user's own permissions.
 
-**Delivery is canary-verified for Claude Code only.** Codex and Cursor are built
-from published contracts and have not been observed end to end; Cursor's hooks
-are beta. `install` says so. Do not quote a Codex/Cursor install as delivery
-evidence the way the Claude sweep can be.
+**The Codex canary FAILED (2026-08-05), and the port is marked unverified.**
+Against `codex-cli 0.137.0` — stale layer, Slate-written `.codex/hooks.json`,
+hook command tee'd on both ends — there were **zero invocations**, with hook
+trust bypassed and across three config shapes. The binary does implement hooks
+(`HookHandlerConfig::Command`, `trusted_hash`, schema keys
+`event`/`enabled`/`matcher`/`timeout`), so Slate is writing the wrong shape or
+to the wrong place; the published contract this was built from describes a
+map-of-events shape 0.137.0 seems not to accept. Cursor was never tried — no
+CLI on the machine. `HookAgent.verified` is False for both and `install` prints
+the negative result. Do not call these supported.
 
 **Where the arc stands.** Phases 0–5 complete; the repair-and-resume pivot is
 built and measured end to end, and both of its measured gaps — the ungated

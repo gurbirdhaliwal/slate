@@ -1,9 +1,9 @@
 ---
 slate_doc: modules
 slate_generated: true
-slate_synced_commit: d3e26cc
-slate_synced_at: 2026-08-03T17:27:44+00:00
-slate_synced_digest: 227d14f08fdba40c
+slate_synced_commit: d3a3b5c
+slate_synced_at: 2026-08-05T18:30:23+00:00
+slate_synced_digest: 18f5daf5281d585d
 slate_watches:
   - slate/**
   - tests/**
@@ -19,7 +19,7 @@ slate_watches:
 | `benchmarks/repairbench/` | 59 | Python | — |
 | `integrations/` | 4 | Python | — |
 | `slate/` | 27 | Python | `slate/cli.py` |
-| `tests/` | 27 | Python | — |
+| `tests/` | 28 | Python | — |
 <!-- /slate:auto -->
 
 ## Notes (human)

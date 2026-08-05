@@ -33,7 +33,7 @@ def hook_path(root: Path) -> Path:
 
 def is_ours(path: Path) -> bool:
     try:
-        return MARKER in path.read_text()
+        return MARKER in path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return False
 
@@ -46,7 +46,7 @@ def install(root: Path, force: bool = False) -> Path:
             "--force overwrites it"
         )
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_HOOK_BODY)
+    path.write_text(_HOOK_BODY, encoding="utf-8")
     path.chmod(0o755)
     return path
 

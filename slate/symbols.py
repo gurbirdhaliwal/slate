@@ -53,7 +53,7 @@ def changed_symbols(path: Path, ranges: list[Range]) -> set[str] | None:
     match whichever form it references.
     """
     try:
-        source = path.read_text(errors="strict")
+        source = path.read_text(encoding="utf-8", errors="strict")
     except (OSError, UnicodeDecodeError):
         return None
     suffix = path.suffix.lower()

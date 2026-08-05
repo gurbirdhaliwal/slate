@@ -34,6 +34,42 @@ jobs:
         # own cooking on every merge.
         run: slate status --ci
 
+  # Windows and macOS, on the oldest and newest supported Python. Slate shells
+  # out to git everywhere and writes docs full of glyphs cp1252 cannot encode,
+  # so the platform-specific failures are real and were invisible while CI ran
+  # only on ubuntu. Advisory for now — `tests` above stays the required check
+  # until this has been green for a few merges.
+  cross-platform:
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+        python-version: ["3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Slate anchors to git and reads its own committed docs, so the checkout
+      # must not be line-ending-mangled on Windows.
+      - name: Keep line endings as committed
+        run: git config --global core.autocrlf false
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Test
+        run: pytest
+
+      - name: Context layer freshness (dogfood)
+        run: slate status --ci
+
   # Dogfood the Phase 3 PR bot: posts/updates a context-freshness comment.
   # Advisory only — the required check stays `tests` above.
   context-bot:

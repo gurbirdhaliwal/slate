@@ -107,7 +107,7 @@ def _empty_ledger() -> dict:
 
 def _load(root: Path) -> dict:
     try:
-        data = json.loads(ledger_path(root).read_text())
+        data = json.loads(ledger_path(root).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return _empty_ledger()
     if not isinstance(data, dict) or data.get("version") != 1:
@@ -125,7 +125,7 @@ def _save(root: Path, data: dict) -> None:
     path = ledger_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(data, indent=2) + "\n")
+    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, path)
 
 

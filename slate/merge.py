@@ -92,7 +92,7 @@ def attributes_registered(root: Path) -> bool:
     if not path.exists():
         return False
     try:
-        return ATTR_BEGIN in path.read_text()
+        return ATTR_BEGIN in path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return False
 
@@ -106,7 +106,7 @@ def install(root: Path) -> None:
     block = [ATTR_BEGIN, *attribute_lines(), ATTR_END]
     kept = _without_slate_block(existing)
     lines = [*kept, *block] if kept else block
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def uninstall(root: Path) -> bool:
@@ -118,7 +118,7 @@ def uninstall(root: Path) -> bool:
     if had_attrs:
         kept = _without_slate_block(_read_attributes(path))
         if kept:
-            path.write_text("\n".join(kept) + "\n")
+            path.write_text("\n".join(kept) + "\n", encoding="utf-8")
         else:
             # We created the file; leaving an empty one behind is litter.
             path.unlink()
@@ -129,7 +129,7 @@ def _read_attributes(path: Path) -> list[str]:
     if not path.exists():
         return []
     try:
-        return path.read_text().splitlines()
+        return path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeDecodeError) as exc:
         raise MergeError(f"cannot read {path}: {exc}") from exc
 
@@ -170,9 +170,9 @@ def run(base: Path, ours: Path, theirs: Path, rel_path: str) -> tuple[int, str]:
         # exactly what git would have done without us.
         return (1 if gitutil.merge_file(ours, base, theirs) else 0), ""
 
-    o_meta, o_body = frontmatter.parse(ours.read_text())
-    _, base_body = frontmatter.parse(base.read_text())
-    t_meta, t_body = frontmatter.parse(theirs.read_text())
+    o_meta, o_body = frontmatter.parse(ours.read_text(encoding="utf-8"))
+    _, base_body = frontmatter.parse(base.read_text(encoding="utf-8"))
+    t_meta, t_body = frontmatter.parse(theirs.read_text(encoding="utf-8"))
 
     auto = context.get_auto_block(o_body)
     if auto is None:
@@ -181,11 +181,12 @@ def run(base: Path, ours: Path, theirs: Path, rel_path: str) -> tuple[int, str]:
     conflicts = _merge_human_text(
         ours, base_body, o_body, t_body, union=spec.append_only
     )
-    merged_human = ours.read_text()
+    merged_human = ours.read_text(encoding="utf-8")
 
     meta = dict(o_meta)
     _union_watches(meta, o_meta, t_meta)
-    ours.write_text(frontmatter.render(meta, _restore(merged_human, auto)))
+    ours.write_text(frontmatter.render(meta, _restore(merged_human, auto)),
+                    encoding="utf-8")
 
     if conflicts:
         return 1, (
@@ -200,7 +201,7 @@ def run(base: Path, ours: Path, theirs: Path, rel_path: str) -> tuple[int, str]:
 def _all_readable(*paths: Path) -> bool:
     for path in paths:
         try:
-            path.read_text()
+            path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             return False
     return True
@@ -217,9 +218,9 @@ def _merge_human_text(
     with tempfile.TemporaryDirectory() as tmp:
         tmp_base = Path(tmp) / "base"
         tmp_theirs = Path(tmp) / "theirs"
-        tmp_base.write_text(_placehold(base_body))
-        tmp_theirs.write_text(_placehold(t_body))
-        ours.write_text(_placehold(o_body))
+        tmp_base.write_text(_placehold(base_body), encoding="utf-8")
+        tmp_theirs.write_text(_placehold(t_body), encoding="utf-8")
+        ours.write_text(_placehold(o_body), encoding="utf-8")
         return gitutil.merge_file(ours, tmp_base, tmp_theirs, union=union)
 
 

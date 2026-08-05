@@ -1,9 +1,9 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: d351b94
-slate_synced_at: 2026-08-03T17:34:54+00:00
-slate_synced_digest: f66604236218de01
+slate_synced_commit: c2e2536
+slate_synced_at: 2026-08-05T18:30:49+00:00
+slate_synced_digest: d34ea32562a99da2
 slate_watches:
   - benchmarks/**
   - slate/**

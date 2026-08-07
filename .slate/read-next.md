@@ -1,9 +1,9 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: c6ebe94
-slate_synced_at: 2026-08-07T16:55:50+00:00
-slate_synced_digest: e2b89b4d628b19d9
+slate_synced_commit: 8de7f80
+slate_synced_at: 2026-08-07T17:31:19+00:00
+slate_synced_digest: 2f055d49f41a2f35
 slate_watches:
   - benchmarks/**
   - slate/**
@@ -483,8 +483,30 @@ was simply done. Portability was *not* gated on a decision; it was gated on
 replicated. It was ported anyway on a direct instruction. That is a legitimate
 call by whoever asked, and it is not evidence the sequencing was satisfied.
 
+**Windows portability — landed (2026-08-07).** The cross-platform CI matrix
+(`windows-latest`/`macos-latest` x 3.11/3.13) went from 13 failures to green.
+Three distinct causes, and the encoding one is the only interesting one:
+`Path.read_text`/`write_text` and `subprocess.run(text=True)` all fall back to
+the *locale* codec, which is cp1252 on Windows and UTF-8 everywhere we develop.
+Slate reads UTF-8 docs (10 test failures), writes glyphs cp1252 cannot spell
+(`slate status > log.txt` died in `print`, in both `cli.py` and
+`benchmarks/benchmark.py` -- now sharing `cli.survive_a_narrow_console`), and
+decodes git's own diff output (`gitutil._git`). That last one was the real
+find: the reader thread died on the first non-ASCII byte, `run` returned
+`stdout=None`, and `_parse_hunks` crashed. See the landmine -- the crash was
+the *lucky* outcome.
+
+Method note worth keeping: the first fix pass used a regex that skipped any
+call whose text contained `encoding=`, which a *nested* `read_text(...)`
+satisfies -- so 28 writes silently kept the bug and Windows went from 13
+failures to 53. The guard test had the identical blind spot and passed. Both
+are now written against the AST (`tests/test_encoding.py`), inspecting real
+keyword lists. A guard that shares its subject's blind spot is not a guard.
+
+
 ## Landmines
 
+- **git's output is not the locale's business.** `subprocess.run(text=True)` with no `encoding=` decodes with the locale codec; on Windows the first non-ASCII byte of a diff kills subprocess's reader thread and `run` hands back `stdout=None`. Slate hit this in `gitutil._git` on 2026-08-07. It surfaced as a crash in `_parse_hunks`, which was the lucky outcome: an unreadable diff and an *empty* diff are indistinguishable to everything downstream, and `freshness._changed_symbols` reads an empty hunk map as "no symbols changed" -- a false `fresh` produced by a decode that never happened. Every `subprocess.run` under `slate/` pins `encoding="utf-8", errors="replace"`, `_git` raises rather than return `None`, and `tests/test_encoding.py` guards both against the AST.
 - After changing code under `slate/` or `tests/`, run `slate sync` and commit the doc updates in the same PR — CI's `slate status --ci` gate fails otherwise.
 - The MCP server must never compute trust math or expose write tools in read mode; `tests/test_mcp.py` pins both.
 - Neither must the hook — `slate/claudehook.py` renders what `freshness.evaluate_all` and `cochange` already computed, and derives no trust of its own. A second implementation of "is this doc fresh" is a second thing that can disagree, and it would disagree inside the model's context window.

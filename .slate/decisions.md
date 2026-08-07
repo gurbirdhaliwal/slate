@@ -1317,3 +1317,30 @@ Trade-off: The file-touch warning is effectively Claude-specific in practice.
 Revisit trigger: Codex exposing a structured read tool, or a hook payload
           carrying resolved paths alongside the command.
 ```
+
+```
+Date: 2026-08-07
+Decision: Every `subprocess.run` under `slate/` pins
+          `encoding="utf-8", errors="replace"`, and `_git` raises `GitError`
+          rather than ever returning `None` stdout.
+Rationale: `text=True` alone decodes with the *locale* codec. On Windows that
+          is cp1252, so the first non-ASCII byte in a diff killed subprocess's
+          reader thread; `run` then returned `stdout=None` and `_parse_hunks`
+          crashed on it. The crash was the lucky outcome. An unreadable diff
+          and an empty diff are the same value to everything downstream, and
+          `freshness._changed_symbols` reads an empty hunk map as "no symbols
+          changed" — which narrows stale→fresh. That is a false `fresh`
+          manufactured by a decode that never happened, and §10 says the
+          engine may never produce one. `errors="replace"` rather than
+          `strict` because git emits file *content*, whose encoding is not
+          ours to promise; a mangled character in a diff line costs at most a
+          missed symbol match, and the conservative fallback is "assume
+          stale".
+Trade-off: A repo whose files are genuinely cp1252 gets replacement chars in
+          the hunk text Slate parses. Symbol resolution can miss such a
+          symbol and fall back to path-level "assume stale" — the safe
+          direction. Not worth a per-repo encoding setting until someone has
+          an actual non-UTF-8 repo.
+Revisit trigger: A user with a legitimately non-UTF-8 codebase reporting
+          over-broad staleness.
+```

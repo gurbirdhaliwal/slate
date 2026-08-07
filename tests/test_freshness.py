@@ -47,7 +47,7 @@ def test_human_claim_about_changed_path_marks_stale(repo: Path) -> None:
     # references the changed path, content verification must not apply.
     init_layer(repo)
     path = repo / ".slate" / "modules.md"
-    path.write_text(path.read_text(encoding="utf-8") + "\n`demo/engine.py` is the hot path.\n")
+    path.write_text(path.read_text(encoding="utf-8") + "\n`demo/engine.py` is the hot path.\n", encoding="utf-8")
     commit_all(repo, "note the hot path")
     (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
     r = report_for(repo, "modules")
@@ -73,7 +73,7 @@ def test_unwatched_change_stays_fresh(repo: Path) -> None:
 def test_editing_the_doc_itself_does_not_mark_it_stale(repo: Path) -> None:
     init_layer(repo)
     read_next = repo / ".slate" / "read-next.md"
-    read_next.write_text(read_next.read_text(encoding="utf-8") + "\n- working on the parser\n")
+    read_next.write_text(read_next.read_text(encoding="utf-8") + "\n- working on the parser\n", encoding="utf-8")
     assert report_for(repo, "read-next").status == FRESH
 
 
@@ -105,7 +105,7 @@ def setup_symbol_claim(repo: Path) -> None:
     commit_all(repo, "engine with two functions")
     init_layer(repo)
     path = repo / ".slate" / "modules.md"
-    path.write_text(path.read_text(encoding="utf-8") + "\nThe `engine.run` entry point drives the loop.\n")
+    path.write_text(path.read_text(encoding="utf-8") + "\nThe `engine.run` entry point drives the loop.\n", encoding="utf-8")
     commit_all(repo, "claim engine.run by symbol")
 
 
@@ -152,7 +152,7 @@ def test_unparseable_referenced_file_falls_back_to_stale(repo: Path) -> None:
     setup_symbol_claim(repo)
     (repo / "demo" / "engine.py").write_text(
         "def run(:\n    return 42\n\n\ndef helper():\n    return 1\n"
-    )
+    , encoding="utf-8")
     r = report_for(repo, "modules")
     assert r.status == STALE
 
@@ -174,7 +174,7 @@ def setup_two_symbol_claims(repo: Path) -> None:
         + "\n## Claims\n\n"
         + "- The `engine.run` function drives the loop.\n"
         + "- The `engine.helper` function is a pure helper.\n"
-    )
+    , encoding="utf-8")
     commit_all(repo, "two symbol claims")
 
 
@@ -225,7 +225,7 @@ def test_unknowable_claim_blocks_fresh(repo: Path) -> None:
     setup_two_symbol_claims(repo)
     (repo / "demo" / "engine.py").write_text(
         "def run(:\n    return 42\n\n\ndef helper():\n    return 1\n"
-    )
+    , encoding="utf-8")
     r = report_for(repo, "modules")
     assert r.status == STALE
     unknowable = [c for c in human_claims(r) if c.status == freshness.CLAIM_UNKNOWABLE]
@@ -311,7 +311,7 @@ def test_digest_ignores_context_doc_edits(repo: Path) -> None:
     init_layer(repo)
     orphan_anchor(repo, "agents")
     read_next = repo / ".slate" / "read-next.md"
-    read_next.write_text(read_next.read_text(encoding="utf-8") + "\n- working on the parser\n")
+    read_next.write_text(read_next.read_text(encoding="utf-8") + "\n- working on the parser\n", encoding="utf-8")
     assert report_for(repo, "agents").status == FRESH
 
 
@@ -365,7 +365,7 @@ def test_untracked_directory_files_reported_individually(repo: Path) -> None:
 
 def _claim(repo: Path, text: str) -> None:
     read_next = repo / ".slate" / "read-next.md"
-    read_next.write_text(read_next.read_text(encoding="utf-8") + f"\n{text}\n")
+    read_next.write_text(read_next.read_text(encoding="utf-8") + f"\n{text}\n", encoding="utf-8")
 
 
 def test_prose_landing_with_the_code_is_not_stale(repo: Path) -> None:
@@ -558,7 +558,7 @@ def test_opaque_local_module_keeps_a_stdlib_claim_suspect(repo: Path) -> None:
     would then never be flagged. Only one of those errors is permitted here.
     """
     _external_ref_repo(repo)
-    (repo / "app" / "logging.py").write_text("def setup(:\n    return 1\n")
+    (repo / "app" / "logging.py").write_text("def setup(:\n    return 1\n", encoding="utf-8")
     commit_all(repo, "make the local module unparseable")
     r = report_for(repo, "read-next")
     assert r.status == STALE

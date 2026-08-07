@@ -222,7 +222,7 @@ def suspect_layer(repo: Path) -> None:
     """A layer with one hand-written claim the code no longer vouches for."""
     init_layer(repo)
     read_next = repo / ".slate" / "read-next.md"
-    read_next.write_text(read_next.read_text(encoding="utf-8") + "\n`engine.run` returns 42.\n")
+    read_next.write_text(read_next.read_text(encoding="utf-8") + "\n`engine.run` returns 42.\n", encoding="utf-8")
     commit_all(repo, "describe run")
     (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
     commit_all(repo, "change run")
@@ -342,14 +342,14 @@ def test_slate_mark_refuses_to_retire_a_claim(repo: Path) -> None:
     """
     init_layer(repo)
     read_next = repo / ".slate" / "read-next.md"
-    read_next.write_text(read_next.read_text(encoding="utf-8") + "\n`engine.run` returns 42.\n")
+    read_next.write_text(read_next.read_text(encoding="utf-8") + "\n`engine.run` returns 42.\n", encoding="utf-8")
     commit_all(repo, "describe run")
     agentcfg.set_access(repo, agentcfg.FULL)
     call(SlateMCPServer(repo, access=agentcfg.FULL), "slate_mark", {"docs": ["read-next"]})
     commit_all(repo, "anchor")
 
     read_next.write_text(read_next.read_text(encoding="utf-8").replace(
-        "`engine.run` returns 42.", "The engine is fine."))
+        "`engine.run` returns 42.", "The engine is fine."), encoding="utf-8")
     before = context.load(repo, context.spec_by_name("read-next")).synced_commit
 
     payload, is_error = call(SlateMCPServer(repo, access=agentcfg.FULL),

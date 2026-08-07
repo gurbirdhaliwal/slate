@@ -54,7 +54,7 @@ def test_generated_doc_gets_dependency_suggestion(repo: Path) -> None:
 def test_attested_doc_gets_reference_suggestion(repo: Path) -> None:
     init_layer(repo)
     decisions = repo / ".slate" / "decisions.md"
-    decisions.write_text(decisions.read_text(encoding="utf-8") + "\nWorking in `demo/cli.py` today.\n")
+    decisions.write_text(decisions.read_text(encoding="utf-8") + "\nWorking in `demo/cli.py` today.\n", encoding="utf-8")
     scan = scanner.scan(repo)
     doc = context.load(repo, context.spec_by_name("decisions"))
     suggestions = imports.suggest(repo, doc, scan)

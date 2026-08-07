@@ -40,7 +40,7 @@ def test_sync_preview_shows_auto_block_diff(repo: Path) -> None:
 def test_missing_reference_is_a_broken_claim(repo: Path) -> None:
     init_layer(repo)
     read_next = repo / ".slate" / "read-next.md"
-    read_next.write_text(read_next.read_text(encoding="utf-8") + "\nSee `demo/engine.py` for the core.\n")
+    read_next.write_text(read_next.read_text(encoding="utf-8") + "\nSee `demo/engine.py` for the core.\n", encoding="utf-8")
     (repo / "demo" / "engine.py").unlink()
     d = diff_for(repo, "read-next")
     assert "demo/engine.py" in d.missing_refs

@@ -26,7 +26,7 @@ def init_layer(repo: Path) -> None:
 
 def claim(repo: Path, text: str) -> None:
     read_next = repo / ".slate" / "read-next.md"
-    read_next.write_text(read_next.read_text(encoding="utf-8") + f"\n{text}\n")
+    read_next.write_text(read_next.read_text(encoding="utf-8") + f"\n{text}\n", encoding="utf-8")
 
 
 def tasks(repo: Path) -> list[repair.RepairTask]:
@@ -253,7 +253,7 @@ def test_repair_cannot_manufacture_fresh(repo: Path) -> None:
 
     before = context.load(repo, stale.doc.spec).body
     doc_path.write_text(doc_path.read_text(encoding="utf-8").replace(
-        "`engine.run` returns 42.", "The engine returns something."))
+        "`engine.run` returns 42.", "The engine returns something."), encoding="utf-8")
 
     # The trap is real: freshness alone now calls this doc fresh, on prose that
     # says strictly less than the sentence it replaced.
@@ -314,7 +314,7 @@ def test_mark_refuses_when_a_claim_disappeared(repo: Path, capsys) -> None:
     anchored_claim(repo)
     doc = read_next(repo)
     doc.write_text(doc.read_text(encoding="utf-8").replace(
-        "`engine.run` returns 42.", "The engine works fine now."))
+        "`engine.run` returns 42.", "The engine works fine now."), encoding="utf-8")
 
     assert main(["-C", str(repo), "mark", "read-next"]) == 2
     err = capsys.readouterr().err
@@ -325,7 +325,7 @@ def test_mark_refuses_when_a_claim_disappeared(repo: Path, capsys) -> None:
 def test_mark_still_works_when_nothing_was_lost(repo: Path, capsys) -> None:
     anchored_claim(repo)
     doc = read_next(repo)
-    doc.write_text(doc.read_text(encoding="utf-8") + "\n`engine.run` also logs.\n")
+    doc.write_text(doc.read_text(encoding="utf-8") + "\n`engine.run` also logs.\n", encoding="utf-8")
     assert main(["-C", str(repo), "mark", "read-next"]) == 0
     assert "marked" in capsys.readouterr().out
 
@@ -340,7 +340,7 @@ def test_a_repaired_claim_is_not_a_loss(repo: Path, capsys) -> None:
     anchored_claim(repo)
     doc = read_next(repo)
     doc.write_text(doc.read_text(encoding="utf-8").replace(
-        "`engine.run` returns 42.", "`engine.run` returns 43."))
+        "`engine.run` returns 42.", "`engine.run` returns 43."), encoding="utf-8")
 
     loss = repair.claim_loss(repo, context.load(repo, context.spec_by_name("read-next")))
     assert loss.dropped == 0
@@ -352,7 +352,7 @@ def test_a_repaired_claim_is_not_a_loss(repo: Path, capsys) -> None:
 def test_a_human_can_retire_a_claim_deliberately(repo: Path, capsys) -> None:
     anchored_claim(repo)
     doc = read_next(repo)
-    doc.write_text(doc.read_text(encoding="utf-8").replace("`engine.run` returns 42.", ""))
+    doc.write_text(doc.read_text(encoding="utf-8").replace("`engine.run` returns 42.", ""), encoding="utf-8")
     assert main(["-C", str(repo), "mark", "read-next", "--allow-claim-loss"]) == 0
     assert "marked" in capsys.readouterr().out
 

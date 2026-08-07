@@ -71,7 +71,7 @@ def test_mark_reanchors_human_doc(repo: Path, capsys) -> None:
     run(repo, "init", capsys=capsys)
     commit_all(repo, "layer")
     path = repo / ".slate" / "decisions.md"
-    path.write_text(path.read_text(encoding="utf-8") + "\nDate: 2026-07-15\nDecision: test\n")
+    path.write_text(path.read_text(encoding="utf-8") + "\nDate: 2026-07-15\nDecision: test\n", encoding="utf-8")
     commit_all(repo, "decision")
     code, _ = run(repo, "mark", "decisions", capsys=capsys)
     assert code == 0
@@ -104,7 +104,7 @@ def test_human_edits_survive_sync(repo: Path, capsys) -> None:
     modules = repo / ".slate" / "modules.md"
     modules.write_text(
         modules.read_text(encoding="utf-8").replace("## Notes (human)", "## Notes (human)\n\nKEEP-ME")
-    )
+    , encoding="utf-8")
     (repo / "demo" / "extra.py").write_text("x = 1\n", encoding="utf-8")
     commit_all(repo, "change")
     run(repo, "sync", capsys=capsys)

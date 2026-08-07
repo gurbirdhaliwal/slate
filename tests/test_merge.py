@@ -58,7 +58,7 @@ def _pkg_parent() -> str:
 
 def append_note(repo: Path, rel: str, note: str) -> None:
     path = repo / rel
-    path.write_text(path.read_text(encoding="utf-8").rstrip() + f"\n\n{note}\n")
+    path.write_text(path.read_text(encoding="utf-8").rstrip() + f"\n\n{note}\n", encoding="utf-8")
 
 
 # --- installation -----------------------------------------------------------

@@ -444,7 +444,7 @@ def stop(session_id: str = "s1", **kwargs) -> dict:
 def suspect(layered: Path) -> Path:
     """A layer with one hand-written claim the code no longer vouches for."""
     read_next = layered / ".slate" / "read-next.md"
-    read_next.write_text(read_next.read_text(encoding="utf-8") + "\n`engine.run` returns 42.\n")
+    read_next.write_text(read_next.read_text(encoding="utf-8") + "\n`engine.run` returns 42.\n", encoding="utf-8")
     commit_all(layered, "describe run")
     (layered / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
     commit_all(layered, "change run")

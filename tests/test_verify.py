@@ -39,7 +39,7 @@ def test_missing_reference_drops_score(repo: Path) -> None:
     init_layer(repo)
     baseline = score_for(repo, "read-next").score
     path = repo / ".slate" / "read-next.md"
-    path.write_text(path.read_text(encoding="utf-8") + "\nWorking in `demo/deleted_file.py` today.\n")
+    path.write_text(path.read_text(encoding="utf-8") + "\nWorking in `demo/deleted_file.py` today.\n", encoding="utf-8")
     v = score_for(repo, "read-next")
     assert "demo/deleted_file.py" in v.missing
     assert v.score < baseline
@@ -66,7 +66,7 @@ def setup_two_symbol_claims(repo: Path) -> None:
         + "\n## Claims\n\n"
         + "- The `engine.run` function drives the loop.\n"
         + "- The `engine.helper` function is a pure helper.\n"
-    )
+    , encoding="utf-8")
     commit_all(repo, "two symbol claims")
 
 

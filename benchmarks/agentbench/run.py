@@ -287,7 +287,7 @@ def verify_delivery(arm: spec.Arm) -> bool:
         return True
     root = build_trial(arm, 0)
     marker = f"\n<!-- delivery check -->\nThe context probe token is {DELIVERY_CANARY}.\n"
-    (root / "AGENTS.md").write_text((root / "AGENTS.md").read_text(encoding="utf-8") + marker)
+    (root / "AGENTS.md").write_text((root / "AGENTS.md").read_text(encoding="utf-8") + marker, encoding="utf-8")
 
     env = dict(os.environ)
     env["PATH"] = f"{SLATE_BIN.parent}:{env['PATH']}"
@@ -685,7 +685,7 @@ def measure_repair(root: Path, arm: spec.Arm, m: spec.Metrics) -> None:
     # Keep the repaired prose as evidence before anything is restored.
     doc = root / ".slate" / "read-next.md"
     if doc.exists():
-        (RUNS / f"{arm.name}-{trial_tag(m)}.read-next.md").write_text(doc.read_text(encoding="utf-8"))
+        (RUNS / f"{arm.name}-{trial_tag(m)}.read-next.md").write_text(doc.read_text(encoding="utf-8"), encoding="utf-8")
 
     m.suspect_claims_end = repair_count(root)
     git(root, "checkout", "--", ".slate", check=False)

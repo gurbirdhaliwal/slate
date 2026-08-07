@@ -102,7 +102,7 @@ def test_session_start_reports_all_fresh(layered: Path) -> None:
 
 
 def test_session_start_names_the_stale_doc(layered: Path) -> None:
-    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n")
+    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n", encoding="utf-8")
     commit_all(layered, "change watched code")
 
     text = context_text(claudehook.build_output(
@@ -114,7 +114,7 @@ def test_session_start_names_the_stale_doc(layered: Path) -> None:
 def test_session_start_never_vouches_for_a_stale_doc(layered: Path) -> None:
     """The invariant that would destroy the product: telling the agent a doc
     is safe when its watched code has moved."""
-    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n")
+    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n", encoding="utf-8")
     commit_all(layered, "change watched code")
 
     reports = freshness.evaluate_all(layered)
@@ -137,7 +137,7 @@ def test_pre_tool_use_is_silent_when_everything_is_fresh(layered: Path) -> None:
 
 
 def test_pre_tool_use_warns_on_a_covered_file(layered: Path) -> None:
-    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n")
+    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n", encoding="utf-8")
     commit_all(layered, "change watched code")
 
     text = context_text(claudehook.build_output(layered, pre_tool(layered, "demo/engine.py")))
@@ -146,7 +146,7 @@ def test_pre_tool_use_warns_on_a_covered_file(layered: Path) -> None:
 
 
 def test_pre_tool_use_is_silent_on_an_uncovered_file(layered: Path) -> None:
-    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n")
+    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n", encoding="utf-8")
     commit_all(layered, "change watched code")
 
     # README is not under any doc's watch globs, so there is nothing to warn
@@ -156,7 +156,7 @@ def test_pre_tool_use_is_silent_on_an_uncovered_file(layered: Path) -> None:
 
 
 def test_pre_tool_use_ignores_non_file_tools(layered: Path) -> None:
-    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n")
+    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n", encoding="utf-8")
     commit_all(layered, "change watched code")
 
     out = claudehook.build_output(layered, payload(
@@ -179,7 +179,7 @@ def test_pre_tool_use_ignores_paths_outside_the_repo(layered: Path) -> None:
 def test_pre_tool_use_is_silent_on_the_context_layer_itself(layered: Path) -> None:
     """Editing a stale doc is the agent *healing* it — warning would be noise
     at exactly the moment the agent is doing the right thing."""
-    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n")
+    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n", encoding="utf-8")
     commit_all(layered, "change watched code")
 
     for rel in sorted(context.CONTEXT_DOC_PATHS):
@@ -203,7 +203,7 @@ def test_human_owned_docs_never_match_a_file(layered: Path) -> None:
 # --- settings.json wiring ---------------------------------------------------
 
 def settings(repo: Path) -> dict:
-    return json.loads(claudehook.settings_path(repo).read_text())
+    return json.loads(claudehook.settings_path(repo).read_text(encoding="utf-8"))
 
 
 def test_install_writes_both_events(repo: Path) -> None:
@@ -246,7 +246,7 @@ def test_install_preserves_other_tools_hooks(repo: Path) -> None:
                 {"matcher": "Bash", "hooks": [{"type": "command", "command": "other-tool"}]}
             ]
         },
-    }))
+    }), encoding="utf-8")
     claudehook.install(repo)
 
     config = settings(repo)
@@ -268,7 +268,7 @@ def test_uninstall_removes_only_ours(repo: Path) -> None:
                 {"matcher": "Bash", "hooks": [{"type": "command", "command": "other-tool"}]}
             ]
         }
-    }))
+    }), encoding="utf-8")
     claudehook.install(repo)
     assert claudehook.uninstall(repo) is True
 
@@ -295,17 +295,17 @@ def test_installed_events_reflects_state(repo: Path) -> None:
 def test_malformed_settings_file_is_reported_not_clobbered(repo: Path) -> None:
     path = claudehook.settings_path(repo)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("{ this is not json")
+    path.write_text("{ this is not json", encoding="utf-8")
     with pytest.raises(claudehook.HookConfigError):
         claudehook.install(repo)
-    assert path.read_text() == "{ this is not json"
+    assert path.read_text(encoding="utf-8") == "{ this is not json"
 
 
 def test_installed_events_survives_a_malformed_settings_file(repo: Path) -> None:
     # Status must never raise — it is called from `slate agent status`.
     path = claudehook.settings_path(repo)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("{ this is not json")
+    path.write_text("{ this is not json", encoding="utf-8")
     assert claudehook.installed_events(repo) == []
 
 
@@ -346,8 +346,8 @@ def coupled(layered: Path, monkeypatch) -> Path:
     from slate import cochange
     monkeypatch.setenv(cochange.ENABLED_ENV, "1")
     for i in range(5):
-        (layered / "demo" / "engine.py").write_text(f"def run():\n    return {i}\n")
-        (layered / "demo" / "cli.py").write_text(f"def main():\n    return {i}\n")
+        (layered / "demo" / "engine.py").write_text(f"def run():\n    return {i}\n", encoding="utf-8")
+        (layered / "demo" / "cli.py").write_text(f"def main():\n    return {i}\n", encoding="utf-8")
         commit_all(layered, f"paired-{i}")
     return layered
 
@@ -361,8 +361,8 @@ def test_cochange_is_off_without_the_opt_in(layered: Path, monkeypatch) -> None:
     from slate import cochange
     monkeypatch.delenv(cochange.ENABLED_ENV, raising=False)
     for i in range(5):
-        (layered / "demo" / "engine.py").write_text(f"def run():\n    return {i}\n")
-        (layered / "demo" / "cli.py").write_text(f"def main():\n    return {i}\n")
+        (layered / "demo" / "engine.py").write_text(f"def run():\n    return {i}\n", encoding="utf-8")
+        (layered / "demo" / "cli.py").write_text(f"def main():\n    return {i}\n", encoding="utf-8")
         commit_all(layered, f"paired-{i}")
     out = claudehook.build_output(layered, edit(layered, "demo/engine.py"))
     text = "" if out is None else context_text(out)
@@ -393,7 +393,7 @@ def test_a_new_session_hears_it_again(coupled: Path) -> None:
 
 
 def test_uncoupled_file_stays_silent(coupled: Path) -> None:
-    (coupled / "demo" / "lonely.py").write_text("x = 1\n")
+    (coupled / "demo" / "lonely.py").write_text("x = 1\n", encoding="utf-8")
     commit_all(coupled, "lonely")
     out = claudehook.build_output(coupled, edit(coupled, "demo/lonely.py"))
     text = "" if out is None else context_text(out)
@@ -444,9 +444,9 @@ def stop(session_id: str = "s1", **kwargs) -> dict:
 def suspect(layered: Path) -> Path:
     """A layer with one hand-written claim the code no longer vouches for."""
     read_next = layered / ".slate" / "read-next.md"
-    read_next.write_text(read_next.read_text() + "\n`engine.run` returns 42.\n")
+    read_next.write_text(read_next.read_text(encoding="utf-8") + "\n`engine.run` returns 42.\n")
     commit_all(layered, "describe run")
-    (layered / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    (layered / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
     commit_all(layered, "change run")
     return layered
 

@@ -1,6 +1,6 @@
 """Every file Slate reads or writes is UTF-8, explicitly.
 
-`Path.read_text()`/`write_text()` without `encoding=` use the *locale* encoding.
+`Path.read_text(encoding="utf-8")`/`write_text()` without `encoding=` use the *locale* encoding.
 On Linux and macOS that is UTF-8 and nothing goes wrong; on Windows it is
 typically cp1252, which cannot encode most of what Slate puts in a doc — the
 status glyphs (● ○ ◐ ✗), the arrows (→ ↳), the verify bars (█ ░). A layer
@@ -42,12 +42,27 @@ def _calls_without_encoding(source: str) -> list[str]:
     return offenders
 
 
+ROOT = SLATE.parent
+
+
 def test_all_file_io_declares_utf8() -> None:
+    """Covers `slate/`, `tests/` and `benchmarks/`.
+
+    The first version of this guard watched only `slate/` — and Windows CI then
+    failed 13 tests, every one of them a *test* reading a UTF-8 doc as cp1252.
+    The product was correct; the things checking the product were not.
+    """
     bad: dict[str, list[str]] = {}
-    for path in sorted(SLATE.glob("*.py")):
+    # `.work/` is gitignored scratch — cloned upstream repos and a venv. Their
+    # I/O is not ours to police, and scanning it made this guard fail on pip.
+    scan = [p for p in (sorted(SLATE.glob("*.py"))
+                        + sorted((ROOT / "tests").rglob("*.py"))
+                        + sorted((ROOT / "benchmarks").rglob("*.py")))
+            if ".work" not in p.parts]
+    for path in scan:
         offenders = _calls_without_encoding(path.read_text(encoding="utf-8"))
         if offenders:
-            bad[path.name] = offenders
+            bad[str(path.relative_to(ROOT))] = offenders
     assert not bad, (
         "file I/O without an explicit encoding falls back to the locale "
         f"encoding, which breaks on Windows: {bad}")

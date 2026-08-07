@@ -80,7 +80,7 @@ ADJUDICATION = {
 def main() -> int:
     records = []
     for item in corpus.load_corpus():
-        record = json.loads((RUNS / f"{item.id}.json").read_text())
+        record = json.loads((RUNS / f"{item.id}.json").read_text(encoding="utf-8"))
         assert record["revision"] == spec.REVISION, item.id
         correct, note = ADJUDICATION[item.id]
         record["mechanical"] = {
@@ -93,7 +93,7 @@ def main() -> int:
         record["adjudicated"] = {"correct": correct, "note": note}
         records.append(record)
 
-    OUT.write_text(json.dumps(records, indent=2) + "\n")
+    OUT.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
 
     falsified = [r for r in records if r["arm"] == "falsified"]
     accurate = [r for r in records if r["arm"] == "accurate"]

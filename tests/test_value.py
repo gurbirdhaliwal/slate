@@ -24,11 +24,11 @@ def _init(repo: Path, capsys) -> None:
 
 
 def _ledger(repo: Path) -> dict:
-    return json.loads(value.ledger_path(repo).read_text())
+    return json.loads(value.ledger_path(repo).read_text(encoding="utf-8"))
 
 
 def _stale_change(repo: Path, name: str = "billing") -> None:
-    (repo / "demo" / f"{name}.py").write_text("TAX = 0.1\n")
+    (repo / "demo" / f"{name}.py").write_text("TAX = 0.1\n", encoding="utf-8")
     commit_all(repo, f"add {name}")
 
 
@@ -182,7 +182,7 @@ def test_corrupt_ledger_never_breaks_a_command(repo: Path, capsys) -> None:
     _init(repo, capsys)
     path = value.ledger_path(repo)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("{not json")
+    path.write_text("{not json", encoding="utf-8")
     code, _ = run(repo, "read", capsys=capsys)
     assert code == 0
     assert _ledger(repo)["sessions"]["count"] == 1  # healed to a fresh ledger
@@ -238,9 +238,9 @@ def test_repair_ledger_never_breaks_the_caller(repo: Path, monkeypatch) -> None:
 def test_repair_ledger_survives_an_older_ledger_without_the_section(repo: Path) -> None:
     value.record_repair(repo, repair.REPAIRED)
     path = value.ledger_path(repo)
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     del data["repairs"]                    # a ledger written before Phase 5
-    path.write_text(json.dumps(data))
+    path.write_text(json.dumps(data), encoding="utf-8")
     # Heals to an empty section instead of raising — the same contract the
     # other sections have had since the ledger shipped.
     assert value.record_repair(repo, repair.REPAIRED) == {"verified": 1, "refused": 0}

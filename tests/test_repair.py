@@ -26,7 +26,7 @@ def init_layer(repo: Path) -> None:
 
 def claim(repo: Path, text: str) -> None:
     read_next = repo / ".slate" / "read-next.md"
-    read_next.write_text(read_next.read_text() + f"\n{text}\n")
+    read_next.write_text(read_next.read_text(encoding="utf-8") + f"\n{text}\n")
 
 
 def tasks(repo: Path) -> list[repair.RepairTask]:
@@ -44,7 +44,7 @@ def test_generated_drift_is_not_a_repair_task(repo: Path) -> None:
     # already fixes it — measured over this repo's history, generated drift
     # was the *only* staleness that ever occurred.
     init_layer(repo)
-    (repo / "demo" / "widget.py").write_text("x = 1\n")
+    (repo / "demo" / "widget.py").write_text("x = 1\n", encoding="utf-8")
     commit_all(repo, "new file changes the module map")
     assert any(r.status != "fresh" for r in freshness.evaluate_all(repo))
     assert all(t.doc_path != ".slate/modules.md" for t in tasks(repo))
@@ -54,11 +54,11 @@ def test_task_points_at_a_line_someone_can_open(repo: Path) -> None:
     init_layer(repo)
     claim(repo, "`engine.run` returns 42.")
     commit_all(repo, "describe run")
-    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
     commit_all(repo, "change run")
 
     (task,) = [t for t in tasks(repo) if "engine.run" in t.risk]
-    lines = (repo / task.doc_path).read_text().splitlines()
+    lines = (repo / task.doc_path).read_text(encoding="utf-8").splitlines()
     assert "engine.run" in lines[task.line - 1]  # 1-based, and into the *file*
     assert task.section
     assert task.anchor
@@ -71,10 +71,10 @@ def test_symbol_evidence_outranks_file_evidence(repo: Path) -> None:
     init_layer(repo)
     claim(repo, "`engine.run` returns 42.")
     claim(repo, "Helpers live in `demo/helper.py`.")
-    (repo / "demo" / "helper.py").write_text("def a():\n    return 1\n")
+    (repo / "demo" / "helper.py").write_text("def a():\n    return 1\n", encoding="utf-8")
     commit_all(repo, "describe both")
-    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
-    (repo / "demo" / "helper.py").write_text("def a():\n    return 2\n")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
+    (repo / "demo" / "helper.py").write_text("def a():\n    return 2\n", encoding="utf-8")
     commit_all(repo, "change both")
 
     got = tasks(repo)
@@ -86,7 +86,7 @@ def test_a_task_carries_the_commit_behind_it(repo: Path) -> None:
     init_layer(repo)
     claim(repo, "`engine.run` returns 42.")
     commit_all(repo, "describe run")
-    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
     sha = commit_all(repo, "change run")
 
     (task,) = [t for t in tasks(repo) if "engine.run" in t.risk]
@@ -100,7 +100,7 @@ def test_an_uncommitted_change_says_so_rather_than_going_silent(repo: Path) -> N
     init_layer(repo)
     claim(repo, "`engine.run` returns 42.")
     commit_all(repo, "describe run")
-    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
 
     (task,) = [t for t in tasks(repo) if "engine.run" in t.risk]
     assert task.commits == {}
@@ -111,7 +111,7 @@ def test_json_shape_is_complete(repo: Path) -> None:
     init_layer(repo)
     claim(repo, "`engine.run` returns 42.")
     commit_all(repo, "describe run")
-    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
     commit_all(repo, "change run")
 
     payload = tasks(repo)[0].as_dict()
@@ -125,7 +125,7 @@ def test_claim_verdicts_stay_backward_compatible(repo: Path) -> None:
     # status/verify/diff and the MCP surface all read this shape; the new
     # fields are additive, exactly as the Part B rollout was.
     init_layer(repo)
-    (repo / "demo" / "widget.py").write_text("x = 1\n")
+    (repo / "demo" / "widget.py").write_text("x = 1\n", encoding="utf-8")
     report = next(r for r in freshness.evaluate_all(repo) if r.claims)
     payload = report.claims[0].as_dict()
     assert {"text", "section", "kind", "status", "refs", "risk"} <= set(payload)
@@ -243,7 +243,7 @@ def test_repair_cannot_manufacture_fresh(repo: Path) -> None:
     init_layer(repo)
     claim(repo, "`engine.run` returns 42.")
     commit_all(repo, "describe run")
-    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
     commit_all(repo, "change run")
 
     doc_path = repo / ".slate" / "read-next.md"
@@ -252,7 +252,7 @@ def test_repair_cannot_manufacture_fresh(repo: Path) -> None:
     assert stale.status != context.FRESH
 
     before = context.load(repo, stale.doc.spec).body
-    doc_path.write_text(doc_path.read_text().replace(
+    doc_path.write_text(doc_path.read_text(encoding="utf-8").replace(
         "`engine.run` returns 42.", "The engine returns something."))
 
     # The trap is real: freshness alone now calls this doc fresh, on prose that
@@ -313,7 +313,7 @@ def test_mark_refuses_when_a_claim_disappeared(repo: Path, capsys) -> None:
     """
     anchored_claim(repo)
     doc = read_next(repo)
-    doc.write_text(doc.read_text().replace(
+    doc.write_text(doc.read_text(encoding="utf-8").replace(
         "`engine.run` returns 42.", "The engine works fine now."))
 
     assert main(["-C", str(repo), "mark", "read-next"]) == 2
@@ -325,7 +325,7 @@ def test_mark_refuses_when_a_claim_disappeared(repo: Path, capsys) -> None:
 def test_mark_still_works_when_nothing_was_lost(repo: Path, capsys) -> None:
     anchored_claim(repo)
     doc = read_next(repo)
-    doc.write_text(doc.read_text() + "\n`engine.run` also logs.\n")
+    doc.write_text(doc.read_text(encoding="utf-8") + "\n`engine.run` also logs.\n")
     assert main(["-C", str(repo), "mark", "read-next"]) == 0
     assert "marked" in capsys.readouterr().out
 
@@ -339,7 +339,7 @@ def test_a_repaired_claim_is_not_a_loss(repo: Path, capsys) -> None:
     """
     anchored_claim(repo)
     doc = read_next(repo)
-    doc.write_text(doc.read_text().replace(
+    doc.write_text(doc.read_text(encoding="utf-8").replace(
         "`engine.run` returns 42.", "`engine.run` returns 43."))
 
     loss = repair.claim_loss(repo, context.load(repo, context.spec_by_name("read-next")))
@@ -352,7 +352,7 @@ def test_a_repaired_claim_is_not_a_loss(repo: Path, capsys) -> None:
 def test_a_human_can_retire_a_claim_deliberately(repo: Path, capsys) -> None:
     anchored_claim(repo)
     doc = read_next(repo)
-    doc.write_text(doc.read_text().replace("`engine.run` returns 42.", ""))
+    doc.write_text(doc.read_text(encoding="utf-8").replace("`engine.run` returns 42.", ""))
     assert main(["-C", str(repo), "mark", "read-next", "--allow-claim-loss"]) == 0
     assert "marked" in capsys.readouterr().out
 

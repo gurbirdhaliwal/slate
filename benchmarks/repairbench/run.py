@@ -138,7 +138,7 @@ def run_agent(root: Path, prompt: str, transcript: Path) -> tuple[str, float]:
 def final_text(transcript: Path) -> tuple[str, bool]:
     """The session's result string and whether it failed, from the CLI's own
     envelope. A missing result event is itself a failure."""
-    for line in reversed(transcript.read_text().splitlines()):
+    for line in reversed(transcript.read_text(encoding="utf-8").splitlines()):
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
@@ -225,7 +225,7 @@ def already_done(item: corpus.Item) -> bool:
     if not sidecar.exists():
         return False
     try:
-        return json.loads(sidecar.read_text()).get("revision") == spec.REVISION
+        return json.loads(sidecar.read_text(encoding="utf-8")).get("revision") == spec.REVISION
     except (json.JSONDecodeError, OSError):
         return False
 
@@ -246,7 +246,7 @@ def trial(item: corpus.Item) -> dict:
     record = score(item, root, before, said)
     record |= {"revision": spec.REVISION, "model": spec.MODEL,
                "wall_s": wall, "said": said[-400:], "scope": task["scope"]}
-    (RUNS / f"{item.id}.json").write_text(json.dumps(record, indent=2) + "\n")
+    (RUNS / f"{item.id}.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     shutil.rmtree(root, ignore_errors=True)
     return record
 
@@ -256,7 +256,7 @@ def report() -> int:
     for item in corpus.load_corpus():
         sidecar = RUNS / f"{item.id}.json"
         if sidecar.exists():
-            record = json.loads(sidecar.read_text())
+            record = json.loads(sidecar.read_text(encoding="utf-8"))
             if record.get("revision") == spec.REVISION:
                 records.append(record)
 

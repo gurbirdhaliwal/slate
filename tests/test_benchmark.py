@@ -24,7 +24,7 @@ def run_benchmark(repo: Path) -> dict:
 def test_benchmark_end_to_end(repo: Path) -> None:
     generator.generate_all(scanner.scan(repo))
     commit_all(repo, "add context layer")
-    (repo / "demo" / "billing.py").write_text("TAX = 0.1\n")
+    (repo / "demo" / "billing.py").write_text("TAX = 0.1\n", encoding="utf-8")
     commit_all(repo, "add billing")
 
     results = run_benchmark(repo)

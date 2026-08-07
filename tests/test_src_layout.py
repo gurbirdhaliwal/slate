@@ -26,26 +26,26 @@ def src_repo(tmp_path: Path) -> Path:
     root = tmp_path / "webfx"
     root.mkdir()
     git(root, "init", "-q")
-    (root / "README.md").write_text("# webfx\n")
-    (root / "pyproject.toml").write_text('[project]\nname = "webfx"\nversion = "0.1"\n')
+    (root / "README.md").write_text("# webfx\n", encoding="utf-8")
+    (root / "pyproject.toml").write_text('[project]\nname = "webfx"\nversion = "0.1"\n', encoding="utf-8")
 
     pkg = root / "src" / "webfx"
     (pkg / "json").mkdir(parents=True)
     (pkg / "sansio").mkdir()
-    (pkg / "__init__.py").write_text("from .app import App\n")
+    (pkg / "__init__.py").write_text("from .app import App\n", encoding="utf-8")
     (pkg / "app.py").write_text(
         "from .json.provider import Provider\nfrom .sansio.base import Base\n"
-    )
-    (pkg / "cli.py").write_text("def main():\n    return 0\n")
-    (pkg / "globals.py").write_text("current_app = None\n")
-    (pkg / "json" / "__init__.py").write_text("from ..globals import current_app\n")
-    (pkg / "json" / "provider.py").write_text("import json\n\nclass Provider: ...\n")
-    (pkg / "sansio" / "__init__.py").write_text("")
-    (pkg / "sansio" / "base.py").write_text("class Base: ...\n")
+    , encoding="utf-8")
+    (pkg / "cli.py").write_text("def main():\n    return 0\n", encoding="utf-8")
+    (pkg / "globals.py").write_text("current_app = None\n", encoding="utf-8")
+    (pkg / "json" / "__init__.py").write_text("from ..globals import current_app\n", encoding="utf-8")
+    (pkg / "json" / "provider.py").write_text("import json\n\nclass Provider: ...\n", encoding="utf-8")
+    (pkg / "sansio" / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "sansio" / "base.py").write_text("class Base: ...\n", encoding="utf-8")
 
     tests_dir = root / "tests"
     tests_dir.mkdir()
-    (tests_dir / "test_app.py").write_text("from webfx.json.provider import Provider\n")
+    (tests_dir / "test_app.py").write_text("from webfx.json.provider import Provider\n", encoding="utf-8")
 
     commit_all(root, "initial")
     return root
@@ -139,17 +139,17 @@ def test_row_budget_prefers_source_over_supporting_trees(tmp_path: Path) -> None
     root = tmp_path / "big"
     root.mkdir()
     git(root, "init", "-q")
-    (root / "README.md").write_text("# big\n")
+    (root / "README.md").write_text("# big\n", encoding="utf-8")
     pkg = root / "src" / "big"
     pkg.mkdir(parents=True)
-    (pkg / "__init__.py").write_text("")
-    (pkg / "core.py").write_text("x = 1\n")
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "core.py").write_text("x = 1\n", encoding="utf-8")
     # Twenty test directories, each large enough to earn a row on size alone.
     for i in range(20):
         d = root / "tests" / f"suite_{i:02d}"
         d.mkdir(parents=True)
         for j in range(4):
-            (d / f"test_{j}.py").write_text("def test():\n    assert True\n")
+            (d / f"test_{j}.py").write_text("def test():\n    assert True\n", encoding="utf-8")
     commit_all(root, "initial")
 
     names = [m.name for m in scanner.scan(root).modules]

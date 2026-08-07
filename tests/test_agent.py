@@ -23,14 +23,14 @@ def test_access_round_trip(repo: Path) -> None:
 
 def test_garbage_access_file_degrades_to_read(repo: Path) -> None:
     agentcfg.access_path(repo).parent.mkdir(exist_ok=True)
-    agentcfg.access_path(repo).write_text("yolo\n")
+    agentcfg.access_path(repo).write_text("yolo\n", encoding="utf-8")
     assert agentcfg.get_access(repo) == "read"
 
 
 def test_enable_writes_client_config(repo: Path) -> None:
     rel = agentcfg.enable_client(repo, "claude")
     assert rel == ".mcp.json"
-    config = json.loads((repo / ".mcp.json").read_text())
+    config = json.loads((repo / ".mcp.json").read_text(encoding="utf-8"))
     assert config["mcpServers"]["slate"] == {"command": "slate", "args": ["mcp"]}
     assert agentcfg.enabled_clients(repo) == ["claude"]
 
@@ -38,15 +38,15 @@ def test_enable_writes_client_config(repo: Path) -> None:
 def test_enable_merges_with_existing_config(repo: Path) -> None:
     (repo / ".mcp.json").write_text(json.dumps({
         "mcpServers": {"other": {"command": "other-tool", "args": []}}
-    }))
+    }), encoding="utf-8")
     agentcfg.enable_client(repo, "claude")
-    config = json.loads((repo / ".mcp.json").read_text())
+    config = json.loads((repo / ".mcp.json").read_text(encoding="utf-8"))
     assert "other" in config["mcpServers"]  # never clobber someone else's server
     assert "slate" in config["mcpServers"]
 
 
 def test_enable_rejects_broken_config(repo: Path) -> None:
-    (repo / ".mcp.json").write_text("{not json")
+    (repo / ".mcp.json").write_text("{not json", encoding="utf-8")
     try:
         agentcfg.enable_client(repo, "claude")
         assert False, "should have raised"
@@ -105,7 +105,7 @@ def test_full_access_alone_does_not_enable_repair(repo: Path) -> None:
 
 def test_repair_file_garbage_degrades_to_off(repo: Path) -> None:
     agentcfg.set_access(repo, "full")
-    agentcfg.repair_path(repo).write_text("yes please\n")
+    agentcfg.repair_path(repo).write_text("yes please\n", encoding="utf-8")
     assert agentcfg.get_repair(repo) == "off"
     assert not agentcfg.repair_enabled(repo)
 
@@ -123,11 +123,17 @@ def test_cli_repair_round_trip(repo: Path, capsys) -> None:
 # --- hook delivery for other agents (Codex, Cursor) -------------------------
 
 
+def _redirect_home(monkeypatch, tmp_path) -> None:
+    """Point `~` at a temp dir on every platform."""
+    monkeypatch.setenv("HOME", str(tmp_path))        # POSIX
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Windows
+
+
 def stale_layer(repo: Path) -> Path:
     from slate import generator, scanner
     generator.generate_all(scanner.scan(repo))
     commit_all(repo, "add context layer")
-    (repo / "demo" / "engine.py").write_text("def run():\n    return 99\n")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 99\n", encoding="utf-8")
     commit_all(repo, "change watched code")
     return repo
 
@@ -211,10 +217,12 @@ def test_stop_loop_guards_hold_for_every_agent(repo: Path) -> None:
 
 
 def test_install_writes_each_agents_own_config(repo: Path, tmp_path, monkeypatch) -> None:
-    # HOME is redirected because Codex's hooks live in the *user's* home, not
-    # the repo. A test that writes there for real would edit the developer's
-    # own Codex setup — which is exactly what happened the first time this ran.
-    monkeypatch.setenv("HOME", str(tmp_path))
+    # Codex's hooks live in the *user's* home, not the repo, so this test has
+    # to redirect it — writing there for real edits the developer's own Codex
+    # setup, which is exactly what happened the first time this ran. Both
+    # variables: `Path.expanduser()` reads HOME on POSIX and USERPROFILE on
+    # Windows, and setting only HOME made this pass locally and fail in CI.
+    _redirect_home(monkeypatch, tmp_path)
 
     for client in ("codex", "cursor"):
         agent = agenthooks.AGENTS[client]
@@ -240,24 +248,24 @@ def test_codex_config_is_user_global_and_claude_is_not() -> None:
 
 
 def test_install_preserves_another_tools_hooks(repo: Path, tmp_path, monkeypatch) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
+    _redirect_home(monkeypatch, tmp_path)
     agent = agenthooks.AGENTS["codex"]
     path = tmp_path / ".codex" / "hooks.json"
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps({"hooks": {"SessionStart": [
-        {"hooks": [{"type": "command", "command": "someone-elses-tool"}]}]}}))
+        {"hooks": [{"type": "command", "command": "someone-elses-tool"}]}]}}), encoding="utf-8")
     agenthooks.install(agent, repo)
-    commands = json.dumps(json.loads(path.read_text()))
+    commands = json.dumps(json.loads(path.read_text(encoding="utf-8")))
     assert "someone-elses-tool" in commands
     agenthooks.uninstall(agent, repo)
-    assert "someone-elses-tool" in path.read_text()
+    assert "someone-elses-tool" in path.read_text(encoding="utf-8")
 
 
 def test_repeated_install_does_not_stack_duplicates(repo: Path) -> None:
     agent = agenthooks.AGENTS["cursor"]
     agenthooks.install(agent, repo)
     agenthooks.install(agent, repo)
-    config = json.loads((repo / ".cursor" / "hooks.json").read_text())
+    config = json.loads((repo / ".cursor" / "hooks.json").read_text(encoding="utf-8"))
     for groups in config["hooks"].values():
         assert len(groups) == 1
 

@@ -91,7 +91,7 @@ def test_slate_read_returns_ordered_docs_with_contents(repo: Path) -> None:
 
 def test_slate_status_flags_stale_after_change(repo: Path) -> None:
     init_layer(repo)
-    (repo / "demo" / "extra.py").write_text("x = 1\n")
+    (repo / "demo" / "extra.py").write_text("x = 1\n", encoding="utf-8")
     payload, is_error = call(SlateMCPServer(repo), "slate_status")
     assert not is_error
     by_doc = {d["doc"]: d for d in payload}
@@ -102,7 +102,7 @@ def test_slate_status_flags_stale_after_change(repo: Path) -> None:
 def test_status_json_is_backward_compatible_and_adds_claims(repo: Path) -> None:
     # The VS Code extension + PR bot parse these keys — additive only.
     init_layer(repo)
-    (repo / "demo" / "extra.py").write_text("x = 1\n")
+    (repo / "demo" / "extra.py").write_text("x = 1\n", encoding="utf-8")
     payload, _ = call(SlateMCPServer(repo), "slate_status")
     modules = next(d for d in payload if d["doc"] == "modules")
     for key in ("doc", "path", "status", "reason", "changed_watched", "content_verified"):
@@ -114,7 +114,7 @@ def test_status_json_is_backward_compatible_and_adds_claims(repo: Path) -> None:
 
 def test_verify_and_diff_json_carry_claim_breakdown(repo: Path) -> None:
     init_layer(repo)
-    (repo / "demo" / "extra.py").write_text("x = 1\n")
+    (repo / "demo" / "extra.py").write_text("x = 1\n", encoding="utf-8")
     verify_payload, _ = call(SlateMCPServer(repo), "slate_verify")
     modules_v = next(d for d in verify_payload if d["doc"] == "modules")
     assert "score" in modules_v and "missing_paths" in modules_v  # old keys
@@ -128,7 +128,7 @@ def test_verify_and_diff_json_carry_claim_breakdown(repo: Path) -> None:
 def test_slate_sync_via_mcp_clears_staleness(repo: Path) -> None:
     init_layer(repo)
     agentcfg.set_access(repo, agentcfg.FULL)
-    (repo / "demo" / "extra.py").write_text("x = 1\n")
+    (repo / "demo" / "extra.py").write_text("x = 1\n", encoding="utf-8")
     commit_all(repo, "change")
     server = SlateMCPServer(repo)
     payload, is_error = call(server, "slate_sync")
@@ -146,7 +146,7 @@ def test_update_focus_rewrites_section_and_marks(repo: Path) -> None:
         {"current_focus": "Building the widget parser.", "landmines": "Do not touch legacy.py."},
     )
     assert not is_error
-    text = (repo / ".slate" / "read-next.md").read_text()
+    text = (repo / ".slate" / "read-next.md").read_text(encoding="utf-8")
     assert "Building the widget parser." in text
     assert "Do not touch legacy.py." in text
     assert "_Nothing in flight._" not in text
@@ -162,7 +162,7 @@ def test_append_decision(repo: Path) -> None:
         {"decision": "Use sqlite", "rationale": "Zero ops", "trade_off": "Single writer"},
     )
     assert not is_error
-    text = (repo / ".slate" / "decisions.md").read_text()
+    text = (repo / ".slate" / "decisions.md").read_text(encoding="utf-8")
     assert "Decision: Use sqlite" in text
     assert "Trade-off: Single writer" in text
     # template stays intact (append-only)
@@ -222,9 +222,9 @@ def suspect_layer(repo: Path) -> None:
     """A layer with one hand-written claim the code no longer vouches for."""
     init_layer(repo)
     read_next = repo / ".slate" / "read-next.md"
-    read_next.write_text(read_next.read_text() + "\n`engine.run` returns 42.\n")
+    read_next.write_text(read_next.read_text(encoding="utf-8") + "\n`engine.run` returns 42.\n")
     commit_all(repo, "describe run")
-    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
     commit_all(repo, "change run")
 
 
@@ -259,7 +259,7 @@ def test_repair_apply_is_denied_when_repair_is_off(repo: Path) -> None:
         "replacement": "`engine.run` returns 43.",
     })
     assert is_error and "repair is off" in payload["text"]
-    assert "`engine.run` returns 42." in (repo / ".slate" / "read-next.md").read_text()
+    assert "`engine.run` returns 42." in (repo / ".slate" / "read-next.md").read_text(encoding="utf-8")
 
 
 def test_an_honest_repair_is_written(repo: Path) -> None:
@@ -270,7 +270,7 @@ def test_an_honest_repair_is_written(repo: Path) -> None:
         "replacement": "`engine.run` returns 43.",
     })
     assert not is_error and payload["outcome"] == "repaired"
-    body = (repo / ".slate" / "read-next.md").read_text()
+    body = (repo / ".slate" / "read-next.md").read_text(encoding="utf-8")
     assert "`engine.run` returns 43." in body and "returns 42." not in body
 
 
@@ -284,7 +284,7 @@ def test_a_repair_that_strips_refs_is_refused_and_writes_nothing(repo: Path) -> 
     })
     assert is_error and payload["outcome"] == "rejected"
     assert any("never be checked again" in r for r in payload["reasons"])
-    assert "`engine.run` returns 42." in (repo / ".slate" / "read-next.md").read_text()
+    assert "`engine.run` returns 42." in (repo / ".slate" / "read-next.md").read_text(encoding="utf-8")
 
 
 def test_a_repair_does_not_re_anchor_the_doc(repo: Path) -> None:
@@ -304,13 +304,13 @@ def test_a_repair_does_not_re_anchor_the_doc(repo: Path) -> None:
 def test_repair_apply_on_a_missing_target_writes_nothing(repo: Path) -> None:
     suspect_layer(repo)
     enable_repair(repo)
-    original = (repo / ".slate" / "read-next.md").read_text()
+    original = (repo / ".slate" / "read-next.md").read_text(encoding="utf-8")
     payload, is_error = call(SlateMCPServer(repo, access=agentcfg.FULL), "slate_repair_apply", {
         "doc": "read-next", "target": "`engine.run` returns 7.",
         "replacement": "`engine.run` returns 43.",
     })
     assert is_error and payload["outcome"] == "rejected"
-    assert (repo / ".slate" / "read-next.md").read_text() == original
+    assert (repo / ".slate" / "read-next.md").read_text(encoding="utf-8") == original
 
 
 def seed_focus_claim(repo: Path) -> Path:
@@ -322,9 +322,9 @@ def seed_focus_claim(repo: Path) -> Path:
     """
     init_layer(repo)
     read_next = repo / ".slate" / "read-next.md"
-    body = read_next.read_text()
+    body = read_next.read_text(encoding="utf-8")
     head, marker, tail = body.partition("## Current focus")
-    read_next.write_text(f"{head}{marker}\n\n`engine.run` returns 42.\n{tail}")
+    read_next.write_text(f"{head}{marker}\n\n`engine.run` returns 42.\n{tail}", encoding="utf-8")
     commit_all(repo, "describe run")
     agentcfg.set_access(repo, agentcfg.FULL)
     call(SlateMCPServer(repo, access=agentcfg.FULL), "slate_mark", {"docs": ["read-next"]})
@@ -342,13 +342,13 @@ def test_slate_mark_refuses_to_retire_a_claim(repo: Path) -> None:
     """
     init_layer(repo)
     read_next = repo / ".slate" / "read-next.md"
-    read_next.write_text(read_next.read_text() + "\n`engine.run` returns 42.\n")
+    read_next.write_text(read_next.read_text(encoding="utf-8") + "\n`engine.run` returns 42.\n")
     commit_all(repo, "describe run")
     agentcfg.set_access(repo, agentcfg.FULL)
     call(SlateMCPServer(repo, access=agentcfg.FULL), "slate_mark", {"docs": ["read-next"]})
     commit_all(repo, "anchor")
 
-    read_next.write_text(read_next.read_text().replace(
+    read_next.write_text(read_next.read_text(encoding="utf-8").replace(
         "`engine.run` returns 42.", "The engine is fine."))
     before = context.load(repo, context.spec_by_name("read-next")).synced_commit
 
@@ -369,7 +369,7 @@ def test_update_focus_refuses_to_drop_the_claims_it_replaces(repo: Path) -> None
     payload, is_error = call(SlateMCPServer(repo, access=agentcfg.FULL),
                              "slate_update_focus", {"current_focus": "All done here."})
     assert is_error and payload["updated"] is None
-    assert "`engine.run` returns 42." in read_next.read_text()
+    assert "`engine.run` returns 42." in read_next.read_text(encoding="utf-8")
 
 
 def test_update_focus_still_works_when_it_carries_the_claims_over(repo: Path) -> None:

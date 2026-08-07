@@ -73,7 +73,7 @@ class Item:
 
 
 def load_corpus() -> list[Item]:
-    return [Item(**raw) for raw in json.loads(CORPUS.read_text())]
+    return [Item(**raw) for raw in json.loads(CORPUS.read_text(encoding="utf-8"))]
 
 
 def git(cwd: Path, *args: str, check: bool = True) -> str:
@@ -117,7 +117,9 @@ def build_trial(item: Item, dest: Path) -> Path:
 
     slate(dest, "init")
     doc = dest / ".slate" / "read-next.md"
-    doc.write_text(f"{doc.read_text().rstrip()}\n\n{SECTION}\n\n{wrap(item.claim)}\n")
+    existing = doc.read_text(encoding="utf-8").rstrip()
+    doc.write_text(f"{existing}\n\n{SECTION}\n\n{wrap(item.claim)}\n",
+                   encoding="utf-8")
     git(dest, "add", "-A")
     git(dest, "commit", "--quiet", "-m", "add context layer")
 
@@ -137,7 +139,7 @@ def evidence_diff(item: Item, repo: Path) -> str:
 
 def passage(repo: Path) -> str:
     """The authored section as it currently stands on disk."""
-    body = (repo / ".slate" / "read-next.md").read_text()
+    body = (repo / ".slate" / "read-next.md").read_text(encoding="utf-8")
     _, _, after = body.partition(SECTION)
     return after.strip()
 

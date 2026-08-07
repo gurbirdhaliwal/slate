@@ -58,7 +58,28 @@ from .context import DOC_SPECS, FRESH, NEEDS_VERIFICATION, STALE
 STATUS_ICONS = {FRESH: "●", STALE: "○", NEEDS_VERIFICATION: "◐"}
 
 
+def _survive_a_narrow_console() -> None:
+    """Never crash because the terminal cannot spell `●`.
+
+    Slate's output is full of glyphs — status dots, arrows, verify bars — that
+    cp1252 cannot encode. Python picks the *locale* encoding for stdout when it
+    is not a terminal, so on Windows `slate status > log.txt` or any piped
+    invocation raises UnicodeEncodeError from inside `print`. The command dies
+    having done its work, which is the worst possible place to fail.
+
+    `errors="replace"` degrades the unencodable characters to `?` and leaves
+    everything else alone. Deliberately not forcing UTF-8: that would fix the
+    pipe and produce mojibake on a genuinely cp1252 console.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass  # not a reconfigurable text stream; nothing to protect
+
+
 def main(argv: list[str] | None = None) -> int:
+    _survive_a_narrow_console()
     parser = _build_parser()
     args = parser.parse_args(argv)
     if not args.command:

@@ -41,7 +41,7 @@ class Widget:
 
 def write(tmp_path: Path, text: str) -> Path:
     path = tmp_path / "sample.py"
-    path.write_text(text)
+    path.write_text(text, encoding="utf-8")
     return path
 
 
@@ -82,7 +82,7 @@ def test_unparseable_python_is_opaque(tmp_path: Path) -> None:
 
 def test_unknown_code_language_is_opaque(tmp_path: Path) -> None:
     path = tmp_path / "main.go"
-    path.write_text("package main\nfunc main() {}\n")
+    path.write_text("package main\nfunc main() {}\n", encoding="utf-8")
     assert symbols.changed_symbols(path, [(2, 2)]) is None
 
 
@@ -98,7 +98,7 @@ def test_js_top_level_declarations(tmp_path: Path) -> None:
         "}\n"
         "\n"
         "const helper = () => 2;\n"
-    )
+    , encoding="utf-8")
     assert symbols.changed_symbols(path, [(2, 2)]) == {"activate"}
     assert symbols.changed_symbols(path, [(5, 5)]) == {"helper"}
 
@@ -108,7 +108,7 @@ def test_js_top_level_declarations(tmp_path: Path) -> None:
 
 def test_changed_hunks_committed_edit(repo: Path) -> None:
     anchor = git(repo, "rev-parse", "--short", "HEAD").strip()
-    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
     commit_all(repo, "edit engine")
     hunks = gitutil.changed_hunks(repo, anchor)
     assert "demo/engine.py" in hunks
@@ -118,13 +118,13 @@ def test_changed_hunks_committed_edit(repo: Path) -> None:
 
 def test_changed_hunks_includes_uncommitted_edit(repo: Path) -> None:
     anchor = git(repo, "rev-parse", "--short", "HEAD").strip()
-    (repo / "demo" / "engine.py").write_text("def run():\n    return 44\n")  # not committed
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 44\n", encoding="utf-8")  # not committed
     hunks = gitutil.changed_hunks(repo, anchor)
     assert "demo/engine.py" in hunks
 
 
 def test_changed_hunks_untracked_file_reported_whole(repo: Path) -> None:
     anchor = git(repo, "rev-parse", "--short", "HEAD").strip()
-    (repo / "demo" / "widget.py").write_text("a = 1\nb = 2\nc = 3\n")
+    (repo / "demo" / "widget.py").write_text("a = 1\nb = 2\nc = 3\n", encoding="utf-8")
     hunks = gitutil.changed_hunks(repo, anchor)
     assert hunks["demo/widget.py"] == [(1, 4)]  # 3 lines + trailing newline

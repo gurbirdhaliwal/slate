@@ -23,6 +23,6 @@ def test_scan_reflects_working_tree_not_index(repo: Path) -> None:
 def test_untracked_files_are_scanned(repo: Path) -> None:
     newpkg = repo / "newpkg"
     newpkg.mkdir()
-    (newpkg / "core.py").write_text("x = 1\n")
+    (newpkg / "core.py").write_text("x = 1\n", encoding="utf-8")
     scan = scanner.scan(repo)
     assert "newpkg" in scan.source_dirs

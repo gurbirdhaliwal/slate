@@ -92,7 +92,7 @@ def measure_session_start(root: Path) -> dict:
     context_paths = [s.rel_path for s in context.DOC_SPECS]
 
     layer_chars = sum(
-        len((root / p).read_text()) for p in context_paths if (root / p).exists()
+        len((root / p).read_text(encoding="utf-8")) for p in context_paths if (root / p).exists()
     )
 
     tracked = gitutil.list_files(root)
@@ -104,7 +104,7 @@ def measure_session_start(root: Path) -> dict:
     sizes: dict[str, int] = {}
     for p in text_files:
         try:
-            n = len((root / p).read_text())
+            n = len((root / p).read_text(encoding="utf-8"))
         except (UnicodeDecodeError, OSError):
             continue
         dump_chars += n
@@ -192,7 +192,7 @@ def replay_history(root: Path, since: str) -> dict:
     docs = context.load_all(root)
     doc_watches = {d.spec.name: d.watches for d in docs}
     doc_chars = {
-        d.spec.name: len(d.spec.path(root).read_text())
+        d.spec.name: len(d.spec.path(root).read_text(encoding="utf-8"))
         for d in docs if d.spec.path(root).exists()
     }
     context_paths = {s.rel_path for s in context.DOC_SPECS}

@@ -38,7 +38,7 @@ def seeded_prefixes() -> list[str]:
 def main() -> int:
     arms = [a.name for a in spec.REPAIR_ARMS]
     for sidecar in sorted(RUNS.glob("*.json")):
-        record = json.loads(sidecar.read_text())
+        record = json.loads(sidecar.read_text(encoding="utf-8"))
         if record.get("arm") not in arms:
             continue
         if not record.get("claims_repaired"):
@@ -53,7 +53,7 @@ def main() -> int:
 
         doc = RUNS / f"{record['arm']}-{record['trial']}.read-next.md"
         if doc.exists():
-            body = doc.read_text()
+            body = doc.read_text(encoding="utf-8")
             _, _, after = body.partition(spec.SEEDED_SECTION)
             print("\n--- prose as the agent left it ---")
             print(after.split("## ")[0].strip()[:1200])

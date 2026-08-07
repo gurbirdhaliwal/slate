@@ -1,9 +1,9 @@
 ---
 slate_doc: modules
 slate_generated: true
-slate_synced_commit: a68780a
-slate_synced_at: 2026-08-05T20:26:58+00:00
-slate_synced_digest: a3edcf093586f472
+slate_synced_commit: dc5dfd3
+slate_synced_at: 2026-08-07T16:41:10+00:00
+slate_synced_digest: c82235f7bbf903f4
 slate_watches:
   - slate/**
   - tests/**

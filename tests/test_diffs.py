@@ -19,7 +19,7 @@ def diff_for(repo: Path, name: str) -> diffs.DocDiff:
 
 def test_change_kinds_reported(repo: Path) -> None:
     init_layer(repo)
-    (repo / "demo" / "newmod.py").write_text("x = 1\n")
+    (repo / "demo" / "newmod.py").write_text("x = 1\n", encoding="utf-8")
     (repo / "demo" / "engine.py").unlink()
     d = diff_for(repo, "modules")
     assert d.changes["demo/newmod.py"] == "A"
@@ -28,7 +28,7 @@ def test_change_kinds_reported(repo: Path) -> None:
 
 def test_sync_preview_shows_auto_block_diff(repo: Path) -> None:
     init_layer(repo)
-    (repo / "demo" / "extra.py").write_text("x = 1\n")
+    (repo / "demo" / "extra.py").write_text("x = 1\n", encoding="utf-8")
     commit_all(repo, "add extra")
     d = diff_for(repo, "modules")
     assert d.sync_preview, "expected a unified diff of the auto block"
@@ -40,7 +40,7 @@ def test_sync_preview_shows_auto_block_diff(repo: Path) -> None:
 def test_missing_reference_is_a_broken_claim(repo: Path) -> None:
     init_layer(repo)
     read_next = repo / ".slate" / "read-next.md"
-    read_next.write_text(read_next.read_text() + "\nSee `demo/engine.py` for the core.\n")
+    read_next.write_text(read_next.read_text(encoding="utf-8") + "\nSee `demo/engine.py` for the core.\n")
     (repo / "demo" / "engine.py").unlink()
     d = diff_for(repo, "read-next")
     assert "demo/engine.py" in d.missing_refs
@@ -55,7 +55,7 @@ def test_fresh_layer_diffs_nothing(repo: Path, capsys) -> None:
 
 def test_cli_diff_output(repo: Path, capsys) -> None:
     init_layer(repo)
-    (repo / "demo" / "extra.py").write_text("x = 1\n")
+    (repo / "demo" / "extra.py").write_text("x = 1\n", encoding="utf-8")
     code = main(["-C", str(repo), "diff"])
     out = capsys.readouterr().out
     assert code == 0

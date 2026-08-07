@@ -140,7 +140,7 @@ def build_trial(arm: spec.Arm, trial: int) -> Path:
     if arm.context == "handwritten":
         ctx = spec.CTX_STALE if arm.doc_commit else spec.CTX_CURRENT
         (root / "AGENTS.md").write_text(
-            spec.HANDWRITTEN_TEMPLATE.format(ctx=ctx))
+            spec.HANDWRITTEN_TEMPLATE.format(ctx=ctx), encoding="utf-8")
     elif arm.context == "slate":
         subprocess.run([str(SLATE_BIN), "init"], cwd=root,
                        capture_output=True, check=True)
@@ -189,13 +189,13 @@ def _seed_claims(root: Path) -> None:
     and would drop straight out of the experiment.
     """
     doc = root / ".slate" / "read-next.md"
-    body = doc.read_text()
+    body = doc.read_text(encoding="utf-8")
     seeded = "\n\n".join(spec.SEEDED_CLAIMS)
     marker = spec.SEEDED_SECTION
     if marker not in body:
         raise RuntimeError(f"{spec.SEEDED_DOC} has no {marker!r} section to seed")
     head, _, tail = body.partition(marker)
-    doc.write_text(f"{head}{marker}\n\n{seeded}\n{tail}")
+    doc.write_text(f"{head}{marker}\n\n{seeded}\n{tail}", encoding="utf-8")
 
 
 def _instrument_stop_hook(root: Path) -> None:
@@ -215,7 +215,7 @@ def _instrument_stop_hook(root: Path) -> None:
     gate needs the output side.
     """
     settings = root / ".claude" / "settings.json"
-    config = json.loads(settings.read_text())
+    config = json.loads(settings.read_text(encoding="utf-8"))
     stdin_log = root / spec.HOOK_LOG_IN
     stdout_log = root / spec.HOOK_LOG_OUT
     for group in config.get("hooks", {}).get("Stop", []):
@@ -224,7 +224,7 @@ def _instrument_stop_hook(root: Path) -> None:
                 hook["command"] = (
                     f'tee -a "{stdin_log}" | {claudehook_command()} '
                     f'| tee -a "{stdout_log}"')
-    settings.write_text(json.dumps(config, indent=2) + "\n")
+    settings.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 
 
 def claudehook_command() -> str:
@@ -261,7 +261,7 @@ def _bridge_to_claude_md(root: Path) -> None:
     agents = root / "AGENTS.md"
     if not agents.exists():
         return
-    (root / "CLAUDE.md").write_text("@AGENTS.md\n")
+    (root / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
 
 
 # A canary the agent can only know from the delivered context. Cheap insurance
@@ -287,7 +287,7 @@ def verify_delivery(arm: spec.Arm) -> bool:
         return True
     root = build_trial(arm, 0)
     marker = f"\n<!-- delivery check -->\nThe context probe token is {DELIVERY_CANARY}.\n"
-    (root / "AGENTS.md").write_text((root / "AGENTS.md").read_text() + marker)
+    (root / "AGENTS.md").write_text((root / "AGENTS.md").read_text(encoding="utf-8") + marker)
 
     env = dict(os.environ)
     env["PATH"] = f"{SLATE_BIN.parent}:{env['PATH']}"
@@ -375,7 +375,7 @@ def _already_done(arm: spec.Arm, trial: int) -> bool:
     if not sidecar.exists():
         return False
     try:
-        record = json.loads(sidecar.read_text())
+        record = json.loads(sidecar.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return False
     if record.get("task_revision", 1) != spec.TASK_REVISION:
@@ -410,7 +410,7 @@ def _read_transcript(path: Path) -> str:
         import gzip
         with gzip.open(path, "rt", errors="ignore") as fh:
             return fh.read()
-    return path.read_text(errors="ignore")
+    return path.read_text(encoding="utf-8", errors="ignore")
 
 
 def parse_transcript(path: Path, m: spec.Metrics) -> None:
@@ -674,18 +674,18 @@ def measure_repair(root: Path, arm: spec.Arm, m: spec.Metrics) -> None:
     stdin_log = root / spec.HOOK_LOG_IN
     if stdin_log.exists():
         m.stop_hook_fired = sum(
-            1 for line in stdin_log.read_text(errors="ignore").splitlines()
+            1 for line in stdin_log.read_text(encoding="utf-8", errors="ignore").splitlines()
             if '"Stop"' in line)
     stdout_log = root / spec.HOOK_LOG_OUT
     if stdout_log.exists():
         m.stop_hook_injected = sum(
-            1 for line in stdout_log.read_text(errors="ignore").splitlines()
+            1 for line in stdout_log.read_text(encoding="utf-8", errors="ignore").splitlines()
             if spec.STOP_MARKER in line)
 
     # Keep the repaired prose as evidence before anything is restored.
     doc = root / ".slate" / "read-next.md"
     if doc.exists():
-        (RUNS / f"{arm.name}-{trial_tag(m)}.read-next.md").write_text(doc.read_text())
+        (RUNS / f"{arm.name}-{trial_tag(m)}.read-next.md").write_text(doc.read_text(encoding="utf-8"))
 
     m.suspect_claims_end = repair_count(root)
     git(root, "checkout", "--", ".slate", check=False)
@@ -717,7 +717,7 @@ def run_trial(arm: spec.Arm, trial: int, keep: bool) -> spec.Metrics:
     grade(root, metrics)
 
     (RUNS / f"{arm.name}-{trial}.json").write_text(
-        json.dumps(asdict(metrics), indent=2))
+        json.dumps(asdict(metrics), indent=2), encoding="utf-8")
     tail = (f"| target@{metrics.found_target_after} "
             f"| decoys={metrics.decoy_hits} corr={metrics.correction_cycles}")
     if arm.experiment == "E3":
@@ -775,7 +775,7 @@ def main() -> int:
             sidecar = RUNS / f"{stem}.json"
             if not sidecar.exists():
                 continue
-            old = json.loads(sidecar.read_text())
+            old = json.loads(sidecar.read_text(encoding="utf-8"))
             # Only reparse records from the *current* revision. Parsing uses
             # revision-specific constants — DECOY_SYMBOLS, GROUND_TRUTH_FILES,
             # ALLOWED_EDIT_FILES — so re-deriving an older record with today's
@@ -818,7 +818,7 @@ def main() -> int:
             # exists to prevent, done by the tool that is supposed to protect
             # it. Absent means revision 1, from before the field existed.
             metrics.task_revision = old.get("task_revision", 1)
-            sidecar.write_text(json.dumps(asdict(metrics), indent=2))
+            sidecar.write_text(json.dumps(asdict(metrics), indent=2), encoding="utf-8")
             print(f"reparsed {sidecar.name}")
         return 0
 

@@ -26,7 +26,7 @@ def test_content_edit_that_keeps_facts_stays_fresh(repo: Path) -> None:
     # Editing a function body doesn't move a module: the regenerated
     # auto-block is identical, so the doc provably still checks out.
     init_layer(repo)
-    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
     r = report_for(repo, "modules")
     assert r.status == FRESH
     assert r.content_verified
@@ -36,7 +36,7 @@ def test_content_edit_that_keeps_facts_stays_fresh(repo: Path) -> None:
 def test_uncommitted_new_file_marks_stale(repo: Path) -> None:
     # A new file changes the module map's file counts — genuinely stale.
     init_layer(repo)
-    (repo / "demo" / "widget.py").write_text("x = 1\n")
+    (repo / "demo" / "widget.py").write_text("x = 1\n", encoding="utf-8")
     r = report_for(repo, "modules")
     assert r.status == STALE
     assert r.changed_watched == ["demo/widget.py"]
@@ -47,16 +47,16 @@ def test_human_claim_about_changed_path_marks_stale(repo: Path) -> None:
     # references the changed path, content verification must not apply.
     init_layer(repo)
     path = repo / ".slate" / "modules.md"
-    path.write_text(path.read_text() + "\n`demo/engine.py` is the hot path.\n")
+    path.write_text(path.read_text(encoding="utf-8") + "\n`demo/engine.py` is the hot path.\n")
     commit_all(repo, "note the hot path")
-    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
     r = report_for(repo, "modules")
     assert r.status == STALE
 
 
 def test_committed_watched_change_marks_stale(repo: Path) -> None:
     init_layer(repo)
-    (repo / "demo" / "new_module.py").write_text("x = 1\n")
+    (repo / "demo" / "new_module.py").write_text("x = 1\n", encoding="utf-8")
     commit_all(repo, "add module")
     assert report_for(repo, "modules").status == STALE
     assert report_for(repo, "architecture").status == STALE
@@ -64,7 +64,7 @@ def test_committed_watched_change_marks_stale(repo: Path) -> None:
 
 def test_unwatched_change_stays_fresh(repo: Path) -> None:
     init_layer(repo)
-    (repo / "README.md").write_text("# Demo Project\n\nUpdated prose.\n")
+    (repo / "README.md").write_text("# Demo Project\n\nUpdated prose.\n", encoding="utf-8")
     commit_all(repo, "readme only")
     assert report_for(repo, "modules").status == FRESH
     assert report_for(repo, "workflows").status == FRESH
@@ -73,13 +73,13 @@ def test_unwatched_change_stays_fresh(repo: Path) -> None:
 def test_editing_the_doc_itself_does_not_mark_it_stale(repo: Path) -> None:
     init_layer(repo)
     read_next = repo / ".slate" / "read-next.md"
-    read_next.write_text(read_next.read_text() + "\n- working on the parser\n")
+    read_next.write_text(read_next.read_text(encoding="utf-8") + "\n- working on the parser\n")
     assert report_for(repo, "read-next").status == FRESH
 
 
 def test_sync_clears_staleness(repo: Path) -> None:
     init_layer(repo)
-    (repo / "demo" / "new_module.py").write_text("x = 1\n")
+    (repo / "demo" / "new_module.py").write_text("x = 1\n", encoding="utf-8")
     commit_all(repo, "add module")
     assert report_for(repo, "modules").status == STALE
 
@@ -89,7 +89,7 @@ def test_sync_clears_staleness(repo: Path) -> None:
     commit_all(repo, "sync context")
     assert report_for(repo, "modules").status == FRESH
     # And the regenerated module map actually mentions the new file's module.
-    assert "demo/" in context.spec_by_name("modules").path(repo).read_text()
+    assert "demo/" in context.spec_by_name("modules").path(repo).read_text(encoding="utf-8")
 
 
 def setup_symbol_claim(repo: Path) -> None:
@@ -101,11 +101,11 @@ def setup_symbol_claim(repo: Path) -> None:
     """
     (repo / "demo" / "engine.py").write_text(
         "def run():\n    return 42\n\n\ndef helper():\n    return 1\n"
-    )
+    , encoding="utf-8")
     commit_all(repo, "engine with two functions")
     init_layer(repo)
     path = repo / ".slate" / "modules.md"
-    path.write_text(path.read_text() + "\nThe `engine.run` entry point drives the loop.\n")
+    path.write_text(path.read_text(encoding="utf-8") + "\nThe `engine.run` entry point drives the loop.\n")
     commit_all(repo, "claim engine.run by symbol")
 
 
@@ -116,7 +116,7 @@ def test_change_to_referenced_symbol_marks_stale(repo: Path) -> None:
     setup_symbol_claim(repo)
     (repo / "demo" / "engine.py").write_text(
         "def run():\n    return 99\n\n\ndef helper():\n    return 1\n"
-    )
+    , encoding="utf-8")
     r = report_for(repo, "modules")
     assert r.status == STALE
 
@@ -127,7 +127,7 @@ def test_change_to_unreferenced_symbol_stays_fresh(repo: Path) -> None:
     setup_symbol_claim(repo)
     (repo / "demo" / "engine.py").write_text(
         "def run():\n    return 42\n\n\ndef helper():\n    return 2\n"
-    )
+    , encoding="utf-8")
     r = report_for(repo, "modules")
     assert r.status == FRESH
     assert r.content_verified
@@ -140,7 +140,7 @@ def test_docstring_only_edit_to_referenced_file_stays_fresh(repo: Path) -> None:
     setup_symbol_claim(repo)
     (repo / "demo" / "engine.py").write_text(
         '"""Engine internals."""\n\n\ndef run():\n    return 42\n\n\ndef helper():\n    return 1\n'
-    )
+    , encoding="utf-8")
     r = report_for(repo, "modules")
     assert r.status == FRESH
     assert r.content_verified
@@ -165,12 +165,12 @@ def setup_two_symbol_claims(repo: Path) -> None:
     """
     (repo / "demo" / "engine.py").write_text(
         "def run():\n    return 42\n\n\ndef helper():\n    return 1\n"
-    )
+    , encoding="utf-8")
     commit_all(repo, "engine with two functions")
     init_layer(repo)
     path = repo / ".slate" / "modules.md"
     path.write_text(
-        path.read_text()
+        path.read_text(encoding="utf-8")
         + "\n## Claims\n\n"
         + "- The `engine.run` function drives the loop.\n"
         + "- The `engine.helper` function is a pure helper.\n"
@@ -186,7 +186,7 @@ def test_only_the_referencing_claim_goes_stale(repo: Path) -> None:
     setup_two_symbol_claims(repo)
     (repo / "demo" / "engine.py").write_text(
         "def run():\n    return 99\n\n\ndef helper():\n    return 1\n"
-    )
+    , encoding="utf-8")
     r = report_for(repo, "modules")
     hc = human_claims(r)
     stale = [c for c in hc if c.status == STALE]
@@ -200,7 +200,7 @@ def test_one_suspect_claim_keeps_doc_out_of_fresh(repo: Path) -> None:
     setup_two_symbol_claims(repo)
     (repo / "demo" / "engine.py").write_text(
         "def run():\n    return 99\n\n\ndef helper():\n    return 1\n"
-    )
+    , encoding="utf-8")
     r = report_for(repo, "modules")
     assert r.status == STALE
     assert len(r.suspect_claims) == 1
@@ -211,7 +211,7 @@ def test_all_claims_fresh_rolls_up_to_fresh(repo: Path) -> None:
     # Touch neither referenced symbol: add an unrelated top-level name.
     (repo / "demo" / "engine.py").write_text(
         "def run():\n    return 42\n\n\ndef helper():\n    return 1\n\n\nUNUSED = 0\n"
-    )
+    , encoding="utf-8")
     r = report_for(repo, "modules")
     # engine.py changed but no claim's symbol moved → every claim fresh → fresh.
     assert r.status == FRESH
@@ -236,7 +236,7 @@ def test_generated_fact_change_is_a_stale_claim(repo: Path) -> None:
     # Adding a file moves the module map: the specific generated line is a
     # stale claim, attributed at the line level.
     setup_two_symbol_claims(repo)
-    (repo / "demo" / "widget.py").write_text("x = 1\n")
+    (repo / "demo" / "widget.py").write_text("x = 1\n", encoding="utf-8")
     r = report_for(repo, "modules")
     assert r.status == STALE
     gen_stale = [c for c in r.claims if c.kind == "generated" and c.status == STALE]
@@ -248,8 +248,8 @@ def test_generated_fact_change_is_a_stale_claim(repo: Path) -> None:
 def orphan_anchor(repo: Path, doc: str) -> Path:
     """Point a doc's sync anchor at a commit that doesn't exist (squash/rebase)."""
     path = repo / ".slate" / f"{doc}.md" if doc != "agents" else repo / "AGENTS.md"
-    text = path.read_text().replace("slate_synced_commit: ", "slate_synced_commit: deadbee")
-    path.write_text(text)
+    text = path.read_text(encoding="utf-8").replace("slate_synced_commit: ", "slate_synced_commit: deadbee")
+    path.write_text(text, encoding="utf-8")
     return path
 
 
@@ -267,7 +267,7 @@ def test_orphaned_anchor_recovers_via_digest(repo: Path) -> None:
 def test_orphaned_anchor_with_changed_content_is_stale(repo: Path) -> None:
     init_layer(repo)
     orphan_anchor(repo, "modules")
-    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
     r = report_for(repo, "modules")
     assert r.status == STALE
     assert "demo/engine.py" in r.changed_watched  # working-tree evidence
@@ -275,7 +275,7 @@ def test_orphaned_anchor_with_changed_content_is_stale(repo: Path) -> None:
 
 def test_orphaned_anchor_with_committed_change_is_stale(repo: Path) -> None:
     init_layer(repo)
-    (repo / "demo" / "widget.py").write_text("x = 1\n")
+    (repo / "demo" / "widget.py").write_text("x = 1\n", encoding="utf-8")
     commit_all(repo, "add widget")
     orphan_anchor(repo, "modules")
     r = report_for(repo, "modules")
@@ -288,10 +288,10 @@ def test_orphaned_anchor_without_digest_needs_verification(repo: Path) -> None:
     init_layer(repo)
     path = orphan_anchor(repo, "modules")
     lines = [
-        line for line in path.read_text().splitlines()
+        line for line in path.read_text(encoding="utf-8").splitlines()
         if not line.startswith("slate_synced_digest")
     ]
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     r = report_for(repo, "modules")
     assert r.status == NEEDS_VERIFICATION
     assert "deadbee" in r.reason
@@ -311,7 +311,7 @@ def test_digest_ignores_context_doc_edits(repo: Path) -> None:
     init_layer(repo)
     orphan_anchor(repo, "agents")
     read_next = repo / ".slate" / "read-next.md"
-    read_next.write_text(read_next.read_text() + "\n- working on the parser\n")
+    read_next.write_text(read_next.read_text(encoding="utf-8") + "\n- working on the parser\n")
     assert report_for(repo, "agents").status == FRESH
 
 
@@ -319,10 +319,10 @@ def test_no_anchor_needs_verification(repo: Path) -> None:
     init_layer(repo)
     path = repo / ".slate" / "decisions.md"
     lines = [
-        line for line in path.read_text().splitlines()
+        line for line in path.read_text(encoding="utf-8").splitlines()
         if not line.startswith("slate_synced_commit")
     ]
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     assert report_for(repo, "decisions").status == NEEDS_VERIFICATION
 
 
@@ -354,7 +354,7 @@ def test_untracked_directory_files_reported_individually(repo: Path) -> None:
     init_layer(repo)
     new_dir = repo / "demo" / "sub"
     new_dir.mkdir()
-    (new_dir / "widget.py").write_text("x = 1\n")
+    (new_dir / "widget.py").write_text("x = 1\n", encoding="utf-8")
     r = report_for(repo, "modules")
     assert r.status == STALE
     assert r.changed_watched == ["demo/sub/widget.py"]
@@ -365,7 +365,7 @@ def test_untracked_directory_files_reported_individually(repo: Path) -> None:
 
 def _claim(repo: Path, text: str) -> None:
     read_next = repo / ".slate" / "read-next.md"
-    read_next.write_text(read_next.read_text() + f"\n{text}\n")
+    read_next.write_text(read_next.read_text(encoding="utf-8") + f"\n{text}\n")
 
 
 def test_prose_landing_with_the_code_is_not_stale(repo: Path) -> None:
@@ -373,7 +373,7 @@ def test_prose_landing_with_the_code_is_not_stale(repo: Path) -> None:
     # the same commit as the file it describes, flagged only because the doc's
     # anchor predates that commit.
     init_layer(repo)
-    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
     _claim(repo, "The engine lives in `demo/engine.py` and returns 43.")
     commit_all(repo, "change engine and say so in the same commit")
     r = report_for(repo, "read-next")
@@ -385,7 +385,7 @@ def test_prose_older_than_the_code_change_stays_stale(repo: Path) -> None:
     init_layer(repo)
     _claim(repo, "The engine lives in `demo/engine.py` and returns 42.")
     commit_all(repo, "describe the engine")
-    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
     commit_all(repo, "change the engine, leaving the prose behind")
     r = report_for(repo, "read-next")
     assert r.status == STALE, r.reason
@@ -397,7 +397,7 @@ def test_uncommitted_prose_supersedes_committed_code(repo: Path) -> None:
     # Working-tree prose is newer than any commit; blame reports the all-zero
     # SHA and the claim must narrow to fresh rather than fail closed.
     init_layer(repo)
-    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
     commit_all(repo, "change the engine")
     _claim(repo, "The engine lives in `demo/engine.py` and returns 43.")
     r = report_for(repo, "read-next")
@@ -410,7 +410,7 @@ def test_narrowing_declines_when_blame_cannot_answer(repo: Path) -> None:
     init_layer(repo)
     _claim(repo, "The engine lives in `demo/engine.py` and returns 42.")
     commit_all(repo, "describe the engine")
-    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
     commit_all(repo, "change the engine")
 
     doc = context.load(repo, context.spec_by_name("read-next"))
@@ -425,7 +425,7 @@ def test_symbol_prose_landing_with_the_code_is_not_stale(repo: Path) -> None:
     # The same narrowing reached through symbol resolution rather than a path
     # ref: `engine.run` moved, but the sentence describing it moved with it.
     init_layer(repo)
-    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
     _claim(repo, "`engine.run` now returns 43.")
     commit_all(repo, "change run and describe it in the same commit")
     r = report_for(repo, "read-next")
@@ -436,7 +436,7 @@ def test_symbol_prose_older_than_the_code_stays_stale(repo: Path) -> None:
     init_layer(repo)
     _claim(repo, "`engine.run` returns 42.")
     commit_all(repo, "describe run")
-    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n")
+    (repo / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
     commit_all(repo, "change run, leaving the prose behind")
     r = report_for(repo, "read-next")
     assert r.status == STALE, r.reason
@@ -450,7 +450,7 @@ def test_unresolvable_symbol_needs_prose_newer_than_every_change(repo: Path) -> 
     init_layer(repo)
     _claim(repo, "`Mystery.method` is the entry point.")
     commit_all(repo, "describe something unresolvable")
-    (repo / "demo" / "engine.py").write_text("def method():\n    return 1\n")
+    (repo / "demo" / "engine.py").write_text("def method():\n    return 1\n", encoding="utf-8")
     commit_all(repo, "move a same-named symbol elsewhere")
     r = report_for(repo, "read-next")
     assert r.status == STALE, r.reason
@@ -468,15 +468,15 @@ def test_package_symbol_with_a_same_named_decoy_is_not_falsely_fresh(repo: Path)
     and the claim came back fresh while the code it described had moved.
     """
     (repo / "pkg").mkdir()
-    (repo / "pkg" / "__init__.py").write_text("def request():\n    return 1\n")
+    (repo / "pkg" / "__init__.py").write_text("def request():\n    return 1\n", encoding="utf-8")
     (repo / "fixtures").mkdir()
-    (repo / "fixtures" / "pkg.py").write_text("DECOY = 1\n")
+    (repo / "fixtures" / "pkg.py").write_text("DECOY = 1\n", encoding="utf-8")
     commit_all(repo, "a package, and a decoy sharing its name")
     init_layer(repo)
     _claim(repo, "The `pkg.request` helper returns 1.")
     commit_all(repo, "describe it")
 
-    (repo / "pkg" / "__init__.py").write_text("def request():\n    return 999\n")
+    (repo / "pkg" / "__init__.py").write_text("def request():\n    return 999\n", encoding="utf-8")
     commit_all(repo, "move pkg.request")
     r = report_for(repo, "read-next")
     assert r.status == STALE, r.reason
@@ -487,13 +487,13 @@ def test_dotted_ref_resolves_through_a_src_layout(repo: Path) -> None:
     # `app.views.View` names the module `app.views`, which lives at
     # src/app/views.py — the near-universal packaging layout.
     (repo / "src" / "app").mkdir(parents=True)
-    (repo / "src" / "app" / "views.py").write_text("class View:\n    pass\n")
+    (repo / "src" / "app" / "views.py").write_text("class View:\n    pass\n", encoding="utf-8")
     commit_all(repo, "add a src layout")
     init_layer(repo)
     _claim(repo, "See `app.views.View` for the base class.")
     commit_all(repo, "describe it")
 
-    (repo / "src" / "app" / "views.py").write_text("class View:\n    x = 1\n")
+    (repo / "src" / "app" / "views.py").write_text("class View:\n    x = 1\n", encoding="utf-8")
     commit_all(repo, "move View")
     assert report_for(repo, "read-next").status == STALE
 
@@ -502,15 +502,15 @@ def test_module_resolution_does_not_flag_unrelated_changes(repo: Path) -> None:
     # The other direction: broader matching must not turn every edit into a
     # stale claim, or the signal is worth nothing.
     (repo / "pkg").mkdir()
-    (repo / "pkg" / "__init__.py").write_text("def request():\n    return 1\n")
+    (repo / "pkg" / "__init__.py").write_text("def request():\n    return 1\n", encoding="utf-8")
     (repo / "other").mkdir()
-    (repo / "other" / "thing.py").write_text("A = 1\n")
+    (repo / "other" / "thing.py").write_text("A = 1\n", encoding="utf-8")
     commit_all(repo, "two unrelated modules")
     init_layer(repo)
     _claim(repo, "The `pkg.request` helper returns 1.")
     commit_all(repo, "describe it")
 
-    (repo / "other" / "thing.py").write_text("A = 2\n")
+    (repo / "other" / "thing.py").write_text("A = 2\n", encoding="utf-8")
     commit_all(repo, "change something else entirely")
     assert report_for(repo, "read-next").status == FRESH
 
@@ -532,7 +532,7 @@ def _external_ref_repo(repo: Path) -> None:
     """A repo with its own `logging` module, as Flask has, plus a doc claim
     that means the *standard library* `logging.Formatter`."""
     (repo / "app").mkdir()
-    (repo / "app" / "logging.py").write_text("def setup():\n    return 1\n")
+    (repo / "app" / "logging.py").write_text("def setup():\n    return 1\n", encoding="utf-8")
     commit_all(repo, "a local module sharing a stdlib name")
     init_layer(repo)
     _claim(repo, "Subclass `logging.Formatter` to add fields.")
@@ -544,7 +544,7 @@ def test_stdlib_reference_survives_an_unrelated_local_change(repo: Path) -> None
     # resolution sees that the local module never defined `Formatter`, so a
     # change to it cannot invalidate a claim about the standard library.
     _external_ref_repo(repo)
-    (repo / "app" / "logging.py").write_text("def setup():\n    return 2\n")
+    (repo / "app" / "logging.py").write_text("def setup():\n    return 2\n", encoding="utf-8")
     commit_all(repo, "change the local module")
     assert report_for(repo, "read-next").status == FRESH
 
@@ -568,7 +568,7 @@ def test_opaque_local_module_keeps_a_stdlib_claim_suspect(repo: Path) -> None:
 def test_local_module_shadowing_a_stdlib_name_is_flagged(repo: Path) -> None:
     # Genuinely ambiguous — the doc could mean either — so it is flagged.
     _external_ref_repo(repo)
-    (repo / "app" / "logging.py").write_text("class Formatter:\n    pass\n")
+    (repo / "app" / "logging.py").write_text("class Formatter:\n    pass\n", encoding="utf-8")
     commit_all(repo, "define our own Formatter")
     r = report_for(repo, "read-next")
     assert r.status == STALE

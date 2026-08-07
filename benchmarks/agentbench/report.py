@@ -35,7 +35,7 @@ SKIPPED: list[dict] = []
 def load() -> dict[str, list[dict]]:
     by_arm: dict[str, list[dict]] = {}
     for path in sorted(RUNS.glob("*.json")):
-        record = json.loads(path.read_text())
+        record = json.loads(path.read_text(encoding="utf-8"))
         # Never average two different experiments. A record from an older task
         # revision answers a different question, and `runs/` mixes them freely
         # because a re-run overwrites one arm's files and leaves the rest.

@@ -58,7 +58,7 @@ from .context import DOC_SPECS, FRESH, NEEDS_VERIFICATION, STALE
 STATUS_ICONS = {FRESH: "●", STALE: "○", NEEDS_VERIFICATION: "◐"}
 
 
-def _survive_a_narrow_console() -> None:
+def survive_a_narrow_console() -> None:
     """Never crash because the terminal cannot spell `●`.
 
     Slate's output is full of glyphs — status dots, arrows, verify bars — that
@@ -79,7 +79,7 @@ def _survive_a_narrow_console() -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    _survive_a_narrow_console()
+    survive_a_narrow_console()
     parser = _build_parser()
     args = parser.parse_args(argv)
     if not args.command:

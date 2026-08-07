@@ -1,0 +1,20 @@
+{
+  "item": "c02-send-from-directory",
+  "arm": "accurate",
+  "commit": "6c44dd4b",
+  "edited": false,
+  "declined": true,
+  "kept_refs": true,
+  "states_new_fact": false,
+  "drops_old_fact": false,
+  "refs_resolved": 1,
+  "refs_total": 1,
+  "fresh_after": false,
+  "before": "`flask.helpers.send_from_directory` resolves `path` beneath `directory` and\nraises a 404 `NotFound` when the resolved file does not exist.",
+  "after": "`flask.helpers.send_from_directory` resolves `path` beneath `directory` and\nraises a 404 `NotFound` when the resolved file does not exist.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 3663.1,
+  "said": "The code's behavior hasn't changed \u2014 `send_from_directory` still uses `safe_join` to resolve `path` beneath `directory` and raises 404 `NotFound` when the resolved file doesn't exist (helpers.py:541-547). The docstring diff only adds a security caveat that `directory` must not be client-supplied; it doesn't alter the described resolve/404 behavior, so the passage remains accurate.\n\nUNCHANGED",
+  "scope": "symbol"
+}

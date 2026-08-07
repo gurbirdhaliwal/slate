@@ -1,0 +1,20 @@
+{
+  "item": "c06-sansio-app-init",
+  "arm": "accurate",
+  "commit": "c7da8c2a",
+  "edited": false,
+  "declined": true,
+  "kept_refs": true,
+  "states_new_fact": false,
+  "drops_old_fact": false,
+  "refs_resolved": 2,
+  "refs_total": 2,
+  "fresh_after": false,
+  "before": "`flask.sansio.app.App` takes an `import_name` and passes the static and\ntemplate configuration through to `flask.sansio.scaffold.Scaffold`.",
+  "after": "`flask.sansio.app.App` takes an `import_name` and passes the static and\ntemplate configuration through to `flask.sansio.scaffold.Scaffold`.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 8.0,
+  "said": "The change is only a return type annotation (`-> None`), and the constructor still takes `import_name` and passes `static_folder`, `static_url_path`, `template_folder`, `root_path` through to `super().__init__()` (i.e., `Scaffold`). The passage's substance is unaffected.\n\nUNCHANGED",
+  "scope": "symbol"
+}

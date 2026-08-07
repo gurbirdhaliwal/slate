@@ -83,7 +83,11 @@ def test_internal_failure_is_silent(layered: Path, monkeypatch) -> None:
 
 
 def test_unknown_event_is_ignored(layered: Path) -> None:
-    assert claudehook.build_output(layered, payload(hook_event_name="Stop")) is None
+    # Not `Stop` any more — that became a handled event in Phase 3, and this
+    # assertion would have kept passing for the wrong reason (repair is off by
+    # default, so Stop is silent anyway).
+    assert claudehook.build_output(layered, payload(hook_event_name="PreCompact")) is None
+    assert claudehook.build_output(layered, payload(hook_event_name="SessionEnd")) is None
 
 
 # --- SessionStart -----------------------------------------------------------
@@ -98,7 +102,7 @@ def test_session_start_reports_all_fresh(layered: Path) -> None:
 
 
 def test_session_start_names_the_stale_doc(layered: Path) -> None:
-    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n")
+    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n", encoding="utf-8")
     commit_all(layered, "change watched code")
 
     text = context_text(claudehook.build_output(
@@ -110,7 +114,7 @@ def test_session_start_names_the_stale_doc(layered: Path) -> None:
 def test_session_start_never_vouches_for_a_stale_doc(layered: Path) -> None:
     """The invariant that would destroy the product: telling the agent a doc
     is safe when its watched code has moved."""
-    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n")
+    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n", encoding="utf-8")
     commit_all(layered, "change watched code")
 
     reports = freshness.evaluate_all(layered)
@@ -133,7 +137,7 @@ def test_pre_tool_use_is_silent_when_everything_is_fresh(layered: Path) -> None:
 
 
 def test_pre_tool_use_warns_on_a_covered_file(layered: Path) -> None:
-    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n")
+    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n", encoding="utf-8")
     commit_all(layered, "change watched code")
 
     text = context_text(claudehook.build_output(layered, pre_tool(layered, "demo/engine.py")))
@@ -142,7 +146,7 @@ def test_pre_tool_use_warns_on_a_covered_file(layered: Path) -> None:
 
 
 def test_pre_tool_use_is_silent_on_an_uncovered_file(layered: Path) -> None:
-    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n")
+    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n", encoding="utf-8")
     commit_all(layered, "change watched code")
 
     # README is not under any doc's watch globs, so there is nothing to warn
@@ -152,7 +156,7 @@ def test_pre_tool_use_is_silent_on_an_uncovered_file(layered: Path) -> None:
 
 
 def test_pre_tool_use_ignores_non_file_tools(layered: Path) -> None:
-    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n")
+    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n", encoding="utf-8")
     commit_all(layered, "change watched code")
 
     out = claudehook.build_output(layered, payload(
@@ -175,7 +179,7 @@ def test_pre_tool_use_ignores_paths_outside_the_repo(layered: Path) -> None:
 def test_pre_tool_use_is_silent_on_the_context_layer_itself(layered: Path) -> None:
     """Editing a stale doc is the agent *healing* it — warning would be noise
     at exactly the moment the agent is doing the right thing."""
-    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n")
+    (layered / "demo" / "engine.py").write_text("def run():\n    return 99\n", encoding="utf-8")
     commit_all(layered, "change watched code")
 
     for rel in sorted(context.CONTEXT_DOC_PATHS):
@@ -199,7 +203,7 @@ def test_human_owned_docs_never_match_a_file(layered: Path) -> None:
 # --- settings.json wiring ---------------------------------------------------
 
 def settings(repo: Path) -> dict:
-    return json.loads(claudehook.settings_path(repo).read_text())
+    return json.loads(claudehook.settings_path(repo).read_text(encoding="utf-8"))
 
 
 def test_install_writes_both_events(repo: Path) -> None:
@@ -242,7 +246,7 @@ def test_install_preserves_other_tools_hooks(repo: Path) -> None:
                 {"matcher": "Bash", "hooks": [{"type": "command", "command": "other-tool"}]}
             ]
         },
-    }))
+    }), encoding="utf-8")
     claudehook.install(repo)
 
     config = settings(repo)
@@ -264,7 +268,7 @@ def test_uninstall_removes_only_ours(repo: Path) -> None:
                 {"matcher": "Bash", "hooks": [{"type": "command", "command": "other-tool"}]}
             ]
         }
-    }))
+    }), encoding="utf-8")
     claudehook.install(repo)
     assert claudehook.uninstall(repo) is True
 
@@ -284,24 +288,24 @@ def test_installed_events_reflects_state(repo: Path) -> None:
     assert claudehook.installed_events(repo) == []
     claudehook.install(repo)
     assert set(claudehook.installed_events(repo)) == {
-        claudehook.SESSION_START, claudehook.PRE_TOOL_USE
+        claudehook.SESSION_START, claudehook.PRE_TOOL_USE, claudehook.STOP
     }
 
 
 def test_malformed_settings_file_is_reported_not_clobbered(repo: Path) -> None:
     path = claudehook.settings_path(repo)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("{ this is not json")
+    path.write_text("{ this is not json", encoding="utf-8")
     with pytest.raises(claudehook.HookConfigError):
         claudehook.install(repo)
-    assert path.read_text() == "{ this is not json"
+    assert path.read_text(encoding="utf-8") == "{ this is not json"
 
 
 def test_installed_events_survives_a_malformed_settings_file(repo: Path) -> None:
     # Status must never raise — it is called from `slate agent status`.
     path = claudehook.settings_path(repo)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("{ this is not json")
+    path.write_text("{ this is not json", encoding="utf-8")
     assert claudehook.installed_events(repo) == []
 
 
@@ -342,8 +346,8 @@ def coupled(layered: Path, monkeypatch) -> Path:
     from slate import cochange
     monkeypatch.setenv(cochange.ENABLED_ENV, "1")
     for i in range(5):
-        (layered / "demo" / "engine.py").write_text(f"def run():\n    return {i}\n")
-        (layered / "demo" / "cli.py").write_text(f"def main():\n    return {i}\n")
+        (layered / "demo" / "engine.py").write_text(f"def run():\n    return {i}\n", encoding="utf-8")
+        (layered / "demo" / "cli.py").write_text(f"def main():\n    return {i}\n", encoding="utf-8")
         commit_all(layered, f"paired-{i}")
     return layered
 
@@ -357,8 +361,8 @@ def test_cochange_is_off_without_the_opt_in(layered: Path, monkeypatch) -> None:
     from slate import cochange
     monkeypatch.delenv(cochange.ENABLED_ENV, raising=False)
     for i in range(5):
-        (layered / "demo" / "engine.py").write_text(f"def run():\n    return {i}\n")
-        (layered / "demo" / "cli.py").write_text(f"def main():\n    return {i}\n")
+        (layered / "demo" / "engine.py").write_text(f"def run():\n    return {i}\n", encoding="utf-8")
+        (layered / "demo" / "cli.py").write_text(f"def main():\n    return {i}\n", encoding="utf-8")
         commit_all(layered, f"paired-{i}")
     out = claudehook.build_output(layered, edit(layered, "demo/engine.py"))
     text = "" if out is None else context_text(out)
@@ -389,7 +393,7 @@ def test_a_new_session_hears_it_again(coupled: Path) -> None:
 
 
 def test_uncoupled_file_stays_silent(coupled: Path) -> None:
-    (coupled / "demo" / "lonely.py").write_text("x = 1\n")
+    (coupled / "demo" / "lonely.py").write_text("x = 1\n", encoding="utf-8")
     commit_all(coupled, "lonely")
     out = claudehook.build_output(coupled, edit(coupled, "demo/lonely.py"))
     text = "" if out is None else context_text(out)
@@ -420,3 +424,96 @@ def test_cochange_failure_does_not_break_the_hook(coupled: Path, monkeypatch) ->
     monkeypatch.setattr(cochange, "partners", boom)
     raw = claudehook.run(coupled, json.dumps(edit(coupled, "demo/engine.py")))
     assert raw is None or "changed together" not in raw
+
+
+# --------------------------------------------------------------------------
+# Stop: the session-end repair prompt (Phase 3)
+#
+# It rides `Stop` rather than `SessionEnd` because `SessionEnd` cannot inject
+# anything — no decision control, no `additionalContext`, it fires after the
+# session is over. `Stop` fires when the model finishes a turn and continues
+# the conversation, which is the only place an end-of-session job can be acted
+# on. That continuation is also why the loop guards below are not optional.
+
+
+def stop(session_id: str = "s1", **kwargs) -> dict:
+    return payload(hook_event_name="Stop", session_id=session_id, **kwargs)
+
+
+@pytest.fixture
+def suspect(layered: Path) -> Path:
+    """A layer with one hand-written claim the code no longer vouches for."""
+    read_next = layered / ".slate" / "read-next.md"
+    read_next.write_text(read_next.read_text(encoding="utf-8") + "\n`engine.run` returns 42.\n", encoding="utf-8")
+    commit_all(layered, "describe run")
+    (layered / "demo" / "engine.py").write_text("def run():\n    return 43\n", encoding="utf-8")
+    commit_all(layered, "change run")
+    return layered
+
+
+def enable_repair(repo: Path) -> None:
+    from slate import agentcfg
+    agentcfg.set_access(repo, agentcfg.FULL)
+    agentcfg.set_repair(repo, agentcfg.REPAIR_ON)
+
+
+def test_stop_is_silent_by_default(suspect: Path) -> None:
+    # There is a real repair task here; the switch is what keeps it quiet.
+    assert claudehook.build_output(suspect, stop()) is None
+
+
+def test_stop_needs_both_switches(suspect: Path) -> None:
+    from slate import agentcfg
+    agentcfg.set_repair(suspect, agentcfg.REPAIR_ON)  # but access is still read
+    assert claudehook.build_output(suspect, stop()) is None
+    agentcfg.set_access(suspect, agentcfg.FULL)
+    assert claudehook.build_output(suspect, stop()) is not None
+
+
+def test_stop_names_the_suspect_claim(suspect: Path) -> None:
+    enable_repair(suspect)
+    out = claudehook.build_output(suspect, stop())
+    specific = out["hookSpecificOutput"]
+    assert specific["hookEventName"] == claudehook.STOP
+    text = specific["additionalContext"]
+    assert "engine.run" in text
+    # It must offer, not command: a bare imperative injected by a hook reads as
+    # a prompt-injection attempt, and a canary against a real session had one
+    # identified and refused.
+    assert "correct outcome" in text
+
+
+def test_stop_stays_silent_when_the_layer_is_clean(layered: Path) -> None:
+    enable_repair(layered)
+    assert claudehook.build_output(layered, stop()) is None
+
+
+def test_stop_hook_active_ends_the_loop(suspect: Path) -> None:
+    # `additionalContext` on Stop continues the conversation, so a hook that
+    # speaks unconditionally never lets the session end.
+    enable_repair(suspect)
+    assert claudehook.build_output(suspect, stop(stop_hook_active=True)) is None
+
+
+def test_stop_announces_once_per_session(suspect: Path) -> None:
+    # The second brake, independent of the client: if a future Claude Code
+    # drops `stop_hook_active`, this still bounds it to one announcement.
+    enable_repair(suspect)
+    assert claudehook.build_output(suspect, stop("abc")) is not None
+    assert claudehook.build_output(suspect, stop("abc")) is None
+    assert claudehook.build_output(suspect, stop("def")) is not None
+
+
+def test_stop_never_blocks(suspect: Path) -> None:
+    # A hook that blocks the stop is a hook that can stop a session ending,
+    # which is the landmine this module is built around.
+    enable_repair(suspect)
+    out = claudehook.build_output(suspect, stop())
+    assert "decision" not in out
+    assert set(out) == {"hookSpecificOutput"}
+
+
+def test_stop_failure_is_silence(suspect: Path) -> None:
+    enable_repair(suspect)
+    assert claudehook.run(suspect, '{"hook_event_name": "Stop"') is None
+    assert claudehook.run(suspect, "not json at all") is None

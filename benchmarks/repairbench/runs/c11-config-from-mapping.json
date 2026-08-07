@@ -1,0 +1,20 @@
+{
+  "item": "c11-config-from-mapping",
+  "arm": "accurate",
+  "commit": "746455d1",
+  "edited": false,
+  "declined": true,
+  "kept_refs": true,
+  "states_new_fact": false,
+  "drops_old_fact": false,
+  "refs_resolved": 0,
+  "refs_total": 1,
+  "fresh_after": false,
+  "before": "`flask.config.Config.from_mapping` updates the config from a mapping, ignoring\nany key that is not upper-case, and always returns `True`.",
+  "after": "`flask.config.Config.from_mapping` updates the config from a mapping, ignoring\nany key that is not upper-case, and always returns `True`.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 9.9,
+  "said": "The passage still accurately describes the code \u2014 the referenced commit only reformatted the docstring (line-wrapping, added blank line), leaving the behavior (filtering non-uppercase keys, always returning `True`) unchanged. No edit needed.\n\nUNCHANGED",
+  "scope": "symbol"
+}

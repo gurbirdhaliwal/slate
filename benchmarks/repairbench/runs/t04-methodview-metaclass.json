@@ -1,0 +1,20 @@
+{
+  "item": "t04-methodview-metaclass",
+  "arm": "falsified",
+  "commit": "45174bf9",
+  "edited": true,
+  "declined": false,
+  "kept_refs": true,
+  "states_new_fact": false,
+  "drops_old_fact": true,
+  "refs_resolved": 1,
+  "refs_total": 1,
+  "fresh_after": false,
+  "before": "`flask.views.MethodView` collects the HTTP methods a view implements through\nthe `flask.views.MethodViewType` metaclass.",
+  "after": "`flask.views.MethodView` collects the HTTP methods a view implements through\nits own `__init_subclass__` hook (no longer a separate `MethodViewType`\nmetaclass).",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 20.3,
+  "said": "REWRITTEN",
+  "scope": "symbol"
+}

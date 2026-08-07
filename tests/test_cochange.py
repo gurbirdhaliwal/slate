@@ -26,7 +26,7 @@ from .conftest import commit_all, git
 def write(repo: Path, rel: str, text: str) -> None:
     path = repo / rel
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text)
+    path.write_text(text, encoding="utf-8")
 
 
 def couple(repo: Path, files: list[str], times: int, tag: str = "c") -> None:
@@ -85,6 +85,7 @@ def test_output_is_stable_across_hash_seeds(repo: Path) -> None:
     """The block is diffed to decide freshness, so byte-identical output for
     identical history is load-bearing, not cosmetic."""
     import json
+    import os
     import subprocess
     import sys
 
@@ -102,7 +103,11 @@ def test_output_is_stable_across_hash_seeds(repo: Path) -> None:
         proc = subprocess.run(
             [sys.executable, "-c", script, str(repo)],
             capture_output=True, text=True,
-            env={"PYTHONHASHSEED": seed, "PATH": "/usr/bin:/bin"},
+            # Inherit the real environment and override only the seed.
+            # A hardcoded POSIX PATH hid `git` from the subprocess on
+            # Windows, where the failure surfaced as WinError 2 rather
+            # than anything about hash seeds.
+            env={**os.environ, "PYTHONHASHSEED": seed},
             cwd=Path(__file__).resolve().parents[1],
         )
         assert proc.returncode == 0, proc.stderr

@@ -18,13 +18,25 @@ class GitError(RuntimeError):
 
 
 def _git(root: Path, *args: str) -> str:
+    # Decode git's output as UTF-8 explicitly. Bare `text=True` uses the
+    # *locale* codec, which on Windows is cp1252: the first non-ASCII byte in a
+    # diff kills subprocess's reader thread, `run` hands back stdout=None, and
+    # the parser downstream gets None instead of a diff. `errors="replace"`
+    # because git emits file *content*, whose encoding is not ours to promise.
     proc = subprocess.run(
         ["git", "-C", str(root), *args],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     if proc.returncode != 0:
-        raise GitError(proc.stderr.strip() or f"git {' '.join(args)} failed")
+        raise GitError((proc.stderr or "").strip() or f"git {' '.join(args)} failed")
+    if proc.stdout is None:
+        # Unreachable with errors="replace", and it stays that way on purpose:
+        # an empty diff reads as "nothing changed", which narrows stale→fresh.
+        # A doc that is silently blessed is worse than a command that stops.
+        raise GitError(f"git {' '.join(args)} produced no readable output")
     return proc.stdout
 
 
@@ -116,7 +128,7 @@ def changed_hunks(root: Path, since: str | None) -> dict[str, list[tuple[int, in
         if not rel or not (root / rel).exists():
             continue
         try:
-            line_count = (root / rel).read_text(errors="ignore").count("\n") + 1
+            line_count = (root / rel).read_text(encoding="utf-8", errors="ignore").count("\n") + 1
         except OSError:
             line_count = 1
         hunks.setdefault(rel, []).append((1, max(line_count, 1)))
@@ -224,9 +236,11 @@ def merge_file(current: Path, base: Path, other: Path, union: bool = False) -> i
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",           # same reason as _git: never the locale codec
+        errors="replace",
     )
     if proc.returncode > 127 or proc.returncode < 0:
-        raise GitError(proc.stderr.strip() or "git merge-file failed")
+        raise GitError((proc.stderr or "").strip() or "git merge-file failed")
     return proc.returncode
 
 
@@ -270,6 +284,21 @@ def last_change_commit(root: Path, path: str, since: str) -> str | None:
     except GitError:
         return None
     return out.strip() or None
+
+
+def file_at_commit(root: Path, path: str, commit: str) -> str | None:
+    """A tracked file's contents at `commit`, or None if it wasn't there.
+
+    None is the answer for "added since", "deleted", and "not a git repo"
+    alike; every caller here treats an unanswerable question as no evidence
+    rather than guessing, so they do not need to be told apart.
+    """
+    if not _is_sha(commit) and not commit:
+        return None
+    try:
+        return _git(root, "show", f"{commit}:{path}")
+    except Exception:
+        return None
 
 
 def blame_lines(root: Path, path: str) -> dict[int, str] | None:

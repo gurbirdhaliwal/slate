@@ -25,35 +25,35 @@ def bridge(repo: Path) -> Path:
 
 def test_bridge_is_written_when_absent(repo: Path) -> None:
     assert agentcfg.bridge_claude(repo) == agentcfg.WROTE
-    assert agentcfg.BRIDGE_IMPORT in bridge(repo).read_text()
+    assert agentcfg.BRIDGE_IMPORT in bridge(repo).read_text(encoding="utf-8")
 
 
 def test_bridge_import_is_on_its_own_line(repo: Path) -> None:
     # Claude Code expands `@path` imports found in the body; a line that merely
     # mentions the path in prose would not load anything.
     agentcfg.bridge_claude(repo)
-    lines = [ln.strip() for ln in bridge(repo).read_text().splitlines()]
+    lines = [ln.strip() for ln in bridge(repo).read_text(encoding="utf-8").splitlines()]
     assert agentcfg.BRIDGE_IMPORT in lines
 
 
 def test_bridge_is_idempotent(repo: Path) -> None:
     agentcfg.bridge_claude(repo)
-    before = bridge(repo).read_text()
+    before = bridge(repo).read_text(encoding="utf-8")
     assert agentcfg.bridge_claude(repo) == agentcfg.ALREADY
-    assert bridge(repo).read_text() == before
+    assert bridge(repo).read_text(encoding="utf-8") == before
 
 
 def test_existing_claude_md_is_never_clobbered(repo: Path) -> None:
     # A user's own instructions outrank ours. Overwriting them to install a
     # pointer would be a worse bug than the one being fixed.
-    bridge(repo).write_text("# My rules\n\nAlways use tabs.\n")
+    bridge(repo).write_text("# My rules\n\nAlways use tabs.\n", encoding="utf-8")
     assert agentcfg.bridge_claude(repo) == agentcfg.MANUAL
-    assert "Always use tabs." in bridge(repo).read_text()
-    assert agentcfg.BRIDGE_IMPORT not in bridge(repo).read_text()
+    assert "Always use tabs." in bridge(repo).read_text(encoding="utf-8")
+    assert agentcfg.BRIDGE_IMPORT not in bridge(repo).read_text(encoding="utf-8")
 
 
 def test_user_file_that_already_imports_counts_as_wired(repo: Path) -> None:
-    bridge(repo).write_text(f"{agentcfg.BRIDGE_IMPORT}\n\n## Extra\n\nBe terse.\n")
+    bridge(repo).write_text(f"{agentcfg.BRIDGE_IMPORT}\n\n## Extra\n\nBe terse.\n", encoding="utf-8")
     assert agentcfg.bridge_claude(repo) == agentcfg.ALREADY
 
 
@@ -63,7 +63,7 @@ def test_import_inside_a_code_fence_does_not_count(repo: Path) -> None:
     # believing the layer loads when it does not.
     bridge(repo).write_text(
         f"# Docs\n\nTo wire this up, add:\n\n```\n{agentcfg.BRIDGE_IMPORT}\n```\n"
-    )
+    , encoding="utf-8")
     assert agentcfg.bridge_claude(repo) == agentcfg.MANUAL
 
 
@@ -77,17 +77,17 @@ def test_init_writes_the_bridge(repo: Path) -> None:
     from slate import cli
 
     assert cli.main(["-C", str(repo), "init"]) == 0
-    assert agentcfg.BRIDGE_IMPORT in bridge(repo).read_text()
+    assert agentcfg.BRIDGE_IMPORT in bridge(repo).read_text(encoding="utf-8")
 
 
 def test_init_warns_instead_of_overwriting(repo: Path, capsys) -> None:
     from slate import cli
 
-    bridge(repo).write_text("# Mine\n")
+    bridge(repo).write_text("# Mine\n", encoding="utf-8")
     assert cli.main(["-C", str(repo), "init"]) == 0
     out = capsys.readouterr().out
     assert agentcfg.BRIDGE_IMPORT in out  # told the user what to add
-    assert bridge(repo).read_text() == "# Mine\n"
+    assert bridge(repo).read_text(encoding="utf-8") == "# Mine\n"
 
 
 def test_layer_stays_fresh_after_the_bridge_lands(repo: Path) -> None:
@@ -111,7 +111,7 @@ def test_sync_backfills_the_bridge_for_older_repos(repo: Path) -> None:
     commit_all(repo, "layer without bridge")
 
     assert cli.main(["-C", str(repo), "sync"]) == 0
-    assert agentcfg.BRIDGE_IMPORT in bridge(repo).read_text()
+    assert agentcfg.BRIDGE_IMPORT in bridge(repo).read_text(encoding="utf-8")
 
 
 def test_sync_that_creates_the_bridge_leaves_the_layer_settled(repo: Path) -> None:
@@ -126,6 +126,6 @@ def test_sync_that_creates_the_bridge_leaves_the_layer_settled(repo: Path) -> No
     cli.main(["-C", str(repo), "sync"])
 
     arch = context.spec_by_name("architecture")
-    after_sync = arch.path(repo).read_text()
+    after_sync = arch.path(repo).read_text(encoding="utf-8")
     fresh_block = generator.auto_content(arch, scanner.scan(repo))
     assert fresh_block in after_sync, "a second sync would rewrite the facts"

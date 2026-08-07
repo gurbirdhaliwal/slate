@@ -1,9 +1,9 @@
 ---
 slate_doc: workflows
 slate_generated: true
-slate_synced_commit: 47e8952
-slate_synced_at: 2026-08-01T00:39:25+00:00
-slate_synced_digest: 7b6056ca92e421ce
+slate_synced_commit: c6ebe94
+slate_synced_at: 2026-08-07T16:55:50+00:00
+slate_synced_digest: 5fc9c161dced008d
 slate_watches:
   - Makefile
   - package.json

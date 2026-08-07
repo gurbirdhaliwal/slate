@@ -116,17 +116,38 @@ Requires a git repository — Slate anchors freshness to git history.
 Measured on this repo itself ([benchmarks/RESULTS.md](benchmarks/RESULTS.md),
 reproduce with `python benchmarks/benchmark.py`):
 
-- **Session start:** an agent ingests **2,066 tokens** via `slate_read` vs
-  ~20,600 rediscovering the repo by hand (**10×**) or ~54,700 for a full
-  repo dump (**26.5×**) — with trust labels attached, which the baselines
+- **Session start:** an agent ingests **28,210 tokens** via `slate_read` vs
+  ~56,100 rediscovering the repo by hand (**2.0×**) or ~271,000 for a full
+  repo dump (**9.6×**) — with trust labels attached, which the baselines
   can't provide at any price.
-- **Staying true:** replaying this repo's real history, **50% of commits
+- **Staying true:** replaying this repo's real history, **69% of commits
   invalidated at least one context doc**. Manually maintained .md files rot
   silently on every one of those; Slate flagged each and healed it with a
-  **~45 ms, 0-token** deterministic sync (vs an estimated ~111K tokens of
-  model traffic to do the same maintenance by prompting).
+  **~110 ms, 0-token** deterministic sync (vs an estimated ~8.5M input tokens
+  of model traffic to do the same maintenance by prompting).
 - **Every Slate operation is sub-second, local, and free** — status, scores,
   scan, sync, and the full MCP round-trip.
+
+> **The session-start ratio used to be 10× and 26.5×, and it fell to 2.0× and
+> 9.6× — because this repo's own layer bloated.** `read-next.md` is 34 KB and
+> `decisions.md` is 74 KB here, against ~2 KB per generated doc. Nothing in
+> Slate prunes the human-owned docs: `read-next` is meant to be *rewritten*
+> when the focus changes rather than appended to, and `decisions` is
+> append-only by design. Budget for that, because the session-start cost is
+> paid every session. It is also a caution about the ratio itself — it says as
+> much about how disciplined the layer's owner is as about the tool.
+
+## Security
+
+Slate has no server, no telemetry, and zero runtime dependencies. It does change
+your threat model in one specific way: its purpose is to make agents *trust*
+`.slate/**`, so a docs-only PR can put text into every future session's context
+window, and `slate status` stays green as long as the referenced code has not
+moved. Review context-doc diffs like code, and consider `CODEOWNERS` on them.
+
+Full threat model — including committed hook configs, `PATH` as a trust
+boundary, and the limits of the agent write gates:
+[SECURITY.md](SECURITY.md).
 
 ## Wire it into your coding agent (MCP)
 
@@ -175,6 +196,19 @@ slate agent hooks install     # writes .claude/settings.json (also done by `agen
 |------|------|-----------------|
 | `SessionStart` | every session, including after compaction | the whole layer's trust state — which docs are fresh, which aren't, and why |
 | `PreToolUse` | `Read`/`Edit`/`Write`/`NotebookEdit` | a warning **only** when that specific file is covered by a non-fresh doc's watches |
+| `Stop` | the agent finishes a turn | the hand-written claims its own session left suspect — off by default, see below |
+
+`slate agent hooks install --client codex|cursor|all` writes the equivalent
+config for those agents, and the same freshness text is rendered for all three.
+**Claude Code and Codex are both canary-verified; Cursor is untried.** Codex
+was confirmed on `codex-cli 0.146.1`: all three events fire and Slate's
+freshness arrives in the right envelope. Two Codex specifics worth knowing —
+its hooks live in **`~/.codex/hooks.json`, your home directory, not the repo**,
+so it is per-developer setup that cannot be committed; and it requires trusting
+a hook config before running it (`/hooks`). `PreToolUse` fires on Codex but
+rarely names a file, because Codex reads through shell rather than a structured
+read tool — SessionStart and Stop are the useful signals there. Cursor has not
+been run at all; treat it as experimental.
 
 Verified end-to-end, not assumed: in a repo with two deliberately stale docs, a
 headless session named both docs, their suspect-claim counts, the anchor commit
@@ -196,6 +230,42 @@ normally — you lose the signal, never the session. Opt out with
 > Delivery into the context window is proven. Whether it changes *task
 > outcomes* is not yet measured — the 0/25-correct benchmark has not been
 > re-run against this path.
+
+## Repairing the docs your session just invalidated
+
+When your work moves the code a doc describes, `slate repair` names the exact
+sentences at risk — the claim, the refs that put it at risk, the commits behind
+them, and a file line to open. That much is read-only and always available.
+
+Optionally, the agent can fix them and have the fix **checked before it lands**:
+
+```bash
+slate agent access full       # the write ceiling
+slate agent repair on         # a second switch, off by default
+```
+
+Both are required. `slate_repair_apply` puts a rewrite through
+`repair.verify_repair`, which refuses an edit that deletes the claim's code
+references (that would drop it out of the trust surface entirely and turn the
+doc green), that changes any other claim, or that moves the claim to a
+different section. Leaving an accurate claim alone is an accepted outcome, not
+a failure — most flagged claims on real history are still correct. A repair is
+left unstaged and the doc is **not** re-anchored: freshness cannot score a
+repair, because a repair is newer prose by definition.
+
+**What this is measured to do, and what it isn't.** Two 20-trial sweeps
+([E3-RESULTS.md](benchmarks/agentbench/E3-RESULTS.md)) found that turning the
+switch on takes the layer from converging in 3/10 sessions to 10/10. But a
+control with no repair loop still converged its own layer in 36–69% of trials —
+the agent rewrites the docs by hand — and roughly half the treatment's
+convergence never touched the gate either. So the honest claim is narrow:
+
+> The layer often converges either way. What the repair loop buys is that about
+> half of that convergence is **verified** rather than asserted.
+
+No correctness effect was found in either direction (1/20 vs 1/20). And note
+the hole: `verify_repair` guards the MCP path only. An agent with shell access
+can edit a doc and run `slate mark` without any of this.
 
 ## Working in a team
 
@@ -305,6 +375,13 @@ pre-push hook, watch inference, opt-in LLM prose, the PR bot action, the
 VS Code extension, and `fleet`. Dogfooded on this repo (see
 [AGENTS.md](AGENTS.md) and [.slate/](.slate/)); CI runs the tests, the
 freshness gate, and the PR bot.
+
+The repair loop — `slate repair`, the verification gate, the `Stop` hook and
+`slate agent repair` — is built and measured end to end
+([docs/repair-and-resume-plan.md](docs/repair-and-resume-plan.md), plan phases
+0–5, which are numbered separately from the product phases here). Read the
+measured limits above before pitching it: the layer converges with or without
+it, and what it adds is verification of about half that convergence.
 
 Remaining one-time setup (needs account owner): create the `slate-context`
 project + trusted publisher on pypi.org, then push a `v0.2.0` tag; publish

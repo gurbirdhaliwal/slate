@@ -1,0 +1,20 @@
+{
+  "item": "c07-jinja-loader",
+  "arm": "accurate",
+  "commit": "ecc057dd",
+  "edited": false,
+  "declined": true,
+  "kept_refs": true,
+  "states_new_fact": false,
+  "drops_old_fact": false,
+  "refs_resolved": 0,
+  "refs_total": 1,
+  "fresh_after": false,
+  "before": "`flask.sansio.scaffold.Scaffold.jinja_loader` is a cached property, and is\n`None` when `template_folder` is not set.",
+  "after": "`flask.sansio.scaffold.Scaffold.jinja_loader` is a cached property, and is\n`None` when `template_folder` is not set.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 13.2,
+  "said": "The code still shows `@cached_property` and the same `None`-when-`template_folder`-unset logic (scaffold.py:275-286) \u2014 only the return type annotation changed from `FileSystemLoader | None` to `BaseLoader | None`, which the passage doesn't reference. The passage remains accurate.\n\nUNCHANGED",
+  "scope": "symbol"
+}

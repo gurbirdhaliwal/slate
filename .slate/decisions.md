@@ -1,8 +1,8 @@
 ---
 slate_doc: decisions
 slate_generated: false
-slate_synced_commit: 47e8952
-slate_synced_at: 2026-08-01T00:39:25+00:00
+slate_synced_commit: 3b26748
+slate_synced_at: 2026-08-01T01:32:31+00:00
 slate_synced_digest: e3b0c44298fc1c14
 slate_watches:
 ---
@@ -664,4 +664,683 @@ Revisit trigger: The remaining half of the problem is untouched — `refs`
           `logging.Formatter` matches a local `logging.py`. Any doc citing
           stdlib or a third-party API gets false staleness, and no repairbench
           corpus is trustworthy until that is fixed.
+```
+
+```
+Date: 2026-07-31
+Decision: Do not disambiguate stdlib references with `sys.stdlib_module_names`.
+          A doc citing code outside this repo keeps whatever verdict symbol
+          resolution reaches, including a conservative one.
+Rationale: This was recorded as the next blocker and the record was wrong. It
+          was measured before being built: module-path resolution had already
+          closed the common case. A doc citing stdlib `logging.Formatter` in a
+          repo with its own `app/logging.py` stays fresh when that module
+          changes, because resolution sees the module never defined
+          `Formatter`. Only two cases remain — an unparseable local module
+          (`unknowable`) and a local module that genuinely defines the same
+          name (`stale`) — and both are ambiguity, not error.
+Trade-off: Those two cases are false positives for a doc that meant the
+          standard library, and they stay. Clearing them means treating a
+          stdlib-rooted name as external, which would stop flagging a doc that
+          writes `logging.Formatter` about its *own* module. That is a false
+          `fresh` traded for a false `stale`, and only one of those is
+          permitted (§10).
+Safety:    All three behaviours pinned in `tests/test_freshness.py` — the
+          fresh case, the unparseable case, and the shadowing case — so a
+          later "cleanup" cannot quietly convert them.
+Revisit trigger: A real repo where stdlib citations produce enough noise to be
+          worth the risk, *and* a way to tell "the doc means the stdlib" from
+          "the doc means our module of the same name" that does not rest on
+          the name alone. Import analysis of the documented module would do
+          it; a name list would not.
+```
+
+```
+Date: 2026-08-01
+Decision: repairbench ground truth is *constructed*, not mined. `corpus.py`'s
+          `build_trial` checks out a real Flask commit's parent, runs `slate
+          init`, commits an authored passage, and applies the `src/` half of
+          that commit on top. The corpus is 12 falsified passages and 12 the
+          commit leaves true.
+Rationale: Three cycles of mining real history failed the same way — the
+          evidence attached to a sentence was inferred by ref resolution, and
+          it was wrong for 9 of rev 1's 18 pairs. Each resolver fix narrowed
+          that without solving corpus scale. Constructing inverts it: the
+          passage's truth value is known because it was chosen, and the
+          falsifying diff is known because it was applied. rev 3 measured 12/12
+          vs 0/12 across arms (p=3.7e-07), the discrimination rev 1 could not
+          see at all when both its arms declined at ~88%.
+Trade-off: The passages are authored for the experiment, so they are cleaner
+          than prose someone wrote for its own sake, and one of the 12 still
+          carried a mis-authored `old_fact` — construction reduces mislabelling
+          (13 of 18 -> 1 of 12) without eliminating it. Authoring a passage
+          does not guarantee you understood the commit.
+Safety:    `corpus.py --verify` gates every item before a run: Slate must raise
+          exactly one task for the passage and its evidence must name exactly
+          the applied commit. The prose commit must precede the code commit or
+          `freshness._prose_supersedes` narrows the item out of the experiment,
+          and only the `src/` half is applied because `CHANGES.rst` entries
+          exist in the falsified arm only.
+Revisit trigger: A second subject repo. Flask has clean, single-purpose
+          commits; a repo that lands five things at once may not admit a
+          passage with one known truth value.
+```
+
+```
+Date: 2026-08-01
+Decision: When a benchmark's instrument is wrong, bump `spec.REVISION`, fix it,
+          and run fresh sessions. Never re-score recorded text, and never move
+          a threshold to meet a result.
+Rationale: rev 2 failed repair quality at 45%, and all six shortfalls were
+          correct repairs the scorer misread — four of them prose that named the
+          old behaviour in order to retire it. The tempting move was to re-score
+          the stored text with a better matcher. That is choosing the metric
+          after seeing the data, which is the exact failure this benchmark
+          exists to avoid; the thresholds stayed where rev 2 set them and rev 3
+          re-ran all 24.
+Trade-off: Fresh sessions cost real money and hours, and rev 3 still shipped
+          with two known scorer defects rather than a third re-run. Both are
+          conservative — they cost the agent credit it earned — so the PASS
+          survives them, and they are recorded in RESULTS.md rather than
+          silently patched.
+Safety:    Every record carries its `revision`; `run.py --report` only counts
+          records matching `spec.REVISION`, so a stale sidecar cannot be mixed
+          into a later run's numbers. Hand adjudication is stored beside the
+          mechanical score in `results-rev3.json`, never merged into it.
+Revisit trigger: An instrument defect that is *not* conservative — one that
+          could inflate a result rather than deflate it. That cannot be left
+          standing and must trigger a fresh revision immediately.
+```
+
+```
+Date: 2026-08-01
+Decision: `repair.verify_repair(before, after, target)` is a pure function of
+          two document bodies and the segmenter. It returns `repaired`,
+          `unchanged` or `rejected`, and it decides whether an edit is
+          admissible — never whether the doc is fresh. The drafted
+          `(root, doc, before, after)` signature was cut down.
+Rationale: No check that survived Phase 0 needs the tree. Freshness cannot
+          score a repair (a repair is newer prose by definition, so authorship
+          narrowing reads a timestamp the repair just updated), and
+          "every named symbol resolves" cannot express deletion — repairbench
+          rev 3 measured 4 of 14 symbols in *correct* rewrites failing to
+          resolve. What is left is textual: the claim still exists carrying
+          refs, nothing else moved, and declining is a pass. A handle to the
+          repo that no check uses is how a purely textual gate grows a second
+          opinion about trust, which §10 forbids.
+Trade-off: The gate cannot say a repair is *true*. `repaired` means well-formed
+          and confined, nothing more. Truth stays with the human reviewing a
+          proposal, and Phase 3 keeps repairs as proposals for that reason.
+Safety:    `test_repair_cannot_manufacture_fresh` demonstrates the trap rather
+          than assuming it — it asserts the doc really does turn `fresh` once
+          the refs are stripped, then that the gate refuses the edit. Nine more
+          adversarial cases cover ref deletion, unverifiable prose, collateral
+          edits, editing the wrong claim, and relocation to another section.
+Revisit trigger: A repair that legitimately needs to touch two claims at once
+          (splitting a paragraph that documents two symbols). Today that is a
+          rejection, deliberately — the safe direction — and a human unblocks it.
+```
+
+```
+Date: 2026-08-01
+Decision: The repaired claim is located by *section*, not by line number, and
+          "no change needed" is an accepted outcome rather than a failure to
+          repair.
+Rationale: A rewrite reflows the paragraph it replaces, so pinning an exact
+          line would reject the ordinary case; the segmenter already joins a
+          unit's lines before emitting it, so re-wrapping is not a claim-level
+          change at all. And declining was the correct action in 12 of
+          repairbench rev 3's 24 trials — on real history most flagged claims
+          are prose that is still accurate, because a `path`-scoped verdict
+          only says a file changed somewhere near them.
+Trade-off: Section granularity lets a repair move within its own section
+          unnoticed. That is a smaller risk than rejecting every reflow, and
+          the claim must still exist and still carry refs either way.
+Safety:    `test_moving_the_repair_to_another_section_is_rejected` and
+          `test_rewrapping_the_same_claim_is_not_an_edit` pin both sides.
+Revisit trigger: A doc whose sections are large enough that "somewhere in this
+          section" stops being a useful location.
+```
+
+```
+Date: 2026-08-01
+Decision: The end-of-session repair prompt is delivered on the `Stop` hook, not
+          `SessionEnd`, with two independent loop brakes and no `decision:
+          "block"` on any path.
+Rationale: The plan drafted "SessionEnd/Stop ... additionalContext only", and
+          half of that is impossible. A canary against a real session showed
+          `SessionEnd` has no decision control and no `additionalContext` at
+          all — it fires after the session is over and shows stderr to the
+          user, so nothing it emits reaches the model. `Stop` accepts
+          `additionalContext` and continues the conversation, which is the only
+          place an end-of-session job can still be acted on.
+Trade-off: Continuing the conversation is a loop by construction. It is bounded
+          by `stop_hook_active` (observed False then True across one continued
+          turn) and, independently, by a per-session note through
+          `_already_announced` — so a client that drops the field still gets
+          one announcement. Blocking would be stronger delivery and is refused:
+          a hook that can prevent a session ending is the landmine this module
+          was built around.
+Safety:    Eight tests in `tests/test_claude_hook.py` — silent by default,
+          silent on one switch, silent when the layer is clean, silent under
+          `stop_hook_active`, once per session, never emits `decision`, and
+          malformed input stays silence.
+Revisit trigger: A client that offers a lifecycle event which is both late in
+          the turn and free of continuation semantics. That would drop the loop
+          brakes entirely.
+```
+
+```
+Date: 2026-08-01
+Decision: Hook text offers, it never commands. `claudehook.session_end_text`
+          names itself and the settings file it came from, reports what it
+          observed, and states that leaving a claim alone is a correct outcome.
+Rationale: The canary injected a bare imperative and the model identified it as
+          a prompt-injection attempt and refused it — correctly, and that is
+          the behaviour we want models to have. An instruction arriving from a
+          subprocess has no more authority than any other untrusted text, so
+          delivery that reads like a command is delivery that gets declined on
+          principle rather than on merit. Attribution and description are what
+          make it legible as the user's own tooling.
+Trade-off: Softer phrasing is weaker delivery, and Phase 4 may find it too
+          weak. That is a measurable question; writing a stronger imperative to
+          win it would be optimising for compliance against a model that is
+          right to resist.
+Safety:    `test_stop_names_the_suspect_claim` asserts the "correct outcome"
+          language is present, so a later tightening of the copy cannot quietly
+          turn it into an order.
+Revisit trigger: Phase 4 showing uptake near zero *and* transcripts showing the
+          agent read the text and declined on grounds other than suspicion.
+```
+
+```
+Date: 2026-08-01
+Decision: `slate_repair_apply` writes the doc after `verify_repair` accepts it,
+          rather than only proposing a diff — but behind four consents, and it
+          never re-anchors.
+Rationale: The plan said start with propose-diff. A proposal the agent renders
+          for a human to paste back gives the agent no path to the doc, and
+          Phase 4's primary metric is suspect-claim count at session end versus
+          session start — which would then be zero by construction, measuring
+          the harness rather than the pivot. The propose posture is preserved
+          by consent instead of by impotence: repair off by default, full
+          access required on top, the client's own per-call permission prompt,
+          and the verifier refusing anything malformed.
+Trade-off: An agent can now change tracked files. That is the risk the plan
+          named ("an agent silently editing tracked files is how a tool gets
+          uninstalled once"), and it is bounded by leaving the change unstaged
+          and the doc un-re-anchored, so the layer does not vouch for the new
+          text until a human runs `slate mark`.
+Safety:    `tests/test_mcp.py` pins the tool hidden without both switches,
+          denied when called anyway, writing nothing on a rejected rewrite or a
+          missing target, and leaving `slate_synced_commit` untouched on a
+          successful one.
+Revisit trigger: Phase 4 data on rejection rate. A high rejection rate means
+          the agent is producing edits the gate has to catch, and the answer
+          then is propose-only after all.
+```
+
+```
+Date: 2026-08-02
+Decision: Phase 4's E3 sweep is reported VOID, not negative. The convergence
+          and kill-criterion numbers stand in the write-up but license nothing
+          until a re-run with a corrected delivery gate.
+Rationale: `MIN_DELIVERY` asked what fraction of repair-on trials saw the Stop
+          hook inject. It read 50%. But the hook is meant to be silent when the
+          layer is clean, and all five silent trials had `suspect_claims_end`
+          of 0 — the agent had already closed the jobs. Of the trials that
+          still had a job when Stop fired, the hook injected in 5 of 5. The
+          gate could not tell "broken" from "nothing to say", which is my
+          specification error, not a product failure.
+Trade-off: The corrected reading is stated in E3-RESULTS.md and clearly marked
+          post-hoc. Filing "delivery 50%" unexplained would be more misleading
+          than explaining it; declaring PASS on a gate rewritten after it
+          failed would be worse than either.
+Safety:    The quantity needed for the corrected gate was already recorded
+          during the run, so a revision 2 needs no new judgement — only fresh
+          sessions, because a gate rewritten after seeing the data it failed is
+          not a gate.
+Revisit trigger: A re-run at E3 revision 2 measuring delivery against trials
+          that still had a suspect claim at Stop time.
+```
+
+```
+Date: 2026-08-02
+Decision: `slate mark` is an ungated door into the trust layer, and it is
+          recorded as such rather than closed mid-experiment.
+Rationale: Phase 2's `repair.verify_repair` stops a repair manufacturing a
+          false `fresh` — but it governs the MCP path only. Every one of the
+          E3 control's convergences went around it: edit `read-next.md` with
+          the ordinary Edit tool, then run `slate mark` in a shell. An agent
+          with shell access needs neither `slate_repair_apply` nor full MCP
+          access to re-stamp a doc's anchor, and `slate mark` verifies nothing
+          about whether the prose is still true.
+Trade-off: `slate mark` is the documented, intended command for a human who
+          has actually reviewed a doc; the landmine about marking a doc you
+          have not read has been in read-next since the layer was built. What
+          is new is that an agent will now do it unprompted — 5 of 10 control
+          trials did. Making `mark` refuse when claims disappeared would help
+          the agent case and annoy the human one.
+Safety:    Measured, not inferred: `direct_doc_edits` and the Bash-route
+          `reanchor_calls` were added to the harness after the first metric
+          reported zero for a trial that had plainly re-anchored.
+Revisit trigger: Deciding whether `slate mark` should refuse to re-anchor when
+          the claim count dropped since the last anchor — the same guard
+          `verify_repair` applies, at the other door.
+```
+
+```
+Date: 2026-08-02
+Decision: Convergence of the context layer is bought by attestation, not by
+          repair, and the repair loop's measured effect is on whether the agent
+          touches the docs at all.
+Rationale: Calling a re-anchor tool predicted convergence perfectly in both E3
+          arms: the 5 control trials that called one closed 11 of 11 jobs, the
+          5 that did not closed 0 of 5, and all 10 repair-on trials called one
+          and closed 14 of 14. The switch doubled the rate of doing anything
+          (10/10 vs 5/10, Fisher one-sided p=0.0163) — the same shape as the
+          2026-07-27 finding that offering an action gets 3 calls in 687 while
+          injecting it reaches every session. But only 7 of the treatment's 14
+          closures went through `slate_repair_apply`; the other 7 took the
+          control's unverified route.
+Trade-off: The honest pitch is therefore not "repair converges the layer" —
+          the layer often converges anyway. It is that the repair loop makes
+          convergence *verified* rather than asserted, and that is a narrower
+          claim than Phase 4 set out to test.
+Safety:    Cost is recorded beside it: ~8 turns and ~12K context per session,
+          with correctness 1/10 against the control's 2/10. Nothing here
+          supports a correctness claim in either direction.
+Revisit trigger: The re-run. If the gate route does not grow as a share of
+          closures, the loop is an expensive way to prompt an attestation.
+```
+
+```
+Date: 2026-08-02
+Decision: Phase 4 passes at E3 revision 2, and the pitch it licenses is the
+          narrow one: the layer converges either way, and repair makes about
+          half of that convergence verified rather than asserted.
+Rationale: All three pre-registered criteria cleared on fresh sessions —
+          delivery 6/6 over the trials that still had a job when Stop fired,
+          convergence 100% vs 36% (a 64pp gap against a 30pp bar), and 7
+          verified repairs against 0 rejections. But the mechanism split
+          replicated across both sweeps: 7 of 14 treatment closures went
+          through `slate_repair_apply` in revision 1, 7 of 13 in revision 2.
+          The rest were the agent tidying by hand, which is exactly what the
+          control does when it converges at all.
+Trade-off: The convergence *gap* should not be quoted precisely. The control is
+          bimodal — it either tidies thoroughly or ignores the docs entirely —
+          and its pooled rate swung 69% to 36% between identical designs. The
+          direction is stable across two runs; the magnitude is not estimated
+          well by either.
+Safety:    Revision 1's records are archived under runs/e3-rev1/ rather than
+          re-scored, and `e3_revision` stops the two measurements being
+          averaged. MIN_DELIVERY and MIN_CONVERGENCE_GAP are pinned by a test
+          so a later revision cannot move the bar while claiming to fix an
+          instrument.
+Revisit trigger: The share of closures going through the gate. At roughly half,
+          the loop is partly an expensive way to prompt an attestation; if that
+          share does not grow, the honest framing narrows further.
+```
+
+```
+Date: 2026-08-02
+Decision: A delivery gate measures "when there was something to say, did the
+          hook say it" — never "did the hook say something".
+Rationale: Revision 1 asked the second question, read 50%, and voided a sweep
+          in which the hook had spoken every time it had anything to speak
+          about. Slate's hooks are built to be silent when there is nothing to
+          report, so a gate that counts silence as failure penalises the
+          module for working. Revision 2 counts only trials that still had a
+          suspect claim when Stop fired; the case the old gate could not see —
+          silence *and* a claim left suspect — is the one that now fails it.
+Trade-off: The denominator is inferred from the end-of-session count rather
+          than observed at Stop time. The inference is tight, because the
+          session is over when the count is taken, but it is an inference and
+          is labelled as one.
+Safety:    Both directions pinned in `tests/test_benchmark.py` —
+          correct silence must not count against delivery, and a silent hook
+          with work pending must still void the run — plus a test asserting the
+          thresholds did not move when the denominator was corrected.
+Revisit trigger: Any future gate on a component whose correct behaviour
+          includes doing nothing. The same mistake is available every time.
+```
+
+```
+Date: 2026-08-02
+Decision: The value ledger counts repairs that passed the gate and repairs the
+          gate refused. It does not count "sessions that started fresh because
+          a prior session repaired them", which is what the plan asked for.
+Rationale: That number is not available honestly. Phase 4 measured the
+          counterfactual directly and it fails: a control with no repair loop
+          converged its own layer in 36% of trials in one sweep and 69% in the
+          other, by the agent rewriting the docs by hand. Crediting repair for
+          a fresh session would claim something that happens anyway between a
+          third and two thirds of the time. `refused` is the causally clean
+          event — the edit did not land *because* the check said no, and there
+          is no counterfactual to argue about.
+Trade-off: The ledger therefore cannot show the compounding benefit the pivot
+          was pitched on. That is the correct outcome of having measured it:
+          the delayed benefit is real for the half that goes through the gate
+          and unproven for the rest, and a ledger that implied otherwise would
+          be the most damaging place in the product to overstate.
+Safety:    `slate value` states the 36-69% control range inline, so the number
+          cannot be read as "the layer stayed fresh because of Slate" without
+          also reading what a layer does unattended. Pinned by a test.
+Revisit trigger: A design that can attribute freshness to repair — a held-out
+          arm where the same session is replayed with and without the loop.
+```
+
+```
+Date: 2026-08-02
+Decision: The docs reframe promised in Phase 5 ships as a *narrower* claim than
+          the plan drafted. "Slate becomes a memory-consolidation layer" is not
+          supported; "repair makes about half of the layer's convergence
+          verified rather than asserted" is.
+Rationale: The plan wrote the pitch before the experiment. Two sweeps put the
+          control's unattended convergence at 36-69% and the treatment's
+          gate-verified share at roughly half of its closures, so the
+          consolidation framing would claim the whole of an effect that is
+          partly the agent tidying up on its own. README now states the
+          measured limits — including that no correctness effect was found in
+          either direction, and that `verify_repair` guards the MCP path only.
+Trade-off: It is a weaker headline than the pivot was launched on, and it is
+          the one the evidence carries. Shipping the stronger version would
+          have made the README the least reliable document in a repo whose
+          entire product is document reliability.
+Safety:    The README links E3-RESULTS.md at the point of the claim, so the
+          number and its threats to validity travel together.
+Revisit trigger: A sweep that isolates the gate route from the attestation
+          route — if the verified share grows, the claim can grow with it.
+```
+
+```
+Date: 2026-08-03
+Decision: `slate mark` refuses to attest a doc that has fewer claims than at
+          its last anchor. A human overrides with `--allow-claim-loss`; an
+          agent cannot override at all.
+Rationale: `repair.verify_repair` guards the MCP repair path, and the E3 sweep
+          measured that agents reach a green layer through the other door —
+          edit `read-next.md` with an ordinary file tool, then `slate mark`.
+          Attestation is the one moment a doc's trust is renewed by assertion
+          rather than evidence, so it is the one moment a deleted claim would
+          never be noticed again. `repair.claim_loss` compares against the
+          doc's content at its anchor via `gitutil.file_at_commit`.
+Trade-off: Counted, not matched by text. A repair *changes* a claim's wording —
+          that is what repairing is — so refusing on "this exact sentence is
+          gone" would block every honest repair from being attested and make
+          the guard a reason to stop using the feature it protects. The cost is
+          that deleting claim A while adding unrelated claim B passes, which is
+          the same bound `verify_repair` accepts.
+Safety:    Six tests, including that a repaired claim still marks cleanly, that
+          the human override works, and that an unanswerable comparison (no
+          anchor, doc absent at the anchor) is not treated as loss so `mark`
+          stays usable in a fresh repo. `slate_mark` and `slate_update_focus`
+          both refuse over MCP; update_focus is the tool measured doing this.
+Revisit trigger: A repo where legitimate claim deletion is frequent enough that
+          the override becomes routine — at which point the guard is noise.
+```
+
+```
+Date: 2026-08-03
+Decision: Hook delivery is agent-agnostic via `slate/agenthooks.py`, which
+          reuses `claudehook`'s renderers and varies only the envelope. Claude
+          Code keeps its own entry point.
+Rationale: What to say about freshness is not Claude-specific; only the
+          lifecycle event, the config file and the JSON shape are. Codex turns
+          out to be near drop-in — same event names, same stdin fields,
+          `additionalContext` at the top level instead of nested. Claude keeps
+          its own path because that one is canary-verified against a live
+          session and pinned by 47 tests; routing it through a new adapter
+          would trade measured behaviour for tidiness.
+Trade-off: **Delivery is verified for Claude Code only.** Codex and Cursor are
+          built from published contracts and have not been observed end to end,
+          and Cursor's hooks are beta. `slate agent hooks install` says so at
+          install time. Do not quote a Codex/Cursor install as delivery
+          evidence the way the Claude sweep can be quoted.
+Safety:    Cursor's `beforeReadFile` cannot inject context — it returns a
+          permission decision only — so the file warning rides `preToolUse`,
+          and Slate never sends a `permission` field on any path. Returning
+          "allow" would let a freshness note widen the user's own permissions.
+          Pinned by a test.
+Revisit trigger: A canary run against real Codex and Cursor sessions. Until
+          then the Claude path is the only one with evidence behind it.
+```
+
+```
+Date: 2026-08-03
+Decision: `cli.cmd_agent_hook` catches every exception itself, rather than
+          relying on the handlers below it to be exception-proof.
+Rationale: `claudehook.run` and `agenthooks.run` each swallow their own
+          failures, which made the wrapper above them look like it did not need
+          to. It did: a typo'd variable name raised a NameError before either
+          handler was reached, and the client saw a crashing hook. The unit
+          tests missed it because they call the handlers directly; an
+          end-to-end run through the real CLI found it immediately.
+Trade-off: A bare `except Exception: pass` at an entry point hides bugs from
+          whoever is developing the hook. That is the correct trade here — the
+          landmine is that a hook must never be the reason a session breaks,
+          and losing one freshness note is strictly cheaper than a traceback.
+Safety:    `test_the_cli_hook_entry_point_never_raises` drives the real CLI for
+          every client against valid, malformed and empty payloads.
+Revisit trigger: None. This is the module's oldest invariant.
+```
+
+```
+Date: 2026-08-03
+Decision: Record — do not try to close — the gap between "the code a claim
+          names moved" and "the claim became untrue". Slate detects the first.
+          Nothing in the product detects the second, and `repair.claim_loss`
+          does not help because it counts claims rather than reading them.
+Rationale: Found by walking into it. On 2026-08-03 this repo's `read-next` said
+          porting the hooks to Codex and Cursor was "only worth porting once
+          the effect replicates" *after* the port had shipped. Every reference
+          in that paragraph still resolved, so `slate status` stayed green, the
+          freshness engine had nothing to flag, and `slate mark` re-anchored
+          the doc without complaint — attesting a sentence that had just been
+          made false. The new `mark` guard did not fire either: no claim was
+          deleted, one was simply contradicted.
+Trade-off: Closing it means judging whether prose is *true*, which needs a model
+          in the trust path. §10 and the whole repairbench arc say no: freshness
+          cannot score a repair, a verifier that reasons is a verifier that can
+          be wrong confidently, and the one failure this product forbids is a
+          false `fresh`. A gap that is honestly documented is safer than a
+          check that guesses.
+Safety:    Written as a landmine in read-next, next to the existing warning
+          that marking a doc you have not read turns the layer back into a
+          rumor. That warning is now backed by an incident rather than a
+          worry.
+Revisit trigger: A deterministic signal for contradiction that does not require
+          reading the prose — for example a claim that names a symbol whose
+          *docstring* asserts the opposite. Narrow, but it would not need a
+          model.
+```
+
+```
+Date: 2026-08-03
+Decision: When work lands whose stated precondition was never met, the record
+          says so rather than quietly marking the item done.
+Rationale: The carry-over list gated porting hooks to Codex/Cursor on "only
+          worth porting once the effect replicates". The effect has not
+          replicated; the port shipped on a direct instruction. That is a
+          legitimate call by the person asking, and it is not the same thing as
+          the sequencing having been satisfied. Silently ticking it off would
+          leave a future reader believing a measurement exists that does not —
+          the same failure as quoting a void sweep's numbers.
+Trade-off: The list is noisier: it now carries why an item left it, not just
+          that it did. Worth it in a repo whose product is document
+          reliability.
+Safety:    read-next names both items that left the list and distinguishes the
+          one that was simply completed (the `mark` gate) from the one whose
+          precondition was bypassed.
+Revisit trigger: None. This is a documentation habit, not a mechanism.
+```
+
+```
+Date: 2026-08-05
+Decision: All file I/O in `slate/` declares `encoding="utf-8"`, pinned by a
+          test that scans the source for unencoded `read_text`/`write_text`.
+Rationale: `Path.read_text()`/`write_text()` without `encoding=` use the
+          *locale* encoding — UTF-8 on Linux and macOS, typically cp1252 on
+          Windows. Slate writes status glyphs (● ○ ◐ ✗), arrows (→ ↳) and
+          verify bars (█ ░) into its own output and docs, and cp1252 cannot
+          encode any of them. Demonstrated rather than assumed: encoding
+          '● fresh ○ stale' as cp1252 raises UnicodeEncodeError. 43 call sites
+          were affected.
+Trade-off: None worth the name. The cost is verbosity at every call site.
+Safety:    `tests/test_encoding.py` fails on any new unencoded call, and a
+          second test asserts the glyphs really are outside cp1252 — so if
+          Slate ever stops using them, the first test is revealed as no longer
+          load-bearing rather than the bug being silently gone.
+Revisit trigger: Python making UTF-8 the default everywhere (PEP 686). Until
+          the minimum supported version has it, the explicit encoding stays.
+```
+
+```
+Date: 2026-08-05
+Decision: The Codex hook port is marked **unverified** rather than supported,
+          and `slate agent hooks install` says so out loud. Cursor likewise.
+Rationale: The canary failed. Against `codex-cli 0.137.0`, a repo with a stale
+          layer and a Slate-written `.codex/hooks.json`, with the hook command
+          tee'd on both ends, produced **zero invocations** — with hook trust
+          bypassed and across three config shapes. The binary clearly
+          implements hooks (`PreToolUse`, `SessionStart`,
+          `HookHandlerConfig::Command`, `trusted_hash`, and a schema of
+          `event`/`enabled`/`matcher`/`timeout`/`command`), so Slate is writing
+          the wrong shape or to the wrong place. The published contract this
+          was built from describes a map-of-events shape that this version does
+          not appear to accept.
+Trade-off: Shipping an installer that writes a config which silently does
+          nothing is worse than shipping no installer, so the alternative was
+          removal. The adapter is kept because the rendering and envelope logic
+          are tested and correct, and the remaining work is one schema — but it
+          must not be described as working until a canary says it does.
+Safety:    `HookAgent.verified` is False for codex and cursor; install prints
+          the negative canary result. README states it at the point of the
+          claim.
+Revisit trigger: The hooks schema for a specific Codex version, then the same
+          canary re-run. The canary is the deliverable, not the config file.
+```
+
+```
+Date: 2026-08-05
+Decision: `benchmarks/RESULTS.md` is re-run rather than retired, and now leads
+          with the fact that its headline ratio collapsed.
+Rationale: The old file was stale (commit `a43a2f7`) and README linked it
+          twice, so deleting it would have broken the docs. Re-running was
+          cheap and deterministic — and the result is the finding: session-start
+          advantage fell from 10.0x/26.5x to 2.0x/9.6x, not because Slate
+          regressed but because *this repo's own layer bloated*. `read-next.md`
+          is 34 KB and `decisions.md` is 74 KB against ~2 KB per generated doc,
+          so "the smallest useful context" is now 28,210 tokens.
+Trade-off: The headline number is far less flattering, and it is the true one.
+          It also exposes that the ratio measures the layer owner's discipline
+          as much as the tool.
+Safety:    The caveat block sits above the tables, and README carries the same
+          correction where it quotes them. The self-referential limitation is
+          stated: for agent *behaviour* claims, agentbench is the file to read.
+Revisit trigger: Nothing in Slate prunes the human-owned docs. If read-next
+          keeps growing, the session-start cost keeps rising — a cap, or a
+          `slate prune`, is the obvious follow-up.
+```
+
+```
+Date: 2026-08-05
+Decision: Fix the Codex output envelope to the nested
+          `hookSpecificOutput.additionalContext` the spec requires, and keep
+          `verified=False` because hooks still do not fire on the version
+          tested.
+Rationale: Two rounds of canary separated two different problems. Round 1 found
+          a real bug — the envelope put `additionalContext` at the top level,
+          taken from a summary rather than the spec, which would produce a hook
+          that fires and whose output Codex ignores. Round 2 isolated the rest
+          away from Slate: a minimal spec-shaped `hooks.json` with no Slate
+          involvement, one `echo` appending to a file, also never fired. Tried
+          repo-local and global locations, the `plugin_hooks` flag, and
+          `enabled: true` at both levels, all with
+          `--dangerously-bypass-hook-trust` confirmed active by its own warning.
+          Zero invocations throughout. So the config Slate writes is not the
+          problem; either `codex exec` does not run hooks or the feature is
+          incomplete in 0.137.0 (0.146.1 is available).
+Trade-off: The envelope fix is unverifiable end to end on this machine — it
+          rests on the published contract, which is exactly the evidence
+          standard that was wrong the first time. It is nonetheless strictly
+          better than what it replaced, and a test pins the Codex and Claude
+          envelopes as identical so they cannot drift apart again.
+Safety:    `verified` records observation, not intent, and a test asserts only
+          Claude is True. Nothing flips the others without a passing canary.
+Revisit trigger: Upgrade Codex and re-run the isolation canary — the minimal
+          no-Slate hook first, because if that does not fire nothing about
+          Slate's config matters.
+```
+
+```
+Date: 2026-08-05
+Decision: Codex hooks are written to `~/.codex/hooks.json`, and Codex delivery
+          is now canary-verified. Cursor stays unverified.
+Rationale: The port failed for three different reasons, found in order. (1) The
+          envelope was flattened — `additionalContext` at the top level rather
+          than nested under `hookSpecificOutput` — which produces a hook that
+          fires and whose output Codex discards. (2) On 0.137.0 nothing fired at
+          all, and a minimal no-Slate hook did not fire either, which pointed
+          away from Slate. (3) On 0.146.1 the minimal hook fired from
+          `~/.codex/` but not from the repo. That was the real bug: Slate wrote
+          `<repo>/.codex/hooks.json`, which Codex silently ignores. Proven
+          rather than guessed — malformed JSON at the global path warns "failed
+          to parse hooks config"; the identical file in a repo produces nothing.
+          Re-run end to end: all three events fire and Slate's SessionStart
+          freshness arrives correctly.
+Trade-off: Codex's config is per-user, so unlike Claude's it cannot be committed
+          and shared — each developer runs install once. It is also the only
+          thing Slate writes outside the repo, which SECURITY.md now states.
+Safety:    `HookAgent.verified` is True only for the two that were observed
+          working, pinned by a test. Tests that touch Codex config redirect
+          HOME, because the first run of that test edited the developer's real
+          `~/.codex/hooks.json`.
+Revisit trigger: Cursor, when a CLI is available to canary against.
+```
+
+```
+Date: 2026-08-05
+Decision: Do not parse file paths out of shell commands to make PreToolUse work
+          on Codex.
+Rationale: Codex reads files by running shell — the observed payload is
+          `tool_name: "Bash"`, `tool_input: {"command": "sed -n '1,200p'
+          demo/engine.py"}` — so there is no `file_path` and `_rel_target`
+          correctly returns None. Recovering the path would mean parsing
+          arbitrary shell, where a wrong guess produces a freshness warning
+          about a file the agent never touched. A warning that fires on the
+          wrong file is worse than no warning: it is the alarm-fatigue failure
+          the PreToolUse design already goes out of its way to avoid.
+Trade-off: The file-touch warning is effectively Claude-specific in practice.
+          On Codex the working signals are SessionStart and Stop, and the
+          install output says so rather than leaving the user to notice.
+Revisit trigger: Codex exposing a structured read tool, or a hook payload
+          carrying resolved paths alongside the command.
+```
+
+```
+Date: 2026-08-07
+Decision: Every `subprocess.run` under `slate/` pins
+          `encoding="utf-8", errors="replace"`, and `_git` raises `GitError`
+          rather than ever returning `None` stdout.
+Rationale: `text=True` alone decodes with the *locale* codec. On Windows that
+          is cp1252, so the first non-ASCII byte in a diff killed subprocess's
+          reader thread; `run` then returned `stdout=None` and `_parse_hunks`
+          crashed on it. The crash was the lucky outcome. An unreadable diff
+          and an empty diff are the same value to everything downstream, and
+          `freshness._changed_symbols` reads an empty hunk map as "no symbols
+          changed" — which narrows stale→fresh. That is a false `fresh`
+          manufactured by a decode that never happened, and §10 says the
+          engine may never produce one. `errors="replace"` rather than
+          `strict` because git emits file *content*, whose encoding is not
+          ours to promise; a mangled character in a diff line costs at most a
+          missed symbol match, and the conservative fallback is "assume
+          stale".
+Trade-off: A repo whose files are genuinely cp1252 gets replacement chars in
+          the hunk text Slate parses. Symbol resolution can miss such a
+          symbol and fall back to path-level "assume stale" — the safe
+          direction. Not worth a per-repo encoding setting until someone has
+          an actual non-UTF-8 repo.
+Revisit trigger: A user with a legitimately non-UTF-8 codebase reporting
+          over-broad staleness.
 ```

@@ -1,0 +1,20 @@
+{
+  "item": "t10-config-pathlike",
+  "arm": "falsified",
+  "commit": "2abb7513",
+  "edited": true,
+  "declined": false,
+  "kept_refs": true,
+  "states_new_fact": true,
+  "drops_old_fact": true,
+  "refs_resolved": 0,
+  "refs_total": 1,
+  "fresh_after": true,
+  "before": "`flask.config.Config.from_pyfile` requires its `filename` to be a `str`, so a\npath object has to be converted before it is passed in.",
+  "after": "`flask.config.Config.from_pyfile` accepts `filename` as `str | os.PathLike`\ndirectly \u2014 no conversion to `str` is needed before calling it.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 1958.8,
+  "said": "REWRITTEN",
+  "scope": "symbol"
+}

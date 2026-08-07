@@ -1,0 +1,722 @@
+[
+  {
+    "item": "t01-redirect-code",
+    "arm": "falsified",
+    "commit": "eca5fd1d",
+    "edited": true,
+    "declined": false,
+    "kept_refs": true,
+    "states_new_fact": true,
+    "drops_old_fact": true,
+    "refs_resolved": 1,
+    "refs_total": 2,
+    "fresh_after": false,
+    "before": "`flask.helpers.redirect` builds the redirect response and defaults `code` to\n302, delegating to `current_app.redirect` when an application context is\nactive.",
+    "after": "`flask.helpers.redirect` builds the redirect response and defaults `code` to\n303, delegating to `current_app.redirect` when an application context is\nactive.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 15.8,
+    "said": "The default status code changed from 302 to 303 in commit `eca5fd1d`, so I updated the passage in `.slate/read-next.md` to match.\n\nREWRITTEN",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": true,
+      "states_new_fact": true,
+      "drops_old_fact": true,
+      "repaired": true
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "302 -> 303, nothing else touched."
+    }
+  },
+  {
+    "item": "t02-autoescape-case",
+    "arm": "falsified",
+    "commit": "9368fb3f",
+    "edited": true,
+    "declined": false,
+    "kept_refs": true,
+    "states_new_fact": true,
+    "drops_old_fact": true,
+    "refs_resolved": 0,
+    "refs_total": 1,
+    "fresh_after": false,
+    "before": "`flask.sansio.app.App.select_jinja_autoescape` decides autoescaping from the\ntemplate's extension and compares it exactly, so a file named `INDEX.HTML` is\nnot autoescaped.",
+    "after": "`flask.sansio.app.App.select_jinja_autoescape` decides autoescaping from the\ntemplate's extension and compares it case-insensitively (via `.lower()`), so\na file named `INDEX.HTML` is autoescaped.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 12.5,
+    "said": "REWRITTEN",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": true,
+      "states_new_fact": true,
+      "drops_old_fact": true,
+      "repaired": true
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "Names the lowercasing and flips the INDEX.HTML example."
+    }
+  },
+  {
+    "item": "t03-copy-request-context",
+    "arm": "falsified",
+    "commit": "06ea505c",
+    "edited": true,
+    "declined": false,
+    "kept_refs": true,
+    "states_new_fact": true,
+    "drops_old_fact": true,
+    "refs_resolved": 1,
+    "refs_total": 1,
+    "fresh_after": true,
+    "before": "`flask.ctx.copy_current_request_context` copies the active context once, at\ndecoration time, and the wrapped function always runs inside that single\nshared copy.",
+    "after": "`flask.ctx.copy_current_request_context` captures the context active at\ndecoration time, but copies it fresh on every call to the wrapped function, so\nconcurrent invocations each get their own independent context copy instead of\nsharing one.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 13.0,
+    "said": "REWRITTEN",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": true,
+      "states_new_fact": true,
+      "drops_old_fact": true,
+      "repaired": true
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "Keeps decoration-time capture, corrects the per-call copy."
+    }
+  },
+  {
+    "item": "t04-methodview-metaclass",
+    "arm": "falsified",
+    "commit": "45174bf9",
+    "edited": true,
+    "declined": false,
+    "kept_refs": true,
+    "states_new_fact": false,
+    "drops_old_fact": true,
+    "refs_resolved": 1,
+    "refs_total": 1,
+    "fresh_after": false,
+    "before": "`flask.views.MethodView` collects the HTTP methods a view implements through\nthe `flask.views.MethodViewType` metaclass.",
+    "after": "`flask.views.MethodView` collects the HTTP methods a view implements through\nits own `__init_subclass__` hook (no longer a separate `MethodViewType`\nmetaclass).",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 20.3,
+    "said": "REWRITTEN",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": true,
+      "states_new_fact": false,
+      "drops_old_fact": true,
+      "repaired": false
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "SCORER ERROR. Names `__init_subclass__` correctly. `states_new_fact` read False because the trailing '(no longer a separate MethodViewType metaclass)' put a negation cue inside the window around the new fact. Negation-awareness belongs to the old-fact question only; applying it to the new fact turns a well-written contrast into a miss."
+    }
+  },
+  {
+    "item": "t05-session-expiry-naive",
+    "arm": "falsified",
+    "commit": "ed42e929",
+    "edited": true,
+    "declined": false,
+    "kept_refs": true,
+    "states_new_fact": true,
+    "drops_old_fact": true,
+    "refs_resolved": 0,
+    "refs_total": 1,
+    "fresh_after": true,
+    "before": "`flask.sessions.SessionInterface.get_expiration_time` returns a naive UTC\ndatetime built from `datetime.utcnow`, or `None` when the session is not\npermanent.",
+    "after": "`flask.sessions.SessionInterface.get_expiration_time` returns a timezone-aware\nUTC datetime built from `datetime.now(timezone.utc)`, or `None` when the\nsession is not permanent.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 12.5,
+    "said": "REWRITTEN",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": true,
+      "states_new_fact": true,
+      "drops_old_fact": true,
+      "repaired": true
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "naive utcnow -> datetime.now(timezone.utc)."
+    }
+  },
+  {
+    "item": "t06-blueprint-empty-name",
+    "arm": "falsified",
+    "commit": "b8b41001",
+    "edited": true,
+    "declined": false,
+    "kept_refs": true,
+    "states_new_fact": true,
+    "drops_old_fact": true,
+    "refs_resolved": 1,
+    "refs_total": 1,
+    "fresh_after": true,
+    "before": "`flask.blueprints.Blueprint` rejects a name containing a dot, but accepts an\nempty name.",
+    "after": "`flask.blueprints.Blueprint` rejects a name containing a dot, and now also\nrejects an empty name.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 12.8,
+    "said": "REWRITTEN",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": true,
+      "states_new_fact": true,
+      "drops_old_fact": true,
+      "repaired": true
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "Adds the empty-name rejection, keeps the dot rule."
+    }
+  },
+  {
+    "item": "t07-teardown-first-error",
+    "arm": "falsified",
+    "commit": "fbb6f0bc",
+    "edited": true,
+    "declined": false,
+    "kept_refs": true,
+    "states_new_fact": true,
+    "drops_old_fact": true,
+    "refs_resolved": 0,
+    "refs_total": 1,
+    "fresh_after": false,
+    "before": "`flask.app.Flask.do_teardown_request` runs the teardown callbacks in reverse\nregistration order and stops at the first one that raises.",
+    "after": "`flask.app.Flask.do_teardown_request` runs the teardown callbacks in reverse\nregistration order. All callbacks are called even if one raises; any errors\nare collected via `_CollectErrors` and re-raised together (as a\n`BaseExceptionGroup` on Python 3.11+) after every callback has run.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 14.2,
+    "said": "I updated the \"Behaviour notes\" passage in `.slate/read-next.md` \u2014 it now describes the current behavior: all teardown callbacks run regardless of errors, with errors collected and raised together at the end (as a `BaseExceptionGroup` on 3.11+) instead of stopping at the first failure.\n\nREWRITTEN",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": true,
+      "states_new_fact": true,
+      "drops_old_fact": true,
+      "repaired": true
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "Went past the diff to `_CollectErrors` and named the grouped re-raise."
+    }
+  },
+  {
+    "item": "t08-subdomain-matching",
+    "arm": "falsified",
+    "commit": "4995a775",
+    "edited": true,
+    "declined": false,
+    "kept_refs": true,
+    "states_new_fact": true,
+    "drops_old_fact": false,
+    "refs_resolved": 0,
+    "refs_total": 2,
+    "fresh_after": false,
+    "before": "`flask.app.Flask.create_url_adapter` ignores the configured server name when\nit chooses a subdomain: with `subdomain_matching` off it always uses\n`url_map.default_subdomain`.",
+    "after": "`flask.app.Flask.create_url_adapter` ignores the configured server name when\nit chooses a subdomain, but only when `host_matching` is also off: if\n`subdomain_matching` is off, it forces the subdomain to\n`url_map.default_subdomain` (falling back to `\"\"`, not `None`). If\n`host_matching` is on, this forcing is skipped entirely and `SERVER_NAME` is\ndropped instead, regardless of `subdomain_matching`.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 62.2,
+    "said": "REWRITTEN",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": true,
+      "states_new_fact": true,
+      "drops_old_fact": false,
+      "repaired": false
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "CORPUS ERROR. The rewrite is accurate and more precise than the authored `truth` note, which claimed the subdomain is now derived from SERVER_NAME. It is not: the commit gates the default_subdomain branch on `host_matching` and changes its fallback from None to \"\". The `old_fact` pattern named a clause the commit never falsified, so `drops_old_fact` read False for keeping a sentence that is still true."
+    }
+  },
+  {
+    "item": "t09-open-resource-encoding",
+    "arm": "falsified",
+    "commit": "28d5a4d7",
+    "edited": true,
+    "declined": false,
+    "kept_refs": true,
+    "states_new_fact": true,
+    "drops_old_fact": true,
+    "refs_resolved": 0,
+    "refs_total": 1,
+    "fresh_after": true,
+    "before": "`flask.app.Flask.open_resource` takes only the resource path and a `mode`;\ntext mode uses the platform default and the caller cannot override it.",
+    "after": "`flask.app.Flask.open_resource` takes the resource path, a `mode`, and an\n`encoding` parameter; in text mode the caller can pass `encoding` to override\nthe platform default (it is ignored in binary mode).",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 952.9,
+    "said": "REWRITTEN",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": true,
+      "states_new_fact": true,
+      "drops_old_fact": true,
+      "repaired": true
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "Adds `encoding`, including the binary-mode caveat."
+    }
+  },
+  {
+    "item": "t10-config-pathlike",
+    "arm": "falsified",
+    "commit": "2abb7513",
+    "edited": true,
+    "declined": false,
+    "kept_refs": true,
+    "states_new_fact": true,
+    "drops_old_fact": true,
+    "refs_resolved": 0,
+    "refs_total": 1,
+    "fresh_after": true,
+    "before": "`flask.config.Config.from_pyfile` requires its `filename` to be a `str`, so a\npath object has to be converted before it is passed in.",
+    "after": "`flask.config.Config.from_pyfile` accepts `filename` as `str | os.PathLike`\ndirectly \u2014 no conversion to `str` is needed before calling it.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 1958.8,
+    "said": "REWRITTEN",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": true,
+      "states_new_fact": true,
+      "drops_old_fact": true,
+      "repaired": true
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "str -> str | os.PathLike."
+    }
+  },
+  {
+    "item": "t11-cookie-domain-fallback",
+    "arm": "falsified",
+    "commit": "c24f8c81",
+    "edited": true,
+    "declined": false,
+    "kept_refs": true,
+    "states_new_fact": true,
+    "drops_old_fact": true,
+    "refs_resolved": 0,
+    "refs_total": 1,
+    "fresh_after": false,
+    "before": "`flask.sessions.SessionInterface.get_cookie_domain` uses\n`SESSION_COOKIE_DOMAIN` when it is configured and otherwise falls back to\ndetecting the domain from `SERVER_NAME`.",
+    "after": "`flask.sessions.SessionInterface.get_cookie_domain` uses\n`SESSION_COOKIE_DOMAIN` when it is configured and otherwise returns `None`.\nIt no longer falls back to detecting the domain from `SERVER_NAME`.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 17.3,
+    "said": "REWRITTEN",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": true,
+      "states_new_fact": true,
+      "drops_old_fact": true,
+      "repaired": true
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "Removes the fallback and says so explicitly."
+    }
+  },
+  {
+    "item": "t12-generator-response",
+    "arm": "falsified",
+    "commit": "762382e4",
+    "edited": true,
+    "declined": false,
+    "kept_refs": true,
+    "states_new_fact": true,
+    "drops_old_fact": true,
+    "refs_resolved": 0,
+    "refs_total": 1,
+    "fresh_after": false,
+    "before": "`flask.app.Flask.make_response` documents the return types a view may use:\n`str`, `bytes`, `dict`, `tuple`, `Response`, and a WSGI callable. A lazily\nproduced body has to be wrapped in a `Response` by the view itself.",
+    "after": "`flask.app.Flask.make_response` documents the return types a view may use:\n`str`, `bytes`, `dict`, `tuple`, `Response`, a generator/iterator, and a WSGI\ncallable. A generator or iterator returning `str`/`bytes` is now converted\ndirectly into a streaming `Response` by `make_response` itself \u2014 the view no\nlonger has to wrap a lazily produced body.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 3006.5,
+    "said": "REWRITTEN",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": true,
+      "states_new_fact": true,
+      "drops_old_fact": true,
+      "repaired": true
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "Adds generator/iterator and the streaming conversion."
+    }
+  },
+  {
+    "item": "c01-send-file",
+    "arm": "accurate",
+    "commit": "4104f299",
+    "edited": false,
+    "declined": true,
+    "kept_refs": true,
+    "states_new_fact": false,
+    "drops_old_fact": false,
+    "refs_resolved": 1,
+    "refs_total": 1,
+    "fresh_after": false,
+    "before": "`flask.helpers.send_file` sends the contents of a file to the client, and does\nnot force a download unless `as_attachment` is true.",
+    "after": "`flask.helpers.send_file` sends the contents of a file to the client, and does\nnot force a download unless `as_attachment` is true.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 345.3,
+    "said": "The change was purely a type-hint fix (`os.PathLike` \u2192 `os.PathLike[t.AnyStr]`), with no change to runtime behavior. The docstring and behavior confirm `send_file` still just sends the file contents and only forces a download when `as_attachment=True`. The passage remains accurate.\n\nUNCHANGED",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": false,
+      "states_new_fact": false,
+      "drops_old_fact": false,
+      "repaired": false
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "Declined; identified the annotation-only change."
+    }
+  },
+  {
+    "item": "c02-send-from-directory",
+    "arm": "accurate",
+    "commit": "6c44dd4b",
+    "edited": false,
+    "declined": true,
+    "kept_refs": true,
+    "states_new_fact": false,
+    "drops_old_fact": false,
+    "refs_resolved": 1,
+    "refs_total": 1,
+    "fresh_after": false,
+    "before": "`flask.helpers.send_from_directory` resolves `path` beneath `directory` and\nraises a 404 `NotFound` when the resolved file does not exist.",
+    "after": "`flask.helpers.send_from_directory` resolves `path` beneath `directory` and\nraises a 404 `NotFound` when the resolved file does not exist.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 3663.1,
+    "said": "The code's behavior hasn't changed \u2014 `send_from_directory` still uses `safe_join` to resolve `path` beneath `directory` and raises 404 `NotFound` when the resolved file doesn't exist (helpers.py:541-547). The docstring diff only adds a security caveat that `directory` must not be client-supplied; it doesn't alter the described resolve/404 behavior, so the passage remains accurate.\n\nUNCHANGED",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": false,
+      "states_new_fact": false,
+      "drops_old_fact": false,
+      "repaired": false
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "Declined; identified the docstring-only security note."
+    }
+  },
+  {
+    "item": "c03-stream-with-context",
+    "arm": "accurate",
+    "commit": "860a25c3",
+    "edited": false,
+    "declined": true,
+    "kept_refs": true,
+    "states_new_fact": false,
+    "drops_old_fact": false,
+    "refs_resolved": 1,
+    "refs_total": 1,
+    "fresh_after": false,
+    "before": "`flask.helpers.stream_with_context` keeps the request context alive for the\nduration of a streaming response, and works either as a decorator or applied\ndirectly to a generator.",
+    "after": "`flask.helpers.stream_with_context` keeps the request context alive for the\nduration of a streaming response, and works either as a decorator or applied\ndirectly to a generator.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 983.8,
+    "said": "lue]` mypy suppression to the existing `update_wrapper` call \u2014 no functional change. I confirmed against the current source (`src/flask/helpers.py:91-124`): `stream_with_context` still works as both a decorator and when applied directly to a generator, and still keeps the request context alive via the `_cv_request` contextvar for the duration of the stream. The passage remains accurate.\n\nUNCHANGED",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": false,
+      "states_new_fact": false,
+      "drops_old_fact": false,
+      "repaired": false
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "Declined; identified the mypy suppression."
+    }
+  },
+  {
+    "item": "c04-make-response-headers",
+    "arm": "accurate",
+    "commit": "9532cba4",
+    "edited": false,
+    "declined": true,
+    "kept_refs": true,
+    "states_new_fact": false,
+    "drops_old_fact": false,
+    "refs_resolved": 0,
+    "refs_total": 1,
+    "fresh_after": false,
+    "before": "`flask.app.Flask.make_response` extends the response's existing headers with\nany headers the view returned, rather than replacing them.",
+    "after": "`flask.app.Flask.make_response` extends the response's existing headers with\nany headers the view returned, rather than replacing them.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 11.7,
+    "said": "The diff only added a `# type: ignore[arg-type]` comment \u2014 a mypy suppression, no behavioral change. `rv.headers.update(headers)` still extends existing headers rather than replacing them, exactly as the passage describes.\n\nUNCHANGED",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": false,
+      "states_new_fact": false,
+      "drops_old_fact": false,
+      "repaired": false
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "Declined; identified the type: ignore."
+    }
+  },
+  {
+    "item": "c05-process-response",
+    "arm": "accurate",
+    "commit": "7b008869",
+    "edited": false,
+    "declined": true,
+    "kept_refs": true,
+    "states_new_fact": false,
+    "drops_old_fact": false,
+    "refs_resolved": 0,
+    "refs_total": 1,
+    "fresh_after": false,
+    "before": "`flask.app.Flask.process_response` runs the registered `after_request`\ncallbacks in reverse order and then saves the session, unless the session\ninterface reports a null session.",
+    "after": "`flask.app.Flask.process_response` runs the registered `after_request`\ncallbacks in reverse order and then saves the session, unless the session\ninterface reports a null session.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 13.4,
+    "said": "just a lazy-accessor rename \u2014 `_get_session()` lazily creates/opens the session if it hasn't been already, then returns it (src/flask/ctx.py:380-392). The behavior the passage describes \u2014 running `after_request` callbacks in reverse order, then saving the session unless it's a null session \u2014 is unaffected by this change and still matches `process_response` at src/flask/app.py:1393-1417.\n\nUNCHANGED",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": false,
+      "states_new_fact": false,
+      "drops_old_fact": false,
+      "repaired": false
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "Declined; traced `_get_session` and found behaviour unchanged."
+    }
+  },
+  {
+    "item": "c06-sansio-app-init",
+    "arm": "accurate",
+    "commit": "c7da8c2a",
+    "edited": false,
+    "declined": true,
+    "kept_refs": true,
+    "states_new_fact": false,
+    "drops_old_fact": false,
+    "refs_resolved": 2,
+    "refs_total": 2,
+    "fresh_after": false,
+    "before": "`flask.sansio.app.App` takes an `import_name` and passes the static and\ntemplate configuration through to `flask.sansio.scaffold.Scaffold`.",
+    "after": "`flask.sansio.app.App` takes an `import_name` and passes the static and\ntemplate configuration through to `flask.sansio.scaffold.Scaffold`.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 8.0,
+    "said": "The change is only a return type annotation (`-> None`), and the constructor still takes `import_name` and passes `static_folder`, `static_url_path`, `template_folder`, `root_path` through to `super().__init__()` (i.e., `Scaffold`). The passage's substance is unaffected.\n\nUNCHANGED",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": false,
+      "states_new_fact": false,
+      "drops_old_fact": false,
+      "repaired": false
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "Declined; identified the -> None annotation."
+    }
+  },
+  {
+    "item": "c07-jinja-loader",
+    "arm": "accurate",
+    "commit": "ecc057dd",
+    "edited": false,
+    "declined": true,
+    "kept_refs": true,
+    "states_new_fact": false,
+    "drops_old_fact": false,
+    "refs_resolved": 0,
+    "refs_total": 1,
+    "fresh_after": false,
+    "before": "`flask.sansio.scaffold.Scaffold.jinja_loader` is a cached property, and is\n`None` when `template_folder` is not set.",
+    "after": "`flask.sansio.scaffold.Scaffold.jinja_loader` is a cached property, and is\n`None` when `template_folder` is not set.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 13.2,
+    "said": "The code still shows `@cached_property` and the same `None`-when-`template_folder`-unset logic (scaffold.py:275-286) \u2014 only the return type annotation changed from `FileSystemLoader | None` to `BaseLoader | None`, which the passage doesn't reference. The passage remains accurate.\n\nUNCHANGED",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": false,
+      "states_new_fact": false,
+      "drops_old_fact": false,
+      "repaired": false
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "Declined; noted the passage never named the return type."
+    }
+  },
+  {
+    "item": "c08-separated-path-type",
+    "arm": "accurate",
+    "commit": "1af8f957",
+    "edited": false,
+    "declined": true,
+    "kept_refs": true,
+    "states_new_fact": false,
+    "drops_old_fact": false,
+    "refs_resolved": 1,
+    "refs_total": 2,
+    "fresh_after": false,
+    "before": "`flask.cli.SeparatedPathType` splits an environment variable on the OS path\nseparator and converts each item the way `click.Path` would.",
+    "after": "`flask.cli.SeparatedPathType` splits an environment variable on the OS path\nseparator and converts each item the way `click.Path` would.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 1815.7,
+    "said": "The change is a pure refactor \u2014 it fixes a Python compile-time restriction (no-arg `super()` inside a list comprehension) by hoisting `super().convert` into a local variable before the comprehension. The behavior is identical: split on the OS path separator via `split_envvar_value`, then convert each item using `click.Path`'s conversion logic. The passage remains accurate.\n\nUNCHANGED",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": false,
+      "states_new_fact": false,
+      "drops_old_fact": false,
+      "repaired": false
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "Declined; identified the super() hoist as a pure refactor."
+    }
+  },
+  {
+    "item": "c09-save-session",
+    "arm": "accurate",
+    "commit": "eb1182a1",
+    "edited": false,
+    "declined": true,
+    "kept_refs": true,
+    "states_new_fact": false,
+    "drops_old_fact": false,
+    "refs_resolved": 0,
+    "refs_total": 1,
+    "fresh_after": false,
+    "before": "`flask.sessions.SecureCookieSessionInterface.save_session` signs the session\nwith `get_signing_serializer` and sets the cookie with the expiry from\n`get_expiration_time`.",
+    "after": "`flask.sessions.SecureCookieSessionInterface.save_session` signs the session\nwith `get_signing_serializer` and sets the cookie with the expiry from\n`get_expiration_time`.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 3934.9,
+    "said": "The passage is confirmed accurate \u2014 the flagged commit only changed type-ignore comments, not behavior. No edit needed.\n\nUNCHANGED",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": false,
+      "states_new_fact": false,
+      "drops_old_fact": false,
+      "repaired": false
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "Declined; identified the type-ignore change."
+    }
+  },
+  {
+    "item": "c10-request-endpoint",
+    "arm": "accurate",
+    "commit": "a363642a",
+    "edited": false,
+    "declined": true,
+    "kept_refs": true,
+    "states_new_fact": false,
+    "drops_old_fact": false,
+    "refs_resolved": 0,
+    "refs_total": 1,
+    "fresh_after": false,
+    "before": "`flask.wrappers.Request.endpoint` is the name of the URL rule that matched,\nand `None` when no rule matched.",
+    "after": "`flask.wrappers.Request.endpoint` is the name of the URL rule that matched,\nand `None` when no rule matched.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 10.3,
+    "said": "The passage still accurately describes the code's behavior \u2014 the diff only added a `# type: ignore[no-any-return]` comment for mypy, with no change to logic or the documented contract. No edit needed.\n\nUNCHANGED",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": false,
+      "states_new_fact": false,
+      "drops_old_fact": false,
+      "repaired": false
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "Declined; identified the type: ignore."
+    }
+  },
+  {
+    "item": "c11-config-from-mapping",
+    "arm": "accurate",
+    "commit": "746455d1",
+    "edited": false,
+    "declined": true,
+    "kept_refs": true,
+    "states_new_fact": false,
+    "drops_old_fact": false,
+    "refs_resolved": 0,
+    "refs_total": 1,
+    "fresh_after": false,
+    "before": "`flask.config.Config.from_mapping` updates the config from a mapping, ignoring\nany key that is not upper-case, and always returns `True`.",
+    "after": "`flask.config.Config.from_mapping` updates the config from a mapping, ignoring\nany key that is not upper-case, and always returns `True`.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 9.9,
+    "said": "The passage still accurately describes the code \u2014 the referenced commit only reformatted the docstring (line-wrapping, added blank line), leaving the behavior (filtering non-uppercase keys, always returning `True`) unchanged. No edit needed.\n\nUNCHANGED",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": false,
+      "states_new_fact": false,
+      "drops_old_fact": false,
+      "repaired": false
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "Declined; identified the docstring rewrap."
+    }
+  },
+  {
+    "item": "c12-null-session",
+    "arm": "accurate",
+    "commit": "3709c4a9",
+    "edited": false,
+    "declined": true,
+    "kept_refs": true,
+    "states_new_fact": false,
+    "drops_old_fact": false,
+    "refs_resolved": 1,
+    "refs_total": 1,
+    "fresh_after": false,
+    "before": "`flask.sessions.NullSession` fails on every write operation, raising a\n`RuntimeError` that tells you to set the secret key.",
+    "after": "`flask.sessions.NullSession` fails on every write operation, raising a\n`RuntimeError` that tells you to set the secret key.",
+    "revision": 3,
+    "model": "claude-sonnet-5",
+    "wall_s": 11.3,
+    "said": "I checked `src/flask/sessions.py:97-111` \u2014 the diff only removed a `# noqa: B950` lint-suppression comment. `NullSession._fail` still raises `RuntimeError` with the secret-key message, and it's still assigned to `__setitem__`, `__delitem__`, `clear`, `pop`, `popitem`, `update`, and `setdefault`. The passage remains accurate; no code changed.\n\nUNCHANGED",
+    "scope": "symbol",
+    "mechanical": {
+      "edited": false,
+      "states_new_fact": false,
+      "drops_old_fact": false,
+      "repaired": false
+    },
+    "adjudicated": {
+      "correct": true,
+      "note": "Declined; identified the noqa removal."
+    }
+  }
+]

@@ -1,9 +1,9 @@
 ---
 slate_doc: read-next
 slate_generated: false
-slate_synced_commit: 47e8952
-slate_synced_at: 2026-08-01T00:39:25+00:00
-slate_synced_digest: 72159ba4e4ded245
+slate_synced_commit: 8de7f80
+slate_synced_at: 2026-08-07T17:31:19+00:00
+slate_synced_digest: 2f055d49f41a2f35
 slate_watches:
   - benchmarks/**
   - slate/**
@@ -60,7 +60,10 @@ wall-clock, 0 tokens, vs. the measured size of a manual AI rewrite of the
 non-fresh docs). One-line `value:` footers on read/status/sync (human output
 only — `--json` shapes gained only additive fields), a `slate value [--json]`
 cumulative report with assumptions disclosed, additive `value` fields on MCP
-`slate_read`/`slate_sync`, and `SLATE_NO_VALUE=1` to opt out. Methodology is
+`slate_read`/`slate_sync`, and `SLATE_NO_VALUE=1` to opt out. Phase 5 added a
+`repairs` section via `value.record_repair` — verified and refused passes
+through the gate, and deliberately not "sessions that started fresh because of
+a repair"; see the Phase 5 note below. Methodology is
 `benchmarks/benchmark.py`'s: stored numbers are measured; dollars are
 display-time arithmetic at labeled list prices. Every record path is
 best-effort — a ledger failure can never break a command
@@ -96,10 +99,12 @@ coarse in practice.
 The consultation problem is closed on the delivery side. Slate no longer
 *offers* freshness to Claude Code; it injects it. New `slate/claudehook.py` +
 `slate agent hook` (the stdin handler) and `slate agent hooks install`, which
-writes two entries to `.claude/settings.json`: **SessionStart** (the layer's
+writes entries to `.claude/settings.json`: **SessionStart** (the layer's
 whole trust state, empty matcher so it also covers `compact`) and
 **PreToolUse** on `Read|Edit|Write|NotebookEdit` (warns only when the target
-file is covered by a non-fresh doc's watches). `slate agent enable claude`
+file is covered by a non-fresh doc's watches). Phase 3 added a third,
+**Stop** — see below; it is installed inert and does nothing until both repair
+switches are on. `slate agent enable claude`
 installs them; `--no-hooks` opts out; `slate agent status` reports them.
 
 Why this exists: the MCP path was measured and does not work — 0 `slate_*`
@@ -107,7 +112,7 @@ calls in 320 tool calls across 25 sessions. Hooks are not offered to the model,
 so there is no choice to decline. The module computes **no trust math** (it
 calls `freshness.evaluate_all` and renders, like `cli` and `mcp`), and every
 entry point fails to *silence* — never to a false `fresh`, never to a broken
-session. Pinned by `tests/test_claude_hook.py` (30 tests; 225 total).
+session. Pinned by `tests/test_claude_hook.py` (47 tests; 352 total).
 
 **Measured (2026-07-27 sweep, 4 arms × 5 trials, all same-day).** Delivery
 works and is verified end-to-end. What it buys is less settled:
@@ -187,14 +192,15 @@ not an engine change. Known bound: a claim spanning both new and old prose
 blames to the oldest line, so an old paragraph gaining a new ref stays flagged.
 Conservative on purpose — the safe direction.
 
-**Repair tasks — landed (2026-07-31). This is the current focus.** New
-`slate/repair.py` + `slate repair [--json]`: the suspect *hand-written* claims,
-strongest evidence first, each with the refs that put it at risk, the commits
-behind them, and a file line someone can open. `ClaimVerdict` gained
+**Repair tasks (Phase 1) — landed (2026-07-31).** New `slate/repair.py` +
+`slate repair [--json]`: the suspect *hand-written* claims, strongest evidence
+first, each with the refs that put it at risk, the commits behind them, and a
+file line someone can open. `ClaimVerdict` gained
 `doc_path`/`line`/`end_line`/`scope` (additive, as Part B was);
 `freshness.symbol_files` went public because repair resolves a symbol ref to
-its candidate files the same way the engine does. Reads only — no writes, no
-model, no second opinion about freshness.
+its candidate files the same way the engine does. The worklist half is still
+reads-only — no writes, no model, no second opinion about freshness — and the
+gate added beside it in Phase 2 keeps all three properties.
 
 Two scoping calls worth keeping. **Generated facts are not repair tasks**:
 `slate sync` already rewrites the auto-block deterministically for zero tokens,
@@ -219,18 +225,23 @@ returns 9999 purple`` turns the doc **fresh**. The criterion would have scored
 target claim becomes fresh" — would accept nonsense from every trial. The gate
 must rest on signals a repair cannot move by existing.
 
-**The repair experiment is pre-registered and not yet run.**
-`benchmarks/repairbench/spec.py` fixes the corpus, arms, metrics and
-thresholds; both corpora are frozen beside it. Two balanced arms of 18:
-`corpus_repairs.json` (sentences a maintainer later rewrote because the code
-moved — mined from history, so the maintainer's edit is a gold answer; median
-48 commits stale, worst 558) and `corpus_controls.json` (sentences flagged for
-the same reason that the maintainer deliberately left alone). Thresholds:
-≥90% of rewrites name only symbols that exist, ≥95% keep their refs, and ≥50%
-of *accurate* claims are declined. Failing any one means Phases 2 and 3 are not
-built and `slate repair` stays a read-only list. The control arm is the
-load-bearing one — Phase 0.5 measured that most flagged claims are still
-accurate, so an agent that rewrites whatever it is shown damages docs.
+**repairbench rev 1 ran and failed — inconclusively.** Pre-registration in
+`spec.py` (committed before any agent ran), 36 trials, `spec.verdict()` → FAIL.
+Superseded by rev 3 below, which is what `benchmarks/repairbench/RESULTS.md`
+now describes; rev 1 survives there only as revision history. Its primary
+number must not be quoted.
+
+Why it is void: the metric scored *unchanged text* (the agent declined 16 of
+18), the resolver could not express Flask's API, and it punishes accurate prose
+about deletions — "the `flask.ext` package has been removed" is true and names
+something that by definition no longer exists. The control comparison is void
+too: both arms declined at ~88%, so there is no discrimination signal, and the
+control threshold passed while measuring nothing.
+
+Hand-adjudication then found the corpus itself conflated *a maintainer edited
+this* with *this was false*: 8 of 18 were editorial rewrites and 9 of 18
+carried evidence resolved to the wrong file, leaving **5 usable pairs**. On
+those 5 the agent declined 5 of 5 — a direction, not a result.
 
 **Symbol refs resolve by module path, not filename stem — landed (2026-07-31).
 This closed a false `fresh`.** `_changed_symbols` now carries a dotted module
@@ -248,31 +259,254 @@ described had moved. Flask has exactly that shape: a test fixture named
 `test_package_symbol_with_a_same_named_decoy_is_not_falsely_fresh`, plus a
 src-layout case and a no-over-flagging case in the other direction.
 
-**Still unfixed:** `refs` assumes every backticked dotted name is code in
-*this* repo, so `logging.Formatter` and `werkzeug.wsgi.DispatcherMiddleware`
-match same-named local files. Any doc referencing stdlib or a third-party API
-gets false staleness. That is the remaining half of the resolution problem and
-the next thing in the way of a repairbench corpus.
+**References to code outside the repo — measured, mostly a non-problem
+(2026-07-31).** This was written up as the next blocker and that was wrong; it
+was checked before being built, and module-path resolution had already closed
+most of it. A doc citing stdlib `logging.Formatter` in a repo that has its own
+`app/logging.py` stays **fresh** when that module changes, because resolution
+sees the module never defined `Formatter`.
 
-**Next, in priority order.** (0) Score Phase 0 with `slate repair --json` as
-the instrument; the corpus is thin (3 verified genuinely-falsified claims
-against a 10–15 target), so widen it first. (1) Replicate the cost effect with cost
+Two cases remain, both conservative: an *unparseable* local module leaves the
+claim `unknowable`, and a local module that genuinely defines `Formatter`
+leaves it `stale`. `sys.stdlib_module_names` would clear both and should not
+be used for it — that trades a false `stale` for a possible false `fresh`,
+since a doc writing `logging.Formatter` about its *own* module would then
+never be flagged. Only one of those errors is permitted. All three behaviours
+are pinned in `tests/test_freshness.py`.
+
+**repairbench rev 3 passed — Phase 0 is answered (2026-08-01). This is the
+current state.** 24 trials on a *constructed* corpus: the agent rewrote 12 of 12
+falsified passages and touched 0 of 12 still-accurate ones (Fisher exact
+p=3.7e-07; pre-registered gate was a 40pp gap). Repair quality 10/12 mechanical,
+12/12 on hand adjudication. Read `benchmarks/repairbench/RESULTS.md` before
+touching any of this; the criteria are in `benchmarks/repairbench/spec.py`.
+
+What made it measurable was abandoning mined ground truth. `corpus.py`'s
+`build_trial` checks out a real Flask commit's parent, runs `slate init`,
+commits an authored passage, then applies the `src/` half of that commit on top
+— so the passage's truth value is known because it was *chosen* and the
+falsifying diff is known because it was *applied*. No resolver stands between a
+sentence and its evidence, which is what voided rev 1 (9 of 18 pairs carried
+misattributed evidence). Three details are load-bearing and easy to undo by
+accident: the prose commit must precede the code commit or `_prose_supersedes`
+narrows the item out of the experiment; only the `src/` half is applied, because
+`CHANGES.rst` entries exist in the falsified arm only and would be an answer key;
+and `corpus.py --verify` must pass for all 24 before a run, which is what proves
+Slate raises exactly one task naming exactly the applied commit.
+
+**The control arm is the finding, not the treatment arm.** 12 declines, each
+reasoning about whether the change intersects *what the sentence claims* — one
+declined because the annotation that changed was a return type "which the
+passage doesn't reference". That judgement is precisely what `slate repair`
+cannot make and why `RepairTask.scope` exists.
+
+**Two instrument defects, both conservative, both left unfixed on purpose.**
+`corpus.asserts` applies its negation check to the *new* fact as well as the old,
+so a rewrite that names the new behaviour and then contrasts it ("no longer a
+`MethodViewType` metaclass") is scored as not having stated it. And `t08`'s
+`old_fact` pattern named a clause its commit never falsified — an authoring
+error, one in 12, down from 13 in 18 at rev 1. Both push the score *down*, so
+neither can have manufactured the PASS, and fixing-then-rescoring recorded text
+would be choosing the metric to fit the result. A rev 4 must run fresh sessions,
+and there is no reason to spend them: 83% already cleared a 70% bar.
+
+**Phase 2 — the verification gate — landed (2026-08-01). This is the current
+state.** `repair.verify_repair(before, after, target)` returns a `Verdict` of
+`repaired` / `unchanged` / `rejected`, and it decides *admissibility of an edit*,
+never freshness. It is pure — the two doc bodies and `claims.human_claims`, no
+tree, no git, no scan, no model — because the drafted `(root, doc, ...)`
+signature handed a purely textual check a handle to the repo, which is how it
+would grow a second opinion about trust.
+
+Three things must hold, all about damage rather than truth: the target claim
+still exists in its own section *carrying refs*; nothing else moved; and
+"no change needed" is a pass. The first is the one that matters —
+`claims._emit` only emits a unit that references code, so an agent can "repair"
+a claim by deleting its backticks, the claim vanishes from `human_claims`, and
+the doc goes green. `test_repair_cannot_manufacture_fresh` demonstrates that
+rather than assuming it: it asserts the doc really does turn `fresh` after the
+refs are stripped, then that the gate refuses the edit. Located by *section*,
+not line — a rewrite reflows the paragraph it replaces, so an exact line would
+reject the ordinary case.
+
+**Phase 3 — session-end delivery — landed (2026-08-01). This is the current
+state.** The repair loop is wired end to end: `claudehook.session_end_text`
+names the suspect claims when the agent finishes a turn, `slate_repair_tasks`
+lists them in full, and `slate_repair_apply` puts a rewrite through
+`repair.verify_repair` before anything is written.
+
+**The event is `Stop`, not `SessionEnd` — this was measured, not chosen.** A
+canary against a real session found `SessionEnd` has no decision control and no
+`additionalContext` whatsoever: it fires after the session is over and shows
+stderr to the user, so nothing it emits reaches the model. The plan's drafted
+"`SessionEnd`/`Stop` … `additionalContext` only" was not implementable. `Stop`
+accepts `additionalContext` and *continues the conversation*, which is the only
+way an end-of-session job can be acted on — and is why it needs brakes. Two,
+independent: the client's `stop_hook_active` (observed `False` then `True`
+across one continued turn) and a per-session note reusing `_already_announced`.
+No `decision: "block"` anywhere; blocking is how a hook becomes the reason a
+session will not end.
+
+**The same canary changed the copy.** An imperative instruction injected by a
+hook reads as a prompt-injection attempt and gets refused — correctly. So
+`session_end_text` names itself and the settings file it came from, reports what
+it observed, and says leaving a claim alone is a correct outcome. It offers; it
+never commands.
+
+**Gated twice, and the conjunction is the point.** `agentcfg.repair_enabled`
+requires `agent-repair` on *and* access `full`; either alone grants nothing,
+because otherwise the repair file is a way around the access ceiling. Default
+off. `slate agent repair on` warns when the other switch is still read-only.
+
+Shipped as apply-behind-gates rather than the plan's propose-only: a proposal
+the agent renders for a human to paste back gives it no path to the doc, and
+Phase 4's primary metric — suspect claims at session end versus session start —
+would then be zero by construction. Four consents replace it (off by default,
+full access, the client's per-call prompt, and the verifier), and a repair
+leaves the doc **unstaged and un-re-anchored**, so a human still decides.
+
+**Phase 4 passed at E3 revision 2 (2026-08-02) — read
+`benchmarks/agentbench/E3-RESULTS.md` before touching this.** Revision 1 was
+VOID on a delivery gate I specified badly: it counted injections over every
+repair-on trial, and the hook is built to stay silent when the layer is clean,
+so correct silence scored as failure. Revision 2 counts only the trials that
+still had a suspect claim when `Stop` fired, threshold untouched at 90%. Fresh
+sweep, all three criteria clear: delivery 6/6, convergence 100% vs 36% (a 64pp
+gap against a 30pp bar), 7 verified repairs against 0 rejections. Revision 1's
+records are archived under `runs/e3-rev1/`, never re-scored.
+
+**What it licenses is narrower than the PASS suggests, and it replicated across
+both sweeps.** Roughly half the treatment's convergence never touches the gate —
+7 of 14 closures went through `slate_repair_apply` in revision 1, 7 of 13 in
+revision 2; the rest are the agent tidying by hand. And the control converges
+too, by rewriting the seeded claims into new accurate prose, sometimes without
+running any Slate command at all. So the claim is *not* "repair converges the
+layer". It is: **the layer converges either way, and repair makes about half of
+that convergence verified rather than asserted.**
+
+Do not quote the gap precisely. The control is bimodal — it either tidies
+thoroughly or ignores the docs — and its pooled rate swung 69% to 36% between
+identical designs. Direction stable across two runs, magnitude not.
+
+No correctness effect: 1/20 control, 1/20 treatment across both sweeps.
+
+**`slate mark` is still an ungated door**, unchanged from revision 1.
+`verify_repair` governs the MCP path only, and across both sweeps the control
+reached a green layer with the ordinary `Edit` tool — sometimes plus `slate
+mark` in a shell, sometimes needing nothing else, because rewriting the prose is
+enough and the claim count never drops so the guard never fires.
+
+**Phase 5 — ledger and pitch — landed (2026-08-02).** `value.record_repair`
+counts two things and refuses a third. It counts repairs the gate verified and
+wrote, and repairs the gate **refused** — the second is the causally clean one,
+since the edit did not land *because* the check said no. It does **not** count
+"sessions that started fresh because a prior session repaired them", which is
+what the plan asked for: Phase 4 measured that counterfactual and it fails, so
+crediting repair for a fresh layer would claim something that happens anyway in
+36–69% of unattended sessions. `slate value` prints that range inline so the
+count cannot be misread, pinned by a test. Same best-effort contract as the rest
+of the ledger — a failure here can never break a command.
+
+The README reframe ships narrower than drafted: not "Slate becomes a
+memory-consolidation layer" but "repair makes about half of the layer's
+convergence verified rather than asserted", with the measured limits and the
+`slate mark` hole stated at the point of the claim.
+
+**The `slate mark` door is closed (2026-08-03).** `repair.claim_loss`
+compares a doc's claims against its content at its anchor, and `slate mark`
+refuses to attest when the count dropped — the guard `verify_repair` applies,
+at the door the E3 control actually walked through. A human overrides with
+`--allow-claim-loss`; over MCP, `slate_mark` and `slate_update_focus` both
+refuse and there is no override, because an agent that just deleted a claim and
+is now attesting the doc is accurate is the exact sequence this exists for.
+Counted, not text-matched: a repair changes a claim's wording, so refusing on
+"this sentence is gone" would block every honest repair from being attested.
+
+**Hook delivery is agent-agnostic (2026-08-03).** New `slate/agenthooks.py`
+reuses `claudehook`'s renderers and varies only the envelope, so Claude Code,
+Codex and Cursor deliver identical freshness. `slate agent hooks install
+--client all`. Codex is near drop-in — same event names, same stdin fields,
+`additionalContext` at the top level rather than nested. Cursor needs two real
+adaptations: `beforeReadFile` **cannot inject context** (it returns a permission
+decision only) so the file warning rides `preToolUse`, and Slate never sends a
+`permission` field anywhere — returning "allow" would let a freshness note widen
+the user's own permissions.
+
+**Codex delivery is canary-verified (2026-08-05, `codex-cli 0.146.1`).** All
+three events fire and Slate's SessionStart freshness arrives in the right
+envelope. Three rounds, three distinct bugs: (1) `_codex_envelope` flattened
+`additionalContext` instead of nesting it under `hookSpecificOutput` — a hook
+that fires and whose output is discarded; (2) nothing fired on 0.137.0, and a
+minimal no-Slate hook did not either, which pointed away from Slate; (3) on
+0.146.1 the minimal hook fired from `~/.codex/` but not from the repo. That was
+the real bug — **Codex reads hooks only from the user's home**, and Slate was
+writing `<repo>/.codex/hooks.json`, which it silently ignores. Proven, not
+guessed: malformed JSON at the global path warns "failed to parse hooks config";
+the identical file in a repo produces nothing.
+
+Consequences worth carrying: Codex's config is per-user, so it cannot be
+committed the way Claude's can — each developer runs install once — and it is
+the only thing Slate writes outside the repo. **`PreToolUse` fires on Codex but
+rarely names a file**, because Codex reads through shell (`tool_name: "Bash"`)
+rather than a structured read tool, so there is no path to resolve. Parsing
+paths out of arbitrary shell is refused: a warning about the wrong file is worse
+than none. SessionStart and Stop are the working signals there. Cursor remains
+untried — no CLI on the machine — and `verified` is False for it alone.
+
+**Where the arc stands.** Phases 0–5 complete; the repair-and-resume pivot is
+built and measured end to end, and both of its measured gaps — the ungated
+`mark` door and Claude-only hook delivery — are now closed in code. Note the plan's phase numbers are separate from
+the product roadmap's in README.
+
+**Next, in priority order.** (0) **E3 revision 2 — re-run Phase 4 with a
+delivery gate that works.** Measure delivery against the trials that still had
+a suspect claim when `Stop` fired, not against all of them; the quantity is
+already recorded, so no new judgement enters, but the verdict has to come from
+fresh sessions. Worth adding while re-running: whether the *share* of closures
+going through `slate_repair_apply` grows, because at 7 of 14 the loop is an
+expensive way to prompt an attestation. Note this is no longer the same
+experiment it was when it was written: closing the `mark` door gated part of
+the attestation route, so a re-run measures the system as it is now.
+(1) Replicate the cost effect with cost
 *pre-registered* and higher n, and run SessionStart and PreToolUse as separate
 arms — right now the sweep cannot say which hook did the work. (2) The old
 `benchmarks/RESULTS.md` + `benchmark.py` are still self-referential and
 estimate-based, and its numbers predate the package-granularity scanner —
 re-run or retire it; the repo ships two RESULTS.md files making different
-kinds of claim. (3) Portability: `claudehook.py` splits cleanly into
-agent-neutral rendering (`session_start_text`, `pre_tool_use_text`,
-`_covering`) and a Claude-specific surface (`_rel_target`, `_output`, the
-settings writer). Codex uses the same event names via `hooks.json` /
-`[hooks]` in `config.toml`; Cursor uses `.cursor/hooks.json` with different
-names (`beforeReadFile`, `afterFileEdit`) and is still beta. Only worth
-porting once the effect replicates. (4) `InstructionsLoaded` (no decision
-control, side effects only) would turn "the layer loaded" into a logged fact.
+kinds of claim. (3) `InstructionsLoaded` (no decision control, side effects
+only) would turn "the layer loaded" into a logged fact.
+
+**Two items left this list without their preconditions being met, and the
+record should say which.** The `mark` gate was built (2026-08-03) — that one
+was simply done. Portability was *not* gated on a decision; it was gated on
+"only worth porting once the effect replicates", and the effect has not
+replicated. It was ported anyway on a direct instruction. That is a legitimate
+call by whoever asked, and it is not evidence the sequencing was satisfied.
+
+**Windows portability — landed (2026-08-07).** The cross-platform CI matrix
+(`windows-latest`/`macos-latest` x 3.11/3.13) went from 13 failures to green.
+Three distinct causes, and the encoding one is the only interesting one:
+`Path.read_text`/`write_text` and `subprocess.run(text=True)` all fall back to
+the *locale* codec, which is cp1252 on Windows and UTF-8 everywhere we develop.
+Slate reads UTF-8 docs (10 test failures), writes glyphs cp1252 cannot spell
+(`slate status > log.txt` died in `print`, in both `cli.py` and
+`benchmarks/benchmark.py` -- now sharing `cli.survive_a_narrow_console`), and
+decodes git's own diff output (`gitutil._git`). That last one was the real
+find: the reader thread died on the first non-ASCII byte, `run` returned
+`stdout=None`, and `_parse_hunks` crashed. See the landmine -- the crash was
+the *lucky* outcome.
+
+Method note worth keeping: the first fix pass used a regex that skipped any
+call whose text contained `encoding=`, which a *nested* `read_text(...)`
+satisfies -- so 28 writes silently kept the bug and Windows went from 13
+failures to 53. The guard test had the identical blind spot and passed. Both
+are now written against the AST (`tests/test_encoding.py`), inspecting real
+keyword lists. A guard that shares its subject's blind spot is not a guard.
+
 
 ## Landmines
 
+- **git's output is not the locale's business.** `subprocess.run(text=True)` with no `encoding=` decodes with the locale codec; on Windows the first non-ASCII byte of a diff kills subprocess's reader thread and `run` hands back `stdout=None`. Slate hit this in `gitutil._git` on 2026-08-07. It surfaced as a crash in `_parse_hunks`, which was the lucky outcome: an unreadable diff and an *empty* diff are indistinguishable to everything downstream, and `freshness._changed_symbols` reads an empty hunk map as "no symbols changed" -- a false `fresh` produced by a decode that never happened. Every `subprocess.run` under `slate/` pins `encoding="utf-8", errors="replace"`, `_git` raises rather than return `None`, and `tests/test_encoding.py` guards both against the AST.
 - After changing code under `slate/` or `tests/`, run `slate sync` and commit the doc updates in the same PR — CI's `slate status --ci` gate fails otherwise.
 - The MCP server must never compute trust math or expose write tools in read mode; `tests/test_mcp.py` pins both.
 - Neither must the hook — `slate/claudehook.py` renders what `freshness.evaluate_all` and `cochange` already computed, and derives no trust of its own. A second implementation of "is this doc fresh" is a second thing that can disagree, and it would disagree inside the model's context window.
@@ -280,4 +514,11 @@ control, side effects only) would turn "the layer loaded" into a logged fact.
 - Claude Code reads `CLAUDE.md`, not `AGENTS.md`. Project `.claude/settings.json` hooks *do* load under `claude -p`; project `.mcp.json` does **not** without `--mcp-config`. Verify delivery with a canary before trusting any agent-behaviour measurement.
 - `slate sync` cannot clear `read-next`. It has `generated: false`, so there is no auto-block to regenerate — only `slate mark read-next` re-anchors it, and only after someone has actually rewritten the focus text. Marking a doc you have not read is the one way to turn this whole layer back into a rumor.
 - Authorship narrowing may only ever narrow. `freshness._prose_supersedes` must return False for every question it cannot answer — no blame, no anchor, no file. A `git` call that starts *assuming* recency is a false `fresh` with extra steps.
+- **Slate detects moved code, not contradicted prose, and no guard in the product closes that gap.** A claim goes stale two ways: the code it names moves (caught), or the sentence simply becomes untrue while every ref it names sits untouched (invisible). `repair.claim_loss` does not help — it counts claims, so it catches *deletion*, not *falsity*. Observed here on 2026-08-03: this doc said porting to Codex/Cursor was "only worth porting once the effect replicates" **after** the port had shipped, `slate status` stayed green throughout, and `slate mark` re-anchored the doc without complaint. A structural check cannot verify truth; that is what the human reading before `mark` is for, and it is why marking a doc you have not actually re-read is the one move that turns this layer back into a rumor.
+- `repair.verify_repair` must stay pure and must never consult freshness. It answers "is this edit admissible", not "is this doc now accurate" — freshness cannot answer the second about a repair, because a repair is newer prose by definition and authorship narrowing reads a timestamp the repair just updated. Measured: replacing a stale sentence with "`engine.run` returns 9999 purple" turns the doc `fresh`. Re-anchoring stays with `freshness.evaluate` and `slate mark`.
+- `additionalContext` on a `Stop` hook **continues the conversation**. A Stop path that speaks unconditionally is an infinite session: the agent finishes, the hook speaks, it finishes again. Both brakes have to stay — `stop_hook_active` from the client, and the per-session note via `_already_announced`. And never emit `decision: "block"` from any hook: that is how Slate becomes the reason a session will not end.
+- `SessionEnd` cannot inject context. No decision control, no `additionalContext` — it fires after the session is over and shows stderr to the user only. Anything that must reach the model at the end of a turn goes on `Stop`. Verified with a canary, not read off a doc.
+- Hook text must offer, never command. A bare imperative arriving through a hook reads as a prompt-injection attempt and gets refused — observed in the canary. `claudehook.session_end_text` names itself, names the settings file it came from, states what it observed, and says declining is a correct outcome.
+- `agentcfg.repair_enabled` requires *both* `agent-repair` on and access `full`. Never let one imply the other: the repair file would become a way around the access ceiling, which is the only thing that ceiling is for.
+- A repair may never be allowed to *remove* a claim's refs. `claims._emit` only emits a unit that references code, so stripping the backticks deletes the claim from the trust surface entirely and the doc goes green — a false `fresh` manufactured by the feature meant to prevent it. Pinned by `test_repair_cannot_manufacture_fresh`.
 - Don't reintroduce the old `apps/`/`packages/`/`infra/` trees from git history (decision log 2026-07-15).

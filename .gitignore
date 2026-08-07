@@ -16,3 +16,7 @@ build/
 # agent benchmark working data (large; transcripts are committed selectively)
 benchmarks/agentbench/.work/
 benchmarks/agentbench/runs/*.jsonl
+
+# repairbench working clones (large; transcripts are committed selectively)
+benchmarks/repairbench/.work/
+benchmarks/repairbench/runs/*.jsonl

@@ -27,5 +27,16 @@
   "grader_failed": 1,
   "new_suite_failures": [],
   "correct": false,
-  "touched_tests": false
+  "touched_tests": false,
+  "suspect_claims_start": 0,
+  "suspect_claims_unrepaired": 0,
+  "suspect_claims_end": 0,
+  "claims_repaired": 0,
+  "stop_hook_fired": 0,
+  "stop_hook_injected": 0,
+  "repair_apply_calls": 0,
+  "repair_apply_accepted": 0,
+  "repair_apply_rejected": 0,
+  "reanchor_calls": 0,
+  "direct_doc_edits": 0
 }

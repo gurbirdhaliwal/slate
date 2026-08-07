@@ -1,0 +1,20 @@
+{
+  "item": "t08-subdomain-matching",
+  "arm": "falsified",
+  "commit": "4995a775",
+  "edited": true,
+  "declined": false,
+  "kept_refs": true,
+  "states_new_fact": true,
+  "drops_old_fact": false,
+  "refs_resolved": 0,
+  "refs_total": 2,
+  "fresh_after": false,
+  "before": "`flask.app.Flask.create_url_adapter` ignores the configured server name when\nit chooses a subdomain: with `subdomain_matching` off it always uses\n`url_map.default_subdomain`.",
+  "after": "`flask.app.Flask.create_url_adapter` ignores the configured server name when\nit chooses a subdomain, but only when `host_matching` is also off: if\n`subdomain_matching` is off, it forces the subdomain to\n`url_map.default_subdomain` (falling back to `\"\"`, not `None`). If\n`host_matching` is on, this forcing is skipped entirely and `SERVER_NAME` is\ndropped instead, regardless of `subdomain_matching`.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 62.2,
+  "said": "REWRITTEN",
+  "scope": "symbol"
+}

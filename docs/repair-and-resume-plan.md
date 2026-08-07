@@ -1,6 +1,12 @@
 # Execution plan — the repair-and-resume pivot
 
-**Status:** proposed, not started · **Drafted:** 2026-07-30
+**Status:** Complete — phases 0–5 done (2026-08-02) · **Drafted:** 2026-07-30
+
+Phase 0 took two experiment cycles and three revisions. It is answered:
+`benchmarks/repairbench/RESULTS.md` records 12/12 falsified passages repaired
+and 0/12 accurate ones touched, so **Phases 2 and 3 are unblocked**. Read the
+constraints that result puts on Phase 2 before touching the gate — two of the
+three criteria drafted below are measured dead ends.
 
 ---
 
@@ -78,7 +84,13 @@ project can make about the pivot.
 
 ## Phase 0 — Prove repair converges
 
-*Before any product code.*
+*Before any product code.* **Answered 2026-08-01: PASS.** Full write-up in
+`benchmarks/repairbench/RESULTS.md`; the criteria that decided it are in
+`benchmarks/repairbench/spec.py`, not in the table below, which is the original
+draft and is superseded. The corpus had to be *constructed* rather than mined —
+every attempt to discover ground truth in real history foundered on evidence
+attribution — and the discrimination metric had to become a difference between
+arms rather than a threshold on one.
 
 **The question.** Given a stale claim plus the diff that staled it, does an
 agent produce prose that is *better*, not merely different?
@@ -157,7 +169,22 @@ Independently valuable to a human, with no agent involved.
 
 ## Phase 2 — The verification gate
 
-*The false-fresh invariant lives or dies here.*
+*The false-fresh invariant lives or dies here.* **Shipped 2026-08-01** as
+`repair.verify_repair(before, after, target) -> Verdict`, with
+`test_repair_cannot_manufacture_fresh` as the exit criterion. Two deviations
+from the draft below, both deliberate:
+
+- **The signature dropped `root` and `doc`.** No check that survived Phase 0
+  needs the tree, and a handle to the repo is how a pure admissibility check
+  grows a second opinion about freshness. The function consults the two bodies
+  and the segmenter, nothing else.
+- **The claim is located by section, not by line.** A rewrite reflows the
+  paragraph it replaces, so an exact line would reject the ordinary case. What
+  is pinned is that the repaired claim still exists *in its own section,
+  carrying refs*.
+
+Outcomes are `repaired`, `unchanged`, and `rejected`. `unchanged` is a pass —
+see the constraint below.
 
 > **This gate as originally drafted does not work.** It required "the target
 > claim becomes fresh", which every edit satisfies — see the retired criterion
@@ -166,10 +193,23 @@ Independently valuable to a human, with no agent involved.
 > check decides. What has to change is the check.
 
 `repair.verify_repair(root, doc, before, after) -> Verdict` must rest on
-signals the repair cannot move by existing. The candidate, carried over from
-the Phase 0 metrics: every symbol the new sentence names resolves to something
-real in the tree, the sentence still names code at all, and no other claim
-regresses. Re-anchoring remains a function of `freshness.evaluate` — never of
+signals the repair cannot move by existing. Phase 0 killed two of the three
+candidates originally listed here, and both are now measured rather than
+suspected:
+
+- **Not freshness.** A repair is newer prose by definition, so authorship
+  narrowing clears it whatever it says (revision 1, still binding).
+- **Not "every named symbol resolves".** It cannot express deletion, and prose
+  about removed API is correct prose. Revision 3 measured 4 of 14 symbols in
+  *correct* rewrites failing to resolve.
+- **What survives:** the sentence still names code at all (revision 1 and 3 both
+  measured 100%, so this is a floor, not a hurdle), no other claim regresses,
+  and the claim still exists at that location carrying refs.
+
+**And the gate must accept "no change needed" as a verifiable outcome.** It was
+the correct action in 12 of Phase 0's 24 trials, and on real history most
+flagged claims are prose that is still accurate. A gate that only recognises a
+successful rewrite scores the right answer as a failure. Re-anchoring remains a function of `freshness.evaluate` — never of
 "the agent reported success" — but freshness is no longer what licenses the
 repair.
 
@@ -207,6 +247,28 @@ worst-bug invariant, introduced by the feature meant to serve it.
 ---
 
 ## Phase 3 — Delivery: session-end repair
+
+**Shipped 2026-08-01.** One correction, forced by measurement rather than
+preference: **the event is `Stop`, not `SessionEnd`.** A canary against a real
+session settled it —
+
+- `SessionEnd` has no decision control and no `additionalContext` at all. It
+  fires after the session is over and shows stderr to the user; nothing it
+  emits reaches the model. The drafted "`SessionEnd`/`Stop` … `additionalContext`
+  only" was not implementable as written.
+- `Stop` fires when the model finishes a turn, accepts `additionalContext`, and
+  **continues the conversation** so the agent can act on it.
+
+That continuation is a loop, so it needs brakes. Two, independent: the client's
+`stop_hook_active` flag (measured `False` then `True` across one continued
+turn), and a per-session note of its own so a client that drops the field still
+bounds this to one announcement. No `decision: "block"` anywhere — blocking is
+how a hook becomes the reason a session will not end.
+
+The canary produced a second finding that changed the copy, not just the wiring:
+an imperative instruction injected by a hook **reads as a prompt-injection
+attempt and gets refused**, correctly. The rendered text therefore says who is
+speaking and what it observed, and offers rather than commands.
 
 ### Why session-end, not session-start
 
@@ -248,9 +310,48 @@ converge on its own.
   files is how a tool gets uninstalled once. Start with propose-diff; consider
   auto-apply only after Phase 4 data.
 
+  **Shipped as apply-behind-gates rather than propose-only**, deliberately.
+  A proposal the agent renders for a human to paste back gives the agent no path
+  to the doc, which makes Phase 4 unmeasurable: its primary metric is
+  suspect-claim count at session end versus session start, and if repairs never
+  land that number is identically zero by construction. The propose-diff posture
+  is preserved by four independent consents instead — repair off by default,
+  full access required on top of it, the client's own per-call permission
+  prompt, and `verify_repair` refusing anything malformed. The doc is left
+  unstaged and **not re-anchored**, so a human still reviews the diff before the
+  layer vouches for it.
+
 ---
 
 ## Phase 4 — Measure the thing that is now measurable
+
+**Ran twice, 20 trials each. Revision 1 was VOID — the delivery gate could not
+tell "the hook broke" from "the hook had nothing to say". Revision 2 corrected
+that denominator, left the thresholds alone, and PASSED all three criteria on
+fresh sessions: delivery 6/6, convergence 100% vs 36%, 7 verified repairs
+against 0 rejections. Full write-up in `benchmarks/agentbench/E3-RESULTS.md`;
+read it before acting on anything below.**
+
+**What the PASS licenses is narrower than it sounds**, and it replicated across
+both sweeps: roughly half the treatment's convergence never touches the gate
+(7 of 14 closures, then 7 of 13), and the control converges too — by rewriting
+the seeded claims into new accurate prose, sometimes without running any Slate
+command. The claim is not "repair converges the layer". It is that the layer
+converges either way and repair makes about half of that convergence *verified*
+rather than asserted. The gap magnitude is unstable (control 69% then 36% on an
+identical design) and should not be quoted precisely.
+
+Three corrections the runs forced on the design as drafted here:
+
+- **"The agent's own edits stale the layer naturally" is false** for the claims
+  repair exists for. A stock layer has no hand-written claim naming code, so a
+  *perfect* solution produced "nothing to repair". The corpus had to be seeded.
+- **The control needed full access too.** As first built it ran read-only, so
+  the arms differed by the repair switch *and* everything else `full` unlocks.
+- **Convergence is bought by attestation, not repair.** Both arms converge; the
+  measured effect of the switch is on whether the agent touches the docs at all
+  (10/10 vs 5/10, p=0.0163), and only 7 of 14 treatment closures went through
+  the verified gate.
 
 **Pre-register in `benchmarks/agentbench/spec.py` before running.**
 Non-negotiable, given the last two cycles.
@@ -278,18 +379,29 @@ report it the way `decoy_hits` was reported.
 
 ## Phase 5 — Ledger and pitch
 
-- **`slate/value.py`** — count claims repaired, and sessions that started fresh
-  *because* a prior session repaired them. Same best-effort contract: a ledger
-  failure can never break a command.
+**Shipped 2026-08-02, and both halves ship narrower than drafted here. Phase 4
+is the reason; the drafts below were written before the experiment.**
 
-  This matters more than it looks. HyperProbe closes its loop inside one
-  session, so the user feels the value immediately. Slate's repaired doc is
-  consumed by a future session or a human, so the feedback is delayed and
-  invisible. The ledger is what makes a delayed benefit legible.
+- **`slate/value.py`** — ~~count claims repaired, and sessions that started
+  fresh *because* a prior session repaired them~~. `value.record_repair` counts
+  repairs the gate **verified** and repairs the gate **refused**. It does not
+  count sessions that started fresh because of a repair: Phase 4 measured that
+  counterfactual and it fails — an unattended control converged its own layer in
+  36–69% of trials — so the attribution is not available. `refused` is the one
+  causally clean event in the whole loop: the edit did not land *because* the
+  check said no. Same best-effort contract; `slate value` prints the control
+  range inline so a count cannot be misread as "the layer stayed fresh because
+  of Slate".
 
-- **Docs** — reframe from context delivery to memory consolidation. Update
-  `.slate/read-next.md`, append the pivot to `.slate/decisions.md`, run
-  `slate sync`.
+  The delayed-benefit problem this was meant to solve is therefore only half
+  solved, and that is the honest outcome of having measured it.
+
+- **Docs** — ~~reframe from context delivery to memory consolidation~~. The
+  consolidation framing claims the whole of an effect that is partly the agent
+  tidying up unprompted. README ships the measured claim instead: *the layer
+  often converges either way; repair makes about half of that convergence
+  verified rather than asserted* — with the absent correctness effect and the
+  `slate mark` hole stated at the point of the claim.
 
 ---
 

@@ -35,7 +35,7 @@ SKIPPED: list[dict] = []
 def load() -> dict[str, list[dict]]:
     by_arm: dict[str, list[dict]] = {}
     for path in sorted(RUNS.glob("*.json")):
-        record = json.loads(path.read_text())
+        record = json.loads(path.read_text(encoding="utf-8"))
         # Never average two different experiments. A record from an older task
         # revision answers a different question, and `runs/` mixes them freely
         # because a re-run overwrites one arm's files and leaves the rest.
@@ -555,9 +555,84 @@ def markdown(by_arm: dict[str, list[dict]]) -> str:
     return "\n".join(out) + "\n"
 
 
+def e3_report(by_arm: dict[str, list[dict]]) -> str:
+    """The repair sweep, scored against the numbers fixed in `spec.py`.
+
+    Kept apart from `markdown()` rather than folded into it: E1 prices
+    orientation and E3 prices convergence, they share a task and nothing else,
+    and one table over both would invite averaging them.
+    """
+    names = [a.name for a in spec.REPAIR_ARMS]
+    # Never mix two E3 measurements. Revision 1's records are archived under
+    # runs/e3-rev1/, but a stray sidecar left in place would otherwise be
+    # averaged in silently — the same failure `task_revision` guards for E1.
+    arms = {n: [r for r in by_arm.get(n, [])
+                if r.get("e3_revision", 1) == spec.E3_REVISION]
+            for n in names}
+    if not any(arms.values()):
+        return (f"no E3 records at measurement revision {spec.E3_REVISION} — "
+                "run the repair arms first\n")
+
+    def conv(records: list[dict]) -> float:
+        """Of the repair jobs a session's own edits created, the fraction closed.
+
+        Pooled over trials rather than averaged per trial: a trial whose edits
+        created no jobs has an undefined ratio, and dropping it silently would
+        weight the arms differently.
+        """
+        created = sum(r["suspect_claims_unrepaired"] for r in records)
+        return sum(r["claims_repaired"] for r in records) / created if created else 0.0
+
+    lines = [
+        "## E3 — the repair loop\n",
+        f"Pre-registration: `spec.py` at task revision {spec.TASK_REVISION}, "
+        "committed before any agent ran.\n",
+        "| | " + " | ".join(names) + " |",
+        "|---|" + "---|" * len(names),
+    ]
+
+    def row(label: str, fn) -> None:
+        lines.append(f"| {label} | " + " | ".join(
+            fn(arms[n]) if arms[n] else "—" for n in names) + " |")
+
+    row("trials", lambda rs: str(len(rs)))
+    # Invocations vs. injections. The hook is installed in both arms and inert
+    # in the control, so the control is *expected* to inject nothing — that is
+    # what makes it a control, not a delivery failure.
+    row("Stop hook invoked", lambda rs: f"{sum(1 for r in rs if r['stop_hook_fired'])}/{len(rs)}")
+    row("Stop hook injected", lambda rs: f"{sum(1 for r in rs if r['stop_hook_injected'])}/{len(rs)}")
+    row("repair jobs created", lambda rs: str(sum(r["suspect_claims_unrepaired"] for r in rs)))
+    row("repair jobs closed", lambda rs: str(sum(r["claims_repaired"] for r in rs)))
+    row("convergence", lambda rs: f"{conv(rs):.0%}")
+    row("slate_repair_apply accepted", lambda rs: str(sum(r["repair_apply_accepted"] for r in rs)))
+    row("slate_repair_apply rejected", lambda rs: str(sum(r["repair_apply_rejected"] for r in rs)))
+    row("correct", lambda rs: f"{sum(1 for r in rs if r['correct'])}/{len(rs)}")
+    row("median turns", lambda rs: f"{med([r['num_turns'] for r in rs]):.0f}")
+    row("median context", lambda rs: f"{med([r['fresh_input'] + r['cache_creation'] for r in rs]):,.0f}")
+
+    on, off = arms.get("repair-on", []), arms.get("repair-off", [])
+    delivery, delivered, relevant = spec.delivery_rate(on)
+    lines.append(
+        f"\nDelivery (the gate): the hook injected in {delivered} of the "
+        f"{relevant} repair-on trial(s) that still had a suspect claim when "
+        f"`Stop` fired. The other {len(on) - relevant} had already been closed, "
+        f"so silence there is correct and is not counted against delivery.")
+    passed, failures = spec.repair_verdict(
+        conv(on), conv(off),
+        sum(r["repair_apply_accepted"] for r in on),
+        sum(r["repair_apply_rejected"] for r in on),
+        delivery,
+    )
+    lines.append(f"\n**spec.repair_verdict() -> {'PASS' if passed else 'FAIL'}**\n")
+    for failure in failures:
+        lines.append(f"- {failure}")
+    return "\n".join(lines) + "\n"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--e3", action="store_true", help="the repair sweep only")
     args = ap.parse_args()
 
     by_arm = load()
@@ -575,7 +650,9 @@ def main() -> int:
         else:
             print(f"no results in {RUNS} — run run.py first", file=sys.stderr)
         return 1
-    if args.json:
+    if args.e3:
+        print(e3_report(by_arm), end="")
+    elif args.json:
         print(json.dumps({k: aggregate(v) for k, v in by_arm.items()}, indent=2))
     else:
         print(markdown(by_arm), end="")

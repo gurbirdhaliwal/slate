@@ -57,7 +57,7 @@ def test_sync_doc_places_prose_above_facts(repo: Path) -> None:
     scan = scanner.scan(repo)
     doc = context.load(repo, context.spec_by_name("modules"))
     generator.sync_doc(doc, scan, prose=lambda spec, facts: "PROSE-HERE")
-    block = get_auto_block(context.spec_by_name("modules").path(repo).read_text())
+    block = get_auto_block(context.spec_by_name("modules").path(repo).read_text(encoding="utf-8"))
     assert block.startswith("PROSE-HERE")
     assert "| Module |" in block  # deterministic facts still present below
 
@@ -67,7 +67,7 @@ def test_plain_sync_never_adds_prose(repo: Path) -> None:
     scan = scanner.scan(repo)
     doc = context.load(repo, context.spec_by_name("modules"))
     generator.sync_doc(doc, scan)
-    block = get_auto_block(context.spec_by_name("modules").path(repo).read_text())
+    block = get_auto_block(context.spec_by_name("modules").path(repo).read_text(encoding="utf-8"))
     assert block.startswith("| Module |")
 
 

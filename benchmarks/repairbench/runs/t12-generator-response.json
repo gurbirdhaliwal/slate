@@ -1,0 +1,20 @@
+{
+  "item": "t12-generator-response",
+  "arm": "falsified",
+  "commit": "762382e4",
+  "edited": true,
+  "declined": false,
+  "kept_refs": true,
+  "states_new_fact": true,
+  "drops_old_fact": true,
+  "refs_resolved": 0,
+  "refs_total": 1,
+  "fresh_after": false,
+  "before": "`flask.app.Flask.make_response` documents the return types a view may use:\n`str`, `bytes`, `dict`, `tuple`, `Response`, and a WSGI callable. A lazily\nproduced body has to be wrapped in a `Response` by the view itself.",
+  "after": "`flask.app.Flask.make_response` documents the return types a view may use:\n`str`, `bytes`, `dict`, `tuple`, `Response`, a generator/iterator, and a WSGI\ncallable. A generator or iterator returning `str`/`bytes` is now converted\ndirectly into a streaming `Response` by `make_response` itself \u2014 the view no\nlonger has to wrap a lazily produced body.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 3006.5,
+  "said": "REWRITTEN",
+  "scope": "symbol"
+}

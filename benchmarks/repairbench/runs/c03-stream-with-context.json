@@ -1,0 +1,20 @@
+{
+  "item": "c03-stream-with-context",
+  "arm": "accurate",
+  "commit": "860a25c3",
+  "edited": false,
+  "declined": true,
+  "kept_refs": true,
+  "states_new_fact": false,
+  "drops_old_fact": false,
+  "refs_resolved": 1,
+  "refs_total": 1,
+  "fresh_after": false,
+  "before": "`flask.helpers.stream_with_context` keeps the request context alive for the\nduration of a streaming response, and works either as a decorator or applied\ndirectly to a generator.",
+  "after": "`flask.helpers.stream_with_context` keeps the request context alive for the\nduration of a streaming response, and works either as a decorator or applied\ndirectly to a generator.",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 983.8,
+  "said": "lue]` mypy suppression to the existing `update_wrapper` call \u2014 no functional change. I confirmed against the current source (`src/flask/helpers.py:91-124`): `stream_with_context` still works as both a decorator and when applied directly to a generator, and still keeps the request context alive via the `_cv_request` contextvar for the duration of the stream. The passage remains accurate.\n\nUNCHANGED",
+  "scope": "symbol"
+}

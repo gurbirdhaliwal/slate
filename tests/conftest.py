@@ -49,22 +49,22 @@ def repo(tmp_path: Path) -> Path:
     root.mkdir()
     git(root, "init", "-q")
 
-    (root / "README.md").write_text("# Demo Project\n\nA fixture repo.\n")
+    (root / "README.md").write_text("# Demo Project\n\nA fixture repo.\n", encoding="utf-8")
     (root / "Makefile").write_text(
         ".PHONY: test build\n\ntest:\n\tpytest\n\nbuild:\n\techo build\n"
-    )
+    , encoding="utf-8")
     (root / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "0.0.1"\n\n'
         "[project.scripts]\ndemo = \"demo.cli:main\"\n"
-    )
+    , encoding="utf-8")
     src = root / "demo"
     src.mkdir()
-    (src / "__init__.py").write_text("")
-    (src / "cli.py").write_text("def main():\n    return 0\n")
-    (src / "engine.py").write_text("def run():\n    return 42\n")
+    (src / "__init__.py").write_text("", encoding="utf-8")
+    (src / "cli.py").write_text("def main():\n    return 0\n", encoding="utf-8")
+    (src / "engine.py").write_text("def run():\n    return 42\n", encoding="utf-8")
     tests_dir = root / "tests"
     tests_dir.mkdir()
-    (tests_dir / "test_engine.py").write_text("def test_run():\n    assert True\n")
+    (tests_dir / "test_engine.py").write_text("def test_run():\n    assert True\n", encoding="utf-8")
 
     commit_all(root, "initial")
     return root

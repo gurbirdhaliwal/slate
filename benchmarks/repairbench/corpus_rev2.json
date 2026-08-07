@@ -1,0 +1,243 @@
+[
+  {
+    "id": "t01-redirect-code",
+    "arm": "falsified",
+    "commit": "eca5fd1d",
+    "subject": "redirect defaults to 303",
+    "claim": "`flask.helpers.redirect` builds the redirect response and defaults `code` to 302, delegating to `current_app.redirect` when an application context is active.",
+    "old_fact": ["\\b302\\b"],
+    "new_fact": ["\\b303\\b"],
+    "truth": "The default status code changed from 302 to 303."
+  },
+  {
+    "id": "t02-autoescape-case",
+    "arm": "falsified",
+    "commit": "9368fb3f",
+    "subject": "case-insensitive comparison",
+    "claim": "`flask.sansio.app.App.select_jinja_autoescape` decides autoescaping from the template's extension and compares it exactly, so a file named `INDEX.HTML` is not autoescaped.",
+    "old_fact": ["(?i)\\bexactly\\b", "(?i)case[- ]sensitive", "(?i)is not autoescaped"],
+    "new_fact": ["(?i)case[- ]insensitiv", "(?i)\\blower\\b", "(?i)regardless of case", "(?i)ignores? case"],
+    "truth": "The comparison now lowercases the filename first, so uppercase extensions are autoescaped too."
+  },
+  {
+    "id": "t03-copy-request-context",
+    "arm": "falsified",
+    "commit": "06ea505c",
+    "subject": "separate copy per call",
+    "claim": "`flask.ctx.copy_current_request_context` copies the active context once, at decoration time, and the wrapped function always runs inside that single shared copy.",
+    "old_fact": ["(?i)single shared copy", "(?i)copies .{0,40}once"],
+    "new_fact": ["(?i)(each|every|per) call", "(?i)separate copy", "(?i)its own copy", "(?i)independent"],
+    "truth": "The copy is now made inside the wrapper, so each call gets its own context."
+  },
+  {
+    "id": "t04-methodview-metaclass",
+    "arm": "falsified",
+    "commit": "45174bf9",
+    "subject": "use __init_subclass__ instead of metaclass for MethodView",
+    "claim": "`flask.views.MethodView` collects the HTTP methods a view implements through the `flask.views.MethodViewType` metaclass.",
+    "old_fact": ["(?i)metaclass", "MethodViewType"],
+    "new_fact": ["__init_subclass__"],
+    "truth": "MethodViewType was deleted; MethodView now uses __init_subclass__."
+  },
+  {
+    "id": "t05-session-expiry-naive",
+    "arm": "falsified",
+    "commit": "ed42e929",
+    "subject": "session expiration datetime is UTC timezone-aware",
+    "claim": "`flask.sessions.SessionInterface.get_expiration_time` returns a naive UTC datetime built from `datetime.utcnow`, or `None` when the session is not permanent.",
+    "old_fact": ["(?i)\\bnaive\\b", "utcnow"],
+    "new_fact": ["(?i)(timezone|tz)[- ]aware", "timezone.utc", "(?i)datetime\\.now"],
+    "truth": "get_expiration_time now returns a timezone-aware datetime via datetime.now(timezone.utc)."
+  },
+  {
+    "id": "t06-blueprint-empty-name",
+    "arm": "falsified",
+    "commit": "b8b41001",
+    "subject": "require a non-empty name for blueprints",
+    "claim": "`flask.blueprints.Blueprint` rejects a name containing a dot, but accepts an empty name.",
+    "old_fact": ["(?i)accepts an empty name", "(?i)empty name is (allowed|accepted|fine)"],
+    "new_fact": ["(?i)(may not|cannot|must not) be empty", "(?i)non-?empty", "(?i)rejects (an )?empty", "(?i)empty .{0,20}(raises|ValueError)"],
+    "truth": "An empty blueprint name now raises ValueError."
+  },
+  {
+    "id": "t07-teardown-first-error",
+    "arm": "falsified",
+    "commit": "fbb6f0bc",
+    "subject": "all teardown callbacks are called despite errors",
+    "claim": "`flask.app.Flask.do_teardown_request` runs the teardown callbacks in reverse registration order and stops at the first one that raises.",
+    "old_fact": ["(?i)stops? at the first", "(?i)first one that raises"],
+    "new_fact": ["(?i)all (the )?(teardown )?callbacks", "(?i)(despite|even if|regardless of) (an? )?error", "(?i)collect(s|ed)? (the )?error", "(?i)continues"],
+    "truth": "Every teardown callback now runs; errors are collected and raised together."
+  },
+  {
+    "id": "t08-subdomain-matching",
+    "arm": "falsified",
+    "commit": "4995a775",
+    "subject": "fix subdomain_matching=False behavior",
+    "claim": "`flask.app.Flask.create_url_adapter` ignores the configured server name when it chooses a subdomain: with `subdomain_matching` off it always uses `url_map.default_subdomain`.",
+    "old_fact": ["(?i)ignores the configured server name", "(?i)always uses"],
+    "new_fact": ["SERVER_NAME"],
+    "truth": "The subdomain is now derived from SERVER_NAME when that is set; default_subdomain is only the fallback."
+  },
+  {
+    "id": "t09-open-resource-encoding",
+    "arm": "falsified",
+    "commit": "28d5a4d7",
+    "subject": "add encoding parameter to open_resource",
+    "claim": "`flask.app.Flask.open_resource` takes only the resource path and a `mode`; text mode uses the platform default and the caller cannot override it.",
+    "old_fact": ["(?i)takes only", "(?i)cannot override"],
+    "new_fact": ["`encoding`", "(?i)encoding (parameter|argument|keyword)"],
+    "truth": "open_resource gained an encoding parameter, used in text mode."
+  },
+  {
+    "id": "t10-config-pathlike",
+    "arm": "falsified",
+    "commit": "2abb7513",
+    "subject": "Allow for PathLike types for config file variables",
+    "claim": "`flask.config.Config.from_pyfile` requires its `filename` to be a `str`, so a path object has to be converted before it is passed in.",
+    "old_fact": ["(?i)to be a `?str", "(?i)converted before", "(?i)requires its"],
+    "new_fact": ["PathLike", "(?i)path-?like", "pathlib"],
+    "truth": "from_pyfile now accepts str | os.PathLike."
+  },
+  {
+    "id": "t11-cookie-domain-fallback",
+    "arm": "falsified",
+    "commit": "c24f8c81",
+    "subject": "no cookie domain by default",
+    "claim": "`flask.sessions.SessionInterface.get_cookie_domain` uses `SESSION_COOKIE_DOMAIN` when it is configured and otherwise falls back to detecting the domain from `SERVER_NAME`.",
+    "old_fact": ["(?i)falls? back", "(?i)otherwise .{0,40}SERVER_NAME"],
+    "new_fact": ["(?i)only", "(?i)no (longer|fallback)", "(?i)returns `?None"],
+    "truth": "The SERVER_NAME fallback was removed; the domain comes from SESSION_COOKIE_DOMAIN alone."
+  },
+  {
+    "id": "t12-generator-response",
+    "arm": "falsified",
+    "commit": "762382e4",
+    "subject": "view functions can return generators as responses directly",
+    "claim": "`flask.app.Flask.make_response` documents the return types a view may use: `str`, `bytes`, `dict`, `tuple`, `Response`, and a WSGI callable. A lazily produced body has to be wrapped in a `Response` by the view itself.",
+    "old_fact": ["(?i)lazily produced", "(?i)wrapped in a `?Response", "(?i)by the view itself"],
+    "new_fact": ["(?i)generator", "(?i)iterator", "(?i)streaming response"],
+    "truth": "A generator returned from a view is now converted to a streaming response."
+  },
+
+  {
+    "id": "c01-send-file",
+    "arm": "accurate",
+    "commit": "4104f299",
+    "subject": "type hint fix for flask.send_file",
+    "claim": "`flask.helpers.send_file` sends the contents of a file to the client, and does not force a download unless `as_attachment` is true.",
+    "old_fact": [],
+    "new_fact": [],
+    "truth": "Only the path_or_file type annotation changed. The passage stays true."
+  },
+  {
+    "id": "c02-send-from-directory",
+    "arm": "accurate",
+    "commit": "6c44dd4b",
+    "subject": "update helpers.send_from_directory docstring",
+    "claim": "`flask.helpers.send_from_directory` resolves `path` beneath `directory` and raises a 404 `NotFound` when the resolved file does not exist.",
+    "old_fact": [],
+    "new_fact": [],
+    "truth": "Only a security note was added to the docstring. The passage stays true."
+  },
+  {
+    "id": "c03-stream-with-context",
+    "arm": "accurate",
+    "commit": "860a25c3",
+    "subject": "fix mypy finding",
+    "claim": "`flask.helpers.stream_with_context` keeps the request context alive for the duration of a streaming response, and works either as a decorator or applied directly to a generator.",
+    "old_fact": [],
+    "new_fact": [],
+    "truth": "Only a type: ignore comment changed. The passage stays true."
+  },
+  {
+    "id": "c04-make-response-headers",
+    "arm": "accurate",
+    "commit": "9532cba4",
+    "subject": "fix mypy finding",
+    "claim": "`flask.app.Flask.make_response` extends the response's existing headers with any headers the view returned, rather than replacing them.",
+    "old_fact": [],
+    "new_fact": [],
+    "truth": "Only a type: ignore comment was added on the update call. The passage stays true."
+  },
+  {
+    "id": "c05-process-response",
+    "arm": "accurate",
+    "commit": "7b008869",
+    "subject": "fix typing",
+    "claim": "`flask.app.Flask.process_response` runs the registered `after_request` callbacks in reverse order and then saves the session, unless the session interface reports a null session.",
+    "old_fact": [],
+    "new_fact": [],
+    "truth": "The session is read through an accessor instead of an attribute. Behaviour, and the passage, are unchanged."
+  },
+  {
+    "id": "c06-sansio-app-init",
+    "arm": "accurate",
+    "commit": "c7da8c2a",
+    "subject": "Added python type annotation and return type.",
+    "claim": "`flask.sansio.app.App` takes an `import_name` and passes the static and template configuration through to `flask.sansio.scaffold.Scaffold`.",
+    "old_fact": [],
+    "new_fact": [],
+    "truth": "Only a -> None return annotation was added to __init__. The passage stays true."
+  },
+  {
+    "id": "c07-jinja-loader",
+    "arm": "accurate",
+    "commit": "ecc057dd",
+    "subject": "fix jinja_loader annotation",
+    "claim": "`flask.sansio.scaffold.Scaffold.jinja_loader` is a cached property, and is `None` when `template_folder` is not set.",
+    "old_fact": [],
+    "new_fact": [],
+    "truth": "Only the declared return type widened. The runtime behaviour the passage describes is unchanged."
+  },
+  {
+    "id": "c08-separated-path-type",
+    "arm": "accurate",
+    "commit": "1af8f957",
+    "subject": "fix super call in list comprehension",
+    "claim": "`flask.cli.SeparatedPathType` splits an environment variable on the OS path separator and converts each item the way `click.Path` would.",
+    "old_fact": [],
+    "new_fact": [],
+    "truth": "The super() call was hoisted out of a comprehension for Python 3.11. Same behaviour, same passage."
+  },
+  {
+    "id": "c09-save-session",
+    "arm": "accurate",
+    "commit": "eb1182a1",
+    "subject": "fix mypy finding",
+    "claim": "`flask.sessions.SecureCookieSessionInterface.save_session` signs the session with `get_signing_serializer` and sets the cookie with the expiry from `get_expiration_time`.",
+    "old_fact": [],
+    "new_fact": [],
+    "truth": "Only two type: ignore comments changed. The passage stays true."
+  },
+  {
+    "id": "c10-request-endpoint",
+    "arm": "accurate",
+    "commit": "a363642a",
+    "subject": "fix mypy finding with new werkzeug endpoint type",
+    "claim": "`flask.wrappers.Request.endpoint` is the name of the URL rule that matched, and `None` when no rule matched.",
+    "old_fact": [],
+    "new_fact": [],
+    "truth": "Only a type: ignore comment was added on the return. The passage stays true."
+  },
+  {
+    "id": "c11-config-from-mapping",
+    "arm": "accurate",
+    "commit": "746455d1",
+    "subject": "Fix misrendered docstring",
+    "claim": "`flask.config.Config.from_mapping` updates the config from a mapping, ignoring any key that is not upper-case, and always returns `True`.",
+    "old_fact": [],
+    "new_fact": [],
+    "truth": "Only docstring line wrapping changed. The passage stays true."
+  },
+  {
+    "id": "c12-null-session",
+    "arm": "accurate",
+    "commit": "3709c4a9",
+    "subject": "update ruff hook and noqa",
+    "claim": "`flask.sessions.NullSession` fails on every write operation, raising a `RuntimeError` that tells you to set the secret key.",
+    "old_fact": [],
+    "new_fact": [],
+    "truth": "Only noqa comments were removed. The passage stays true."
+  }
+]

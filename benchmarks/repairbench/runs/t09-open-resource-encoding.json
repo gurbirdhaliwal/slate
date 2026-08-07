@@ -1,0 +1,20 @@
+{
+  "item": "t09-open-resource-encoding",
+  "arm": "falsified",
+  "commit": "28d5a4d7",
+  "edited": true,
+  "declined": false,
+  "kept_refs": true,
+  "states_new_fact": true,
+  "drops_old_fact": true,
+  "refs_resolved": 0,
+  "refs_total": 1,
+  "fresh_after": true,
+  "before": "`flask.app.Flask.open_resource` takes only the resource path and a `mode`;\ntext mode uses the platform default and the caller cannot override it.",
+  "after": "`flask.app.Flask.open_resource` takes the resource path, a `mode`, and an\n`encoding` parameter; in text mode the caller can pass `encoding` to override\nthe platform default (it is ignored in binary mode).",
+  "revision": 3,
+  "model": "claude-sonnet-5",
+  "wall_s": 952.9,
+  "said": "REWRITTEN",
+  "scope": "symbol"
+}

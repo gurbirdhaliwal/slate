@@ -54,6 +54,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from slate import context, freshness, generator, gitutil, globs, scanner, verify  # noqa: E402
+from slate.cli import survive_a_narrow_console  # noqa: E402
 from slate.mcp import SlateMCPServer  # noqa: E402
 
 CHARS_PER_TOKEN = 4  # standard rough heuristic for English/code
@@ -92,7 +93,7 @@ def measure_session_start(root: Path) -> dict:
     context_paths = [s.rel_path for s in context.DOC_SPECS]
 
     layer_chars = sum(
-        len((root / p).read_text()) for p in context_paths if (root / p).exists()
+        len((root / p).read_text(encoding="utf-8")) for p in context_paths if (root / p).exists()
     )
 
     tracked = gitutil.list_files(root)
@@ -104,7 +105,7 @@ def measure_session_start(root: Path) -> dict:
     sizes: dict[str, int] = {}
     for p in text_files:
         try:
-            n = len((root / p).read_text())
+            n = len((root / p).read_text(encoding="utf-8"))
         except (UnicodeDecodeError, OSError):
             continue
         dump_chars += n
@@ -192,7 +193,7 @@ def replay_history(root: Path, since: str) -> dict:
     docs = context.load_all(root)
     doc_watches = {d.spec.name: d.watches for d in docs}
     doc_chars = {
-        d.spec.name: len(d.spec.path(root).read_text())
+        d.spec.name: len(d.spec.path(root).read_text(encoding="utf-8"))
         for d in docs if d.spec.path(root).exists()
     }
     context_paths = {s.rel_path for s in context.DOC_SPECS}
@@ -348,6 +349,13 @@ def render_markdown(r: dict) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # This report prints ≈ and —, and cp1252 cannot encode ≈. Python uses the
+    # locale codec for non-tty stdout, so piping this on Windows died with
+    # UnicodeEncodeError *after* doing all the measuring. Same guard the CLI
+    # uses; a benchmark that cannot be redirected to a file is not much of a
+    # benchmark.
+    survive_a_narrow_console()
+
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--repo", default=str(REPO_ROOT), help="repo to benchmark")
     parser.add_argument("--since", default=None,

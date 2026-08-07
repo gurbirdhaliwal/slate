@@ -72,7 +72,7 @@ def compute_edges(
         if source is None:
             continue
         try:
-            text = (root / rel).read_text(errors="ignore")
+            text = (root / rel).read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
         targets = (

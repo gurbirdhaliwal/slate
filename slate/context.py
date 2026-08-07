@@ -126,7 +126,7 @@ def load(root: Path, spec: DocSpec) -> ContextDoc | None:
     path = spec.path(root)
     if not path.exists():
         return None
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     meta, body = frontmatter.parse(text)
     # `body` is always a suffix of `text`, so the prefix length gives the offset.
     return ContextDoc(spec, meta, body, text.count("\n", 0, len(text) - len(body)) + 1)
@@ -139,7 +139,7 @@ def load_all(root: Path) -> list[ContextDoc]:
 def save(root: Path, doc: ContextDoc) -> None:
     path = doc.spec.path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(frontmatter.render(doc.meta, doc.body))
+    path.write_text(frontmatter.render(doc.meta, doc.body), encoding="utf-8")
 
 
 def stamp(root: Path, doc: ContextDoc, commit: str | None) -> None:

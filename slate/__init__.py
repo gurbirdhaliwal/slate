@@ -5,4 +5,4 @@ of them a code change may have invalidated, and scores how safe each one is
 to trust before the next AI action.
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

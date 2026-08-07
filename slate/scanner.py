@@ -248,7 +248,7 @@ def _detect_commands(root: Path, files: list[str]) -> dict[str, list[str]]:
 
     if "Makefile" in files:
         targets = re.findall(
-            r"^([A-Za-z0-9_.-]+):(?!=)", (root / "Makefile").read_text(), re.M
+            r"^([A-Za-z0-9_.-]+):(?!=)", (root / "Makefile").read_text(encoding="utf-8"), re.M
         )
         seen = [t for t in dict.fromkeys(targets) if t != ".PHONY"]
         if seen:
@@ -256,7 +256,7 @@ def _detect_commands(root: Path, files: list[str]) -> dict[str, list[str]]:
 
     if "package.json" in files:
         try:
-            pkg = json.loads((root / "package.json").read_text())
+            pkg = json.loads((root / "package.json").read_text(encoding="utf-8"))
             scripts = list(pkg.get("scripts", {}))
             if scripts:
                 commands["npm"] = [f"npm run {s}" for s in scripts]
@@ -265,7 +265,7 @@ def _detect_commands(root: Path, files: list[str]) -> dict[str, list[str]]:
 
     if "pyproject.toml" in files:
         try:
-            data = tomllib.loads((root / "pyproject.toml").read_text())
+            data = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
             entry_points = list(data.get("project", {}).get("scripts", {}))
             if entry_points:
                 commands["console scripts"] = entry_points
@@ -289,7 +289,7 @@ def _readme_title(root: Path) -> str | None:
     readme = root / "README.md"
     if not readme.exists():
         return None
-    for line in readme.read_text().splitlines():
+    for line in readme.read_text(encoding="utf-8").splitlines():
         if line.startswith("# "):
             return line[2:].strip()
     return None

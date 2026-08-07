@@ -31,7 +31,7 @@ def arch_block(repo: Path) -> str:
 
 def import_demo_from_tests(repo: Path, *extra: str) -> None:
     body = "".join(f"import {mod}\n" for mod in ("demo.engine", *extra))
-    (repo / "tests" / "test_engine.py").write_text(body + "\ndef test_run():\n    assert True\n")
+    (repo / "tests" / "test_engine.py").write_text(body + "\ndef test_run():\n    assert True\n", encoding="utf-8")
 
 
 def test_edges_are_a_field_on_the_scan(repo: Path) -> None:
@@ -58,7 +58,7 @@ def test_rendering_is_deterministic_and_sorted(repo: Path) -> None:
     # tests/ imports two other top-level dirs → the targets must be sorted, not
     # left in set-iteration order (which str-hash randomization would flake).
     (repo / "lib").mkdir()
-    (repo / "lib" / "helper.py").write_text("def h():\n    return 1\n")
+    (repo / "lib" / "helper.py").write_text("def h():\n    return 1\n", encoding="utf-8")
     import_demo_from_tests(repo, "lib.helper")
 
     block = arch_block(repo)
@@ -81,7 +81,7 @@ def test_new_cross_module_import_flips_stale_then_sync_heals(repo: Path) -> None
     generator.sync_doc(doc, scan)
     commit_all(repo, "sync edges")
     assert report_for(repo, "architecture").status == FRESH
-    assert "- `tests/` → `demo/`" in context.spec_by_name("architecture").path(repo).read_text()
+    assert "- `tests/` → `demo/`" in context.spec_by_name("architecture").path(repo).read_text(encoding="utf-8")
 
 
 def test_edge_line_inherits_per_claim_trust(repo: Path) -> None:
@@ -97,6 +97,6 @@ def test_edge_line_inherits_per_claim_trust(repo: Path) -> None:
 def test_intra_directory_import_is_not_an_edge(repo: Path) -> None:
     # demo/cli importing demo/engine stays inside demo/ — top-level-dir
     # granularity means no self-edge, no false precision.
-    (repo / "demo" / "cli.py").write_text("import demo.engine\n\ndef main():\n    return 0\n")
+    (repo / "demo" / "cli.py").write_text("import demo.engine\n\ndef main():\n    return 0\n", encoding="utf-8")
     scan = scanner.scan(repo)
     assert scan.edges.get("demo", set()) == set()

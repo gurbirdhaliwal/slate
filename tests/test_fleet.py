@@ -11,7 +11,7 @@ def make_repo(parent: Path, name: str, with_layer: bool) -> Path:
     root = parent / name
     (root / "src").mkdir(parents=True)
     git(root, "init", "-q")
-    (root / "src" / "main.py").write_text("x = 1\n")
+    (root / "src" / "main.py").write_text("x = 1\n", encoding="utf-8")
     commit_all(root, "init")
     if with_layer:
         generator.generate_all(scanner.scan(root))
@@ -33,7 +33,7 @@ def test_fleet_rollup(tmp_path: Path, capsys) -> None:
 
 def test_fleet_ci_fails_on_stale_repo(tmp_path: Path, capsys) -> None:
     alpha = make_repo(tmp_path, "alpha", with_layer=True)
-    (alpha / "src" / "new.py").write_text("y = 2\n")  # stales alpha's docs
+    (alpha / "src" / "new.py").write_text("y = 2\n", encoding="utf-8")  # stales alpha's docs
     assert main(["fleet", str(tmp_path), "--ci"]) == 1
     assert main(["fleet", str(tmp_path)]) == 0  # without --ci it only reports
 

@@ -58,7 +58,7 @@ def _pkg_parent() -> str:
 
 def append_note(repo: Path, rel: str, note: str) -> None:
     path = repo / rel
-    path.write_text(path.read_text().rstrip() + f"\n\n{note}\n")
+    path.write_text(path.read_text(encoding="utf-8").rstrip() + f"\n\n{note}\n", encoding="utf-8")
 
 
 # --- installation -----------------------------------------------------------
@@ -67,7 +67,7 @@ def test_install_registers_both_halves(repo: Path) -> None:
     merge.install(repo)
     assert merge.driver_registered(repo)
     assert merge.attributes_registered(repo)
-    attrs = (repo / ".gitattributes").read_text()
+    attrs = (repo / ".gitattributes").read_text(encoding="utf-8")
     assert f"AGENTS.md merge={merge.DRIVER}" in attrs
     assert f"{ARCH} merge={merge.DRIVER}" in attrs
     assert gitutil.config_get(repo, merge.DRIVER_CONFIG) == merge.DRIVER_COMMAND
@@ -76,13 +76,13 @@ def test_install_registers_both_halves(repo: Path) -> None:
 def test_install_is_idempotent(repo: Path) -> None:
     merge.install(repo)
     merge.install(repo)
-    assert (repo / ".gitattributes").read_text().count(merge.ATTR_BEGIN) == 1
+    assert (repo / ".gitattributes").read_text(encoding="utf-8").count(merge.ATTR_BEGIN) == 1
 
 
 def test_install_preserves_foreign_attributes(repo: Path) -> None:
-    (repo / ".gitattributes").write_text("*.png binary\n")
+    (repo / ".gitattributes").write_text("*.png binary\n", encoding="utf-8")
     merge.install(repo)
-    text = (repo / ".gitattributes").read_text()
+    text = (repo / ".gitattributes").read_text(encoding="utf-8")
     assert "*.png binary" in text
     assert merge.ATTR_BEGIN in text
 
@@ -96,10 +96,10 @@ def test_uninstall_removes_both_halves(repo: Path) -> None:
 
 
 def test_uninstall_keeps_foreign_attributes(repo: Path) -> None:
-    (repo / ".gitattributes").write_text("*.png binary\n")
+    (repo / ".gitattributes").write_text("*.png binary\n", encoding="utf-8")
     merge.install(repo)
     merge.uninstall(repo)
-    assert (repo / ".gitattributes").read_text() == "*.png binary\n"
+    assert (repo / ".gitattributes").read_text(encoding="utf-8") == "*.png binary\n"
 
 
 def test_cli_status_reports_missing_wiring(repo: Path, capsys) -> None:
@@ -137,7 +137,7 @@ def write_doc(
     meta = {"slate_doc": "architecture", "slate_synced_commit": "aaa1111",
             "slate_watches": watches}
     body = context.replace_auto_block(f"# Architecture\n\n{intro}\n", block)
-    path.write_text(frontmatter.render(meta, f"{body}\n## Notes\n\n{notes}\n"))
+    path.write_text(frontmatter.render(meta, f"{body}\n## Notes\n\n{notes}\n"), encoding="utf-8")
 
 
 def test_run_merges_cleanly_when_only_the_facts_differ(tmp_path: Path) -> None:
@@ -152,7 +152,7 @@ def test_run_merges_cleanly_when_only_the_facts_differ(tmp_path: Path) -> None:
 
     assert code == 0
     from slate import frontmatter
-    _, body = frontmatter.parse(ours.read_text())
+    _, body = frontmatter.parse(ours.read_text(encoding="utf-8"))
     # Ours' block is kept verbatim — sync regenerates it from the merged tree.
     assert context.get_auto_block(body) == "| ours |"
     assert "sync" in message
@@ -168,7 +168,7 @@ def test_run_keeps_both_sides_edits_and_unions_watches(tmp_path: Path) -> None:
     code, _ = merge.run(base, ours, theirs, ARCH)
 
     assert code == 0
-    result = ours.read_text()
+    result = ours.read_text(encoding="utf-8")
     assert "ALICE: billing runs first." in result
     assert "BOB: notify is fire-and-forget." in result
     from slate import frontmatter
@@ -187,7 +187,7 @@ def test_run_conflicts_only_in_human_text(tmp_path: Path) -> None:
     code, message = merge.run(base, ours, theirs, ARCH)
 
     assert code == 1
-    result = ours.read_text()
+    result = ours.read_text(encoding="utf-8")
     assert "<<<<<<< ours" in result and ">>>>>>> theirs" in result
     from slate import frontmatter
     _, body = frontmatter.parse(result)
@@ -197,12 +197,12 @@ def test_run_conflicts_only_in_human_text(tmp_path: Path) -> None:
 
 def test_run_falls_back_for_non_context_files(tmp_path: Path) -> None:
     base, ours, theirs = (tmp_path / n for n in ("base", "ours", "theirs"))
-    base.write_text("one\n")
-    ours.write_text("one\ntwo\n")
-    theirs.write_text("zero\none\n")
+    base.write_text("one\n", encoding="utf-8")
+    ours.write_text("one\ntwo\n", encoding="utf-8")
+    theirs.write_text("zero\none\n", encoding="utf-8")
     code, message = merge.run(base, ours, theirs, "src/app.py")
     assert code == 0
-    assert ours.read_text() == "zero\none\ntwo\n"
+    assert ours.read_text(encoding="utf-8") == "zero\none\ntwo\n"
     assert message == ""
 
 
@@ -212,14 +212,14 @@ def test_append_only_log_unions_both_entries(tmp_path: Path) -> None:
     base, ours, theirs = (tmp_path / n for n in ("base", "ours", "theirs"))
     from slate import frontmatter
     meta = {"slate_doc": "decisions", "slate_synced_commit": "aaa1111"}
-    base.write_text(frontmatter.render(dict(meta), "# Decisions\n"))
-    ours.write_text(frontmatter.render(dict(meta), "# Decisions\n\n## 2026-01-01 alice\n"))
-    theirs.write_text(frontmatter.render(dict(meta), "# Decisions\n\n## 2026-01-02 bob\n"))
+    base.write_text(frontmatter.render(dict(meta), "# Decisions\n"), encoding="utf-8")
+    ours.write_text(frontmatter.render(dict(meta), "# Decisions\n\n## 2026-01-01 alice\n"), encoding="utf-8")
+    theirs.write_text(frontmatter.render(dict(meta), "# Decisions\n\n## 2026-01-02 bob\n"), encoding="utf-8")
 
     code, _ = merge.run(base, ours, theirs, ".slate/decisions.md")
 
     assert code == 0
-    result = ours.read_text()
+    result = ours.read_text(encoding="utf-8")
     assert "alice" in result and "bob" in result
     assert "<<<<<<<" not in result
     assert context.AUTO_BEGIN not in result
@@ -230,14 +230,14 @@ def test_non_append_only_human_doc_still_conflicts(tmp_path: Path) -> None:
     base, ours, theirs = (tmp_path / n for n in ("base", "ours", "theirs"))
     from slate import frontmatter
     meta = {"slate_doc": "read-next", "slate_synced_commit": "aaa1111"}
-    base.write_text(frontmatter.render(dict(meta), "# Read next\n\nfocus: nothing.\n"))
-    ours.write_text(frontmatter.render(dict(meta), "# Read next\n\nfocus: billing.\n"))
-    theirs.write_text(frontmatter.render(dict(meta), "# Read next\n\nfocus: notify.\n"))
+    base.write_text(frontmatter.render(dict(meta), "# Read next\n\nfocus: nothing.\n"), encoding="utf-8")
+    ours.write_text(frontmatter.render(dict(meta), "# Read next\n\nfocus: billing.\n"), encoding="utf-8")
+    theirs.write_text(frontmatter.render(dict(meta), "# Read next\n\nfocus: notify.\n"), encoding="utf-8")
 
     code, _ = merge.run(base, ours, theirs, ".slate/read-next.md")
 
     assert code == 1
-    assert "<<<<<<<" in ours.read_text()
+    assert "<<<<<<<" in ours.read_text(encoding="utf-8")
 
 
 # --- end to end, through git ------------------------------------------------
@@ -249,7 +249,7 @@ def branch_work(repo: Path, name: str, trunk: str, path: str, code: str,
     git(repo, "checkout", "-qb", name)
     target = repo / path
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(code)
+    target.write_text(code, encoding="utf-8")
     if note:
         append_note(repo, ARCH, note)
     commit_all(repo, f"{name} work")
@@ -277,7 +277,7 @@ def test_concurrent_syncs_merge_without_conflict(repo: Path) -> None:
 
     assert result.returncode == 0, result.stdout + result.stderr
     for spec in (ARCH, "AGENTS.md", ".slate/modules.md", ".slate/workflows.md"):
-        assert "<<<<<<<" not in (repo / spec).read_text(), spec
+        assert "<<<<<<<" not in (repo / spec).read_text(encoding="utf-8"), spec
 
 
 def test_concurrent_prose_appends_conflict_without_losing_either(repo: Path) -> None:
@@ -299,13 +299,13 @@ def test_concurrent_prose_appends_conflict_without_losing_either(repo: Path) -> 
     result = try_merge(repo, "bob")
 
     assert result.returncode != 0
-    text = (repo / ARCH).read_text()
+    text = (repo / ARCH).read_text(encoding="utf-8")
     # Neither side's prose was dropped — the whole point.
     assert "ALICE: billing runs before auth." in text
     assert "BOB: notify is fire-and-forget." in text
     # The docs whose prose nobody touched still merged cleanly.
     for spec in ("AGENTS.md", ".slate/modules.md", ".slate/workflows.md"):
-        assert "<<<<<<<" not in (repo / spec).read_text(), spec
+        assert "<<<<<<<" not in (repo / spec).read_text(encoding="utf-8"), spec
     # The generated facts came through outside the conflict region.
     from slate import frontmatter
     _, body = frontmatter.parse(text)

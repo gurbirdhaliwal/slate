@@ -20,7 +20,12 @@ parsed keyword list can tell the two apart.
 from __future__ import annotations
 
 import ast
+import subprocess
 from pathlib import Path
+
+import pytest
+
+from .conftest import commit_all
 
 ROOT = Path(__file__).resolve().parent.parent
 TREES = ("slate", "tests", "benchmarks")
@@ -93,3 +98,100 @@ def _fails_cp1252(char: str) -> bool:
         return False
     except UnicodeEncodeError:
         return True
+
+
+# --------------------------------------------------------------------------
+# git's output is not the locale's business
+#
+# Windows CI died here: `subprocess.run(text=True)` decodes with the *locale*
+# codec, so the first non-ASCII byte of a diff killed the reader thread and
+# `run` returned stdout=None. The crash was the lucky outcome — an empty diff
+# reads as "no symbols changed", which narrows stale→fresh (product doc §10).
+
+
+def _subprocess_calls_without_encoding(source: str) -> list[str]:
+    """`subprocess.run(..., text=True)` calls that never pin an encoding."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    bad = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+        if name != "run":
+            continue
+        kwargs = {kw.arg for kw in node.keywords}
+        if "text" in kwargs and "encoding" not in kwargs:
+            bad.append(f"line {node.lineno}: subprocess.run(text=True) with no encoding=")
+    return bad
+
+
+def test_git_output_is_never_decoded_with_the_locale_codec() -> None:
+    offenders = {
+        path.name: bad
+        for path in (Path(__file__).resolve().parent.parent / "slate").rglob("*.py")
+        if (bad := _subprocess_calls_without_encoding(path.read_text(encoding="utf-8")))
+    }
+    assert not offenders, (
+        "text=True decodes with the locale codec (cp1252 on Windows); "
+        f"pin encoding='utf-8': {offenders}"
+    )
+
+
+def test_a_non_ascii_diff_still_reports_its_hunks(tmp_path: Path) -> None:
+    """A diff full of UTF-8 must survive the trip out of git.
+
+    Note this passes on POSIX either way — the locale there is already UTF-8.
+    It earns its keep on Windows, where the pre-fix code returned stdout=None
+    and this assertion is the difference between a caught drift and a blessed
+    doc. The platform-independent guard is the AST test above.
+    """
+    from slate import gitutil
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    src = root / "mod.py"
+    src.write_text("def a():\n    return 1\n", encoding="utf-8")
+    commit_all(root, "init")
+    base = gitutil.head_commit(root)
+    src.write_text('def a():\n    """cost \u2248 0.09 \u2014 cheap."""\n    return 2\n',
+                   encoding="utf-8")
+    commit_all(root, "touch a")
+
+    hunks = gitutil.changed_hunks(root, base)
+
+    assert "mod.py" in hunks, (
+        "a non-ASCII diff vanished — the freshness engine would see no "
+        "changed symbols and call the doc fresh"
+    )
+
+
+def test_git_output_that_cannot_be_read_raises_rather_than_looking_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Windows failure mode: subprocess's reader thread dies, stdout=None.
+
+    An empty diff and a diff we failed to read are indistinguishable to every
+    caller downstream, and one of them means "nothing changed". Slate must
+    stop instead of narrowing stale->fresh on a decode it never performed.
+    """
+    from slate import gitutil
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    (root / "a.py").write_text("x = 1\n", encoding="utf-8")
+    commit_all(root, "init")
+
+    class _Dead:
+        returncode = 0
+        stdout = None          # what run() hands back when the reader thread dies
+        stderr = ""
+
+    monkeypatch.setattr(gitutil.subprocess, "run", lambda *a, **k: _Dead())
+    with pytest.raises(gitutil.GitError):
+        gitutil.changed_hunks(root, "HEAD")

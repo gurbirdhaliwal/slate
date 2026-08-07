@@ -18,13 +18,25 @@ class GitError(RuntimeError):
 
 
 def _git(root: Path, *args: str) -> str:
+    # Decode git's output as UTF-8 explicitly. Bare `text=True` uses the
+    # *locale* codec, which on Windows is cp1252: the first non-ASCII byte in a
+    # diff kills subprocess's reader thread, `run` hands back stdout=None, and
+    # the parser downstream gets None instead of a diff. `errors="replace"`
+    # because git emits file *content*, whose encoding is not ours to promise.
     proc = subprocess.run(
         ["git", "-C", str(root), *args],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     if proc.returncode != 0:
-        raise GitError(proc.stderr.strip() or f"git {' '.join(args)} failed")
+        raise GitError((proc.stderr or "").strip() or f"git {' '.join(args)} failed")
+    if proc.stdout is None:
+        # Unreachable with errors="replace", and it stays that way on purpose:
+        # an empty diff reads as "nothing changed", which narrows stale→fresh.
+        # A doc that is silently blessed is worse than a command that stops.
+        raise GitError(f"git {' '.join(args)} produced no readable output")
     return proc.stdout
 
 
@@ -224,9 +236,11 @@ def merge_file(current: Path, base: Path, other: Path, union: bool = False) -> i
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",           # same reason as _git: never the locale codec
+        errors="replace",
     )
     if proc.returncode > 127 or proc.returncode < 0:
-        raise GitError(proc.stderr.strip() or "git merge-file failed")
+        raise GitError((proc.stderr or "").strip() or "git merge-file failed")
     return proc.returncode
 
 

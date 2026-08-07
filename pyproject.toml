@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slate-context"
-version = "0.3.0"
+version = "0.4.0"
 description = "Slate — context control plane for AI-assisted repos. Generates concise Markdown context beside the code, detects stale knowledge after changes, and scores what is safe to trust."
 readme = "README.md"
 requires-python = ">=3.11"

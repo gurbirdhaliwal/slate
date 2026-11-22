@@ -48,6 +48,16 @@ jobs:
         python-version: ["3.11", "3.13"]
     runs-on: ${{ matrix.os }}
     steps:
+      # Slate anchors to git and reads its own committed docs, so the checkout
+      # must not be line-ending-mangled on Windows. This has to run BEFORE
+      # checkout: the Windows runner image ships core.autocrlf=true, so a
+      # checkout taken first writes CRLF working files that then differ from
+      # their LF blobs for every text file in the repo. `slate status` reads
+      # that as "every watched path changed since the anchor", which buries
+      # the real signal and fails the gate on a clean tree.
+      - name: Keep line endings as committed
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -55,11 +65,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-
-      # Slate anchors to git and reads its own committed docs, so the checkout
-      # must not be line-ending-mangled on Windows.
-      - name: Keep line endings as committed
-        run: git config --global core.autocrlf false
 
       - name: Install
         run: pip install -e ".[dev]"

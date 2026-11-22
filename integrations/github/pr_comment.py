@@ -4,7 +4,7 @@ Runs inside the composite action at the repo root (`action.yml`). Consumers:
 
     - uses: actions/checkout@v4
       with: { fetch-depth: 0 }        # slate anchors freshness to history
-    - uses: gurbirdhaliwal/slate@v0.2.0
+    - uses: gurbirdhaliwal/slate@v0.4.0
 
 Stdlib only, like everything else. The comment is idempotent: a hidden
 marker identifies the bot's comment and it is edited in place on

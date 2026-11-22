@@ -484,7 +484,7 @@ With the MCP server wired (`slate agent enable`), the agent performs this whole 
 
 **Goal:** the freshness signal reaches reviews and editors.
 
-- [x] GitHub PR bot: reusable composite action at the repo root (`uses: gurbirdhaliwal/slate@v0.2.0`) — posts an idempotent PR comment (statuses, scores, changed paths, broken claims), optional fail-on-stale; dogfooded in this repo's CI
+- [x] GitHub PR bot: reusable composite action at the repo root (`uses: gurbirdhaliwal/slate@v0.4.0`) — posts an idempotent PR comment (statuses, scores, changed paths, broken claims), optional fail-on-stale; dogfooded in this repo's CI
 - [x] Editor integration: VS Code extension (`integrations/vscode/`, plain JS, no build step) — file-tree trust badges, status-bar roll-up, one-click sync. *(Marketplace publishing optional; installs from a local VSIX today.)*
 - [x] Multi-repo roll-up: `slate fleet [PATH...] [--json] [--ci]`
 - [x] Agent integration (added 2026-07-16): MCP server (`slate mcp`, stdlib stdio JSON-RPC) + `slate agent enable/access/status` + VS Code access toggle — the agent runs the whole read→verify→sync loop itself under a read-default capability ceiling

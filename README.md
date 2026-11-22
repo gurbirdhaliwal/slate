@@ -303,7 +303,7 @@ Two things worth knowing:
   it checks the consumer repo's context layer on every PR and posts (and
   edits in place) a comment listing which docs the PR invalidates, with
   trust scores. Two lines in a consumer workflow:
-  `uses: gurbirdhaliwal/slate@v0.2.0` after a `fetch-depth: 0` checkout.
+  `uses: gurbirdhaliwal/slate@v0.4.0` after a `fetch-depth: 0` checkout.
 - **VS Code extension** — [integrations/vscode/](integrations/vscode/):
   trust badges in the file tree, a status-bar roll-up, and one-click sync.
   Plain JS, no build step; renders `slate status --json`, never computes.
@@ -384,6 +384,17 @@ measured limits above before pitching it: the layer converges with or without
 it, and what it adds is verification of about half that convergence.
 
 Remaining one-time setup (needs account owner): create the `slate-context`
-project + trusted publisher on pypi.org, then push a `v0.2.0` tag; publish
+project + trusted publisher on pypi.org, then push a `v0.4.0` tag; publish
 the VS Code extension to the marketplace if wanted (works from a local VSIX
 today). Phase 4 (team dashboards, merge policies, hosted bot) is not built.
+
+## License
+
+Apache-2.0 — see [LICENSE](LICENSE).
+
+The benchmark transcripts under `benchmarks/*/runs/` are verbatim agent session
+logs and therefore quote substantial [Flask](https://github.com/pallets/flask)
+source (BSD-3-Clause); that notice is in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+Security policy and the honest threat model: [SECURITY.md](SECURITY.md).

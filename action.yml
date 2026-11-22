@@ -12,7 +12,7 @@
 #       steps:
 #         - uses: actions/checkout@v4
 #           with: { fetch-depth: 0 }   # required — freshness anchors to history
-#         - uses: gurbirdhaliwal/slate@v0.2.0
+#         - uses: gurbirdhaliwal/slate@v0.4.0
 name: Slate context check
 description: >-
   Detects context docs a pull request may have invalidated (stale / needs-

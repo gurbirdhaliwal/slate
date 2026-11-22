@@ -11,9 +11,11 @@ changes your threat model in a specific way. This document is the honest list.
 
 ## Reporting a vulnerability
 
-Open a GitHub security advisory on the repository, or email the maintainer
-listed in `pyproject.toml`. Please don't open a public issue for anything
-exploitable.
+Report privately via **GitHub security advisories** on this repository
+(Security → Advisories → *Report a vulnerability*). That channel is private
+until a fix ships and is the only one guaranteed to reach the maintainer.
+
+Please don't open a public issue for anything exploitable.
 
 ---
 

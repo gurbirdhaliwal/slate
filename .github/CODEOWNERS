@@ -1,0 +1,26 @@
+# Slate's threat model (SECURITY.md §1) names this file as the first
+# mitigation: a contributor who edits only Markdown can put text into every
+# future agent session's context window, and a docs-only diff is the kind
+# reviewers skim. These paths get a named reviewer on every pull request.
+
+# The context layer the agent is told to trust.
+/.slate/            @gurbirdhaliwal
+/AGENTS.md          @gurbirdhaliwal
+/CLAUDE.md          @gurbirdhaliwal
+
+# Agent wiring that executes on clone (SECURITY.md §2) and the write gates
+# that decide what an agent may change (§3).
+/.claude/           @gurbirdhaliwal
+/.cursor/           @gurbirdhaliwal
+/.mcp.json          @gurbirdhaliwal
+
+# Supply chain: CI, the published action, and release/packaging metadata.
+/.github/           @gurbirdhaliwal
+/action.yml         @gurbirdhaliwal
+/pyproject.toml     @gurbirdhaliwal
+/.pre-commit-hooks.yaml @gurbirdhaliwal
+
+# Security and licensing statements.
+/SECURITY.md        @gurbirdhaliwal
+/LICENSE            @gurbirdhaliwal
+/THIRD-PARTY-NOTICES.md @gurbirdhaliwal
